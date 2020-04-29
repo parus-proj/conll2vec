@@ -17,16 +17,9 @@
 #define EXP_TABLE_SIZE 1000
 #define MAX_EXP 6
 
-enum LearningOptimizationAlgo
-{
-  loaUndefined,
-  loaHierarchicalSoftmax,
-  loaNegativeSampling
-};
-
 
 // хранит общие параметры и данные для всех потоков
-// реализует общую логику обучения (которая затем специализируется для cbow и skip-gram, соответственно)
+// реализует общую логику обучения
 class CustomTrainer
 {
 public:
@@ -39,7 +32,6 @@ public:
                  size_t embedding_size,
                  size_t epochs,
                  float learning_rate,
-                 const std::string& optimization,
                  size_t negative_count )
   : lep(learning_example_provider)
   , w_vocabulary(words_vocabulary)
@@ -50,14 +42,9 @@ public:
   , epoch_count(epochs)
   , alpha(learning_rate)
   , starting_alpha(learning_rate)
-  , optimization_algo( loaUndefined )
   , negative(negative_count)
   , next_random_ns(0)
   {
-    if (optimization == "hs")
-      optimization_algo = loaHierarchicalSoftmax;
-    else if (optimization == "ns")
-      optimization_algo = loaNegativeSampling;
     // предварительный табличный расчет для логистической функции
     expTable = (float *)malloc((EXP_TABLE_SIZE + 1) * sizeof(float));
     for (size_t i = 0; i < EXP_TABLE_SIZE; i++) {
@@ -101,15 +88,6 @@ public:
       for (size_t b = 0; b < layer1_size; ++b)
         syn1[a * layer1_size + b] = 0;
 
-    if (optimization_algo == loaHierarchicalSoftmax) // hierarchical softmax
-      out_vocabulary->buildHuffmanTree();
-    else if (optimization_algo == loaNegativeSampling) // negative sampling
-    {}
-    else
-    {
-      std::cerr << "Unknown learning optimization algorithm" << std::endl;
-      exit(1);
-    }
     start_learning_tp = std::chrono::steady_clock::now();
   } // method-end
   // обобщенная процедура обучения (точка входа для потоков)
@@ -197,8 +175,6 @@ protected:
   float alpha;
   // начальный learning rate
   float starting_alpha;
-  // алгоритм оптимизации (hierarchical softmax либо negative sampling)
-  LearningOptimizationAlgo optimization_algo;
   // количество отрицательных примеров на каждый положительный при оптимизации методом negative sampling
   size_t negative;
   // матрицы весов между слоями input-hidden и hidden-output

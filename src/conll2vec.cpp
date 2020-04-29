@@ -1,28 +1,58 @@
 #include <memory>
 #include <string>
 #include <thread>
+
+#include "command_line_parameters_defs.h"
 #include "simple_profiler.h"
-#include "cbow_command_line_parameters.h"
+#include "vocabs_builder.h"
 #include "original_word2vec_vocabulary.h"
 #include "original_word2vec_le_provider.h"
-#include "cbow_trainer_mikolov.h"
+#include "sg_trainer_mikolov.h"
 
 
 
 int main(int argc, char **argv)
 {
   // выполняем разбор параметров командной строки
-  CbowCommandLineParameters cmdLineParams;
+  CommandLineParametersDefs cmdLineParams;
   cmdLineParams.parse(argc, argv);
   cmdLineParams.dbg_cout();
 
-  if (!cmdLineParams.isDefined("-words-vocab") || !cmdLineParams.isDefined("-train") || !cmdLineParams.isDefined("-output"))
+  // определяемся с поставленной задачей
+  if ( !cmdLineParams.isDefined("-task") )
+  {
+    std::cerr << "Task parameter is not defined." << std::endl;
+    std::cerr << "Alternatives:" << std::endl
+              << "  -task fit   -- conll file transformation" << std::endl
+              << "  -task vocab -- vocabs building" << std::endl
+              << "  -task train -- model training" << std::endl
+              << "  -task punct -- add punctuation to model " << std::endl
+              << "  -task sim   -- similarity test" << std::endl;
+    return -1;
+  }
+  auto&& task = cmdLineParams.getAsString("-task");
+
+  // если поставлена задача построения словарей
+  if (task == "vocab")
+  {
+    VocabsBuilder vb;
+    bool succ = vb.build_vocabs( cmdLineParams.getAsString("-train"),
+                                 cmdLineParams.getAsString("-vocab_m"), cmdLineParams.getAsString("-vocab_p"),
+                                 cmdLineParams.getAsString("-vocab_d"), cmdLineParams.getAsString("-vocab_a"),
+                                 cmdLineParams.getAsInt("-min-count_m"), cmdLineParams.getAsInt("-min-count_p"),
+                                 cmdLineParams.getAsInt("-min-count_d"), cmdLineParams.getAsInt("-min-count_a"),
+                                 cmdLineParams.getAsInt("-col_emb") - 1, cmdLineParams.getAsInt("-col_ctx_d") - 1
+                               );
+    return ( succ ? 0 : -1 );
+  }
+
+  if (!cmdLineParams.isDefined("-words-vocab") || !cmdLineParams.isDefined("-train") || !cmdLineParams.isDefined("-model"))
     return 0;
 
   SimpleProfiler global_profiler;
 
   // загрузка словаря
-  std::shared_ptr< OriginalWord2VecVocabulary> v = std::make_shared< OriginalWord2VecVocabulary>();
+  std::shared_ptr< OriginalWord2VecVocabulary> v = std::make_shared<OriginalWord2VecVocabulary>();
   if ( !v->load( cmdLineParams.getAsString("-words-vocab") ) )
     return -1;
 
@@ -35,11 +65,10 @@ int main(int argc, char **argv)
                                                                                                                       v );
 
   // создаем объект, организующий обучение
-  CbowTrainer_Mikolov trainer( lep, v , v,
+  SgTrainer_Mikolov trainer( lep, v , v,
                        cmdLineParams.getAsInt("-size"),
                        cmdLineParams.getAsInt("-iter"),
                        cmdLineParams.getAsFloat("-alpha"),
-                       cmdLineParams.getAsString("-optimization"),
                        cmdLineParams.getAsFloat("-negative"));
 
   // инициализация нейросети
@@ -55,7 +84,7 @@ int main(int argc, char **argv)
     threads_vec[i].join();
 
   // сохраняем вычисленные вектора в файл
-  trainer.saveEmbeddings( cmdLineParams.getAsString("-output") );
+  trainer.saveEmbeddings( cmdLineParams.getAsString("-model") );
 //  if (cmdLineParams.isDefined("-backup"))
 //    trainer.backup( cmdLineParams.getAsString("-backup") );
 
