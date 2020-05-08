@@ -7,6 +7,8 @@
 #include <cstring>       // for std::strerror
 #include <vector>
 #include <unordered_map>
+#include <set>
+#include <fstream>
 
 // Класс, обеспечивающие создание словарей (-task vocab)
 class VocabsBuilder
@@ -42,10 +44,19 @@ public:
     uint64_t sr_fails_cnt = 0;    // количество ошибок чтения предложений (предложений, содержащих хотя бы одну некорректную запись)
     uint64_t sentence_processed = 0;
     uint64_t tokens_processed = 0;
+    size_t   tokens_dbg_counter = 0;
     while ( !feof(conll_file) )
     {
       bool succ = ConllReader::read_sentence(conll_file, sentence_matrix);
       tokens_processed += sentence_matrix.size(); // статистику ведём и по некорректным предложениям
+      tokens_dbg_counter += sentence_matrix.size();
+      if (tokens_dbg_counter >= 100000)
+      {
+        tokens_dbg_counter %= 100000;
+        std::cout << '\r' << (tokens_processed / 1000) << " K        ";
+        std::cout.flush();
+
+      }
       if (sentence_matrix.size() > 0)
         sentence_processed++;
       if (!succ)
@@ -58,9 +69,10 @@ public:
       process_sentence_main(vocab_main, sentence_matrix, embeddings_vocabulary_column);
       process_sentence_proper(vocab_proper, sentence_matrix, embeddings_vocabulary_column);
       process_sentence_dep_ctx(vocab_dep, sentence_matrix, ctx_vocabulary_column_d);
-      process_sentence_assoc_ctx(vocab_assoc, sentence_matrix, 2); // всегда строим по нормальным формам
+      process_sentence_assoc_ctx(vocab_assoc, sentence_matrix, 2); // всегда строим по леммам (нормальным формам)
     }
     fclose(conll_file);
+    std::cout << std::endl;
     if ( sr_fails_cnt > 0)
       std::cerr << "Sentence reading fails count: " << sr_fails_cnt << std::endl;
     std::cout << "Sentences count: " << sentence_processed << std::endl;
@@ -75,6 +87,7 @@ public:
     std::cout << "Save dependency contexts vocabulary..." << std::endl;
     save_vocab(vocab_dep, limit_d, voc_d_fn);
     std::cout << "Save associative contexts vocabulary..." << std::endl;
+    erase_assoc_stopwords(vocab_assoc);
     save_vocab(vocab_assoc, limit_a, voc_a_fn);
     return true;
   } // method-end
@@ -84,6 +97,29 @@ private:
   {
     return feats.length() >=2 && feats[0] == 'N' && feats[1] == 'p';
   } // method-end
+  // проверка, является ли токен стоп-словом для словаря ассоциативных контекстов
+  void erase_assoc_stopwords(VocabMappingPtr vocab)
+  {
+    static bool isListLoaded = false;
+    std::set<std::string> stoplist;
+    if (!isListLoaded)
+    {
+      isListLoaded = true;
+      std::ifstream ifs("stopwords.assoc");
+      std::string line;
+      while ( std::getline(ifs, line).good() )
+        stoplist.insert(line);
+    }
+    std::cout << "  stopwords reduce" << std::endl;
+    auto it = vocab->begin();
+    while (it != vocab->end())    //TODO: в C++20 заменить на std::erase_if (https://en.cppreference.com/w/cpp/container/map/erase_if)
+    {
+      if (stoplist.find(it->first) == stoplist.end())
+        ++it;
+      else
+        it = vocab->erase(it);
+    }
+  }
   void process_sentence_main(VocabMappingPtr vocab, const SentenceMatrix& sentence, size_t column)
   {
     for (auto& token : sentence)
@@ -132,7 +168,6 @@ private:
   {
     for (auto& token : sentence)
     {
-      // TODO: здесь возможна мощная логика фильтрации по стоп-словам (союзы и т.п.)
       if (token[7] == "PUNC")  // знаки препинания в словарь контекстов для моделирования ассоциаций не включаем
         continue;
       auto&& word = token[column];
