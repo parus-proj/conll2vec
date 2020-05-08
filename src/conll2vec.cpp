@@ -8,6 +8,7 @@
 #include "original_word2vec_vocabulary.h"
 #include "learning_example_provider.h"
 #include "trainer.h"
+#include "sim_estimator.h"
 
 
 
@@ -149,13 +150,22 @@ int main(int argc, char **argv)
 
     // сохраняем вычисленные вектора в файл
     if (cmdLineParams.isDefined("-model"))
-      trainer.saveEmbeddings( cmdLineParams.getAsString("-model") );
+      trainer.saveEmbeddings( cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt") );
 //    if (cmdLineParams.isDefined("-backup"))
 //      trainer.backup( cmdLineParams.getAsString("-backup") );
 
     return 0;
   } // if task == train
 
+  // если поставлена задача оценки близости значений (в интерактивном режиме)
+  if (task == "sim")
+  {
+    SimilarityEstimator sim_estimator(cmdLineParams.getAsInt("-size_d"), cmdLineParams.getAsInt("-size_a"));
+    if ( !sim_estimator.load_model(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt")) )
+      return -1;
+    sim_estimator.run();
+    return 0;
+  } // if task == sim
 
   return -1;
 }

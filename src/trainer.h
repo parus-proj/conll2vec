@@ -154,11 +154,14 @@ public:
     free(neu1e);
   } // method-end: train_entry_point
   // функция, реализующая сохранение эмбеддингов
-  void saveEmbeddings(const std::string& filename) const
+  void saveEmbeddings(const std::string& filename, bool useTxtFmt = false) const
   {
     FILE *fo = fopen(filename.c_str(), "wb");
     fprintf(fo, "%lu %lu\n", w_vocabulary->size(), layer1_size);
-    saveEmbeddingsBin_helper(fo, w_vocabulary, syn0);
+    if ( !useTxtFmt )
+      saveEmbeddingsBin_helper(fo, w_vocabulary, syn0);
+    else
+      saveEmbeddingsTxt_helper(fo, w_vocabulary, syn0);
     fclose(fo);
   } // method-end
   // функция сохранения обоих весовых матриц в файл

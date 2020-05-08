@@ -31,7 +31,8 @@ public:
         {"-negative",     {"Number of negative examples", "3", std::nullopt}},
         {"-alpha",        {"Set the starting learning rate", "0.025", std::nullopt}},
         {"-iter",         {"Run more training iterations", "3", std::nullopt}},
-        {"-threads",      {"Use <int> threads", "8", std::nullopt}}
+        {"-threads",      {"Use <int> threads", "8", std::nullopt}},
+        {"-model_fmt",    {"The model format (bin|txt)", "bin", std::nullopt}}
     };
   }
 };
