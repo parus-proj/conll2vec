@@ -3,11 +3,13 @@
 
 #include "learning_example_provider.h"
 #include "vocabulary.h"
+#include "original_word2vec_vocabulary.h"
 
 #include <memory>
 #include <string>
 #include <chrono>
 #include <iostream>
+#include <fstream>
 #include <cmath>
 
 #ifdef _MSC_VER
@@ -30,6 +32,7 @@ public:
   // конструктор
   Trainer( std::shared_ptr< LearningExampleProvider> learning_example_provider,
                  std::shared_ptr< CustomVocabulary > words_vocabulary,
+                 bool trainProperNames,
                  std::shared_ptr< CustomVocabulary > dep_contexts_vocabulary,
                  std::shared_ptr< CustomVocabulary > assoc_contexts_vocabulary,
                  size_t embedding_dep_size,
@@ -39,6 +42,7 @@ public:
                  size_t negative_count )
   : lep(learning_example_provider)
   , w_vocabulary(words_vocabulary)
+  , proper_names(trainProperNames)
   , dep_ctx_vocabulary(dep_contexts_vocabulary)
   , assoc_ctx_vocabulary(assoc_contexts_vocabulary)
   , layer1_size(embedding_dep_size + embedding_assoc_size)
@@ -77,17 +81,31 @@ public:
     if (table_assoc)
       free(table_assoc);
   }
+  // функция создания весовых матриц нейросети
+  void create_net()
+  {
+    size_t w_vocab_size = w_vocabulary->size();
+    size_t dep_vocab_size = dep_ctx_vocabulary->size();
+    size_t assoc_vocab_size = assoc_ctx_vocabulary->size();
+    long long ap;
+
+    ap = posix_memalign((void **)&syn0, 128, (long long)w_vocab_size * layer1_size * sizeof(float));
+    if (syn0 == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
+
+    ap = posix_memalign((void **)&syn1_dep, 128, (long long)dep_vocab_size * size_dep * sizeof(float));
+    if (syn1_dep == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
+
+    ap = posix_memalign((void **)&syn1_assoc, 128, (long long)assoc_vocab_size * layer1_size * sizeof(float));
+    if (syn1_assoc == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
+  }
   // функция инициализации нейросети
   void init_net()
   {
     size_t w_vocab_size = w_vocabulary->size();
     size_t dep_vocab_size = dep_ctx_vocabulary->size();
     size_t assoc_vocab_size = assoc_ctx_vocabulary->size();
-    long long ap;
     unsigned long long next_random = 1;
 
-    ap = posix_memalign((void **)&syn0, 128, (long long)w_vocab_size * layer1_size * sizeof(float));
-    if (syn0 == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
     for (size_t a = 0; a < w_vocab_size; ++a)
       for (size_t b = 0; b < layer1_size; ++b)
       {
@@ -95,12 +113,8 @@ public:
         syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (float)65536) - 0.5) / layer1_size;
       }
 
-    ap = posix_memalign((void **)&syn1_dep, 128, (long long)dep_vocab_size * size_dep * sizeof(float));
-    if (syn1_dep == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
     std::fill(syn1_dep, syn1_dep+dep_vocab_size*size_dep, 0.0);
 
-    ap = posix_memalign((void **)&syn1_assoc, 128, (long long)assoc_vocab_size * layer1_size * sizeof(float));
-    if (syn1_assoc == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
     std::fill(syn1_assoc, syn1_assoc+assoc_vocab_size*size_assoc, 0.0);
 
     start_learning_tp = std::chrono::steady_clock::now();
@@ -159,29 +173,129 @@ public:
     FILE *fo = fopen(filename.c_str(), "wb");
     fprintf(fo, "%lu %lu\n", w_vocabulary->size(), layer1_size);
     if ( !useTxtFmt )
-      saveEmbeddingsBin_helper(fo, w_vocabulary, syn0);
+      saveEmbeddingsBin_helper(fo, w_vocabulary, syn0, layer1_size);
     else
-      saveEmbeddingsTxt_helper(fo, w_vocabulary, syn0);
+      saveEmbeddingsTxt_helper(fo, w_vocabulary, syn0, layer1_size);
     fclose(fo);
   } // method-end
-  // функция сохранения обоих весовых матриц в файл
-  void backup(const std::string& filename) const
+  // функция добавления эмбеддингов в уже существующую модель
+  void appendEmbeddings(const std::string& filename, bool useTxtFmt = false) const
+  {
+    // загружаем всю модель в память
+    std::ifstream ifs(filename.c_str(), std::ios::binary);
+    if ( !ifs.good() ) { std::cerr << "Append: Model file not found" << std::endl; return; }
+    std::string buf;
+    size_t old_vocab_size, emb_size;
+    ifs >> old_vocab_size;
+    ifs >> emb_size;
+    std::getline(ifs,buf); // считываем конец строки
+    if (emb_size != layer1_size) { std::cerr << "Append: Dimensions fail" << std::endl; return; }
+    std::shared_ptr< CustomVocabulary > old_vocab = std::make_shared<OriginalWord2VecVocabulary>();
+    float *old_matrix;
+    long long ap = posix_memalign((void **)&old_matrix, 128, (long long)old_vocab_size * emb_size * sizeof(float));
+    if (old_matrix == nullptr || ap != 0) {std::cerr << "Append: Memory allocation failed" << std::endl; exit(1);}
+    for (size_t i = 0; i < old_vocab_size; ++i)
+    {
+      std::getline(ifs, buf, ' '); // читаем слово (до пробела)
+      old_vocab->append( buf, 0 );
+      float* eOffset = old_matrix + i*emb_size;
+      if ( !useTxtFmt )
+        ifs.read( reinterpret_cast<char*>( eOffset ), sizeof(float)*emb_size );
+      else
+      {
+        for (size_t j = 0; j < emb_size; ++j)
+          ifs >> eOffset[j];
+      }
+      std::getline(ifs,buf); // считываем конец строки
+    }
+    ifs.close();
+    // сохраняем старую модель, затем текущую
+    FILE *fo = fopen(filename.c_str(), "wb");
+    fprintf(fo, "%lu %lu\n", old_vocab_size + w_vocabulary->size(), emb_size);
+    if ( !useTxtFmt )
+      saveEmbeddingsBin_helper(fo, old_vocab, old_matrix, emb_size);
+    else
+      saveEmbeddingsTxt_helper(fo, old_vocab, old_matrix, emb_size);
+    free_aligned(old_matrix);
+    if ( !useTxtFmt )
+      saveEmbeddingsBin_helper(fo, w_vocabulary, syn0, emb_size);
+    else
+      saveEmbeddingsTxt_helper(fo, w_vocabulary, syn0, emb_size);
+    fclose(fo);
+  } // method-end
+  // функция сохранения весовых матриц в файл
+  void backup(const std::string& filename, bool left = true, bool right= true) const
   {
     FILE *fo = fopen(filename.c_str(), "wb");
-    fprintf(fo, "%lu %lu\n", w_vocabulary->size(), layer1_size);
     // сохраняем весовую матрицу между входным и скрытым слоем
-    saveEmbeddingsBin_helper(fo, w_vocabulary, syn0);
-    // сохраняем весовую матрицу между скрытым и выходным слоем
-    fprintf(fo, "%lu %lu\n", dep_ctx_vocabulary->size(), size_dep);
-    saveEmbeddingsBin_helper(fo, dep_ctx_vocabulary, syn1_dep);
-    fprintf(fo, "%lu %lu\n", assoc_ctx_vocabulary->size(), size_assoc);
-    saveEmbeddingsBin_helper(fo, assoc_ctx_vocabulary, syn1_assoc);
+    if (left)
+    {
+      fprintf(fo, "%lu %lu\n", w_vocabulary->size(), layer1_size);
+      saveEmbeddingsBin_helper(fo, w_vocabulary, syn0, layer1_size);
+    }
+    // сохраняем весовые матрицы между скрытым и выходным слоем
+    if (right)
+    {
+      fprintf(fo, "%lu %lu\n", dep_ctx_vocabulary->size(), size_dep);
+      saveEmbeddingsBin_helper(fo, dep_ctx_vocabulary, syn1_dep, size_dep);
+      fprintf(fo, "%lu %lu\n", assoc_ctx_vocabulary->size(), size_assoc);
+      saveEmbeddingsBin_helper(fo, assoc_ctx_vocabulary, syn1_assoc, size_assoc);
+    }
     fclose(fo);
+  } // method-end
+  // функция восстановления весовых матриц из файла (предполагает, что память уже выделена)
+  bool restore(const std::string& filename, bool left = true, bool right= true)
+  {
+    // открываем файл модели
+    std::ifstream ifs(filename.c_str(), std::ios::binary);
+    if ( !ifs.good() )
+    {
+      std::cerr << "Restore: Backup file not found" << std::endl;
+      return false;
+    }
+    // загружаем матрицу между входным и скрытым слоем
+    if (left)
+    {
+      size_t vocab_size, emb_size;
+      restore__read_sizes(ifs, vocab_size, emb_size);
+      if (vocab_size != w_vocabulary->size() || emb_size != layer1_size)
+      {
+        std::cerr << "Restore: Dimensions fail" << std::endl;
+        return false;
+      }
+      if ( !restore__read_matrix(ifs, w_vocabulary, layer1_size, syn0) )
+        return false;
+    }
+    // загружаем матрицы между скрытым и выходным слоем
+    if (right)
+    {
+      size_t vocab_size, emb_size;
+      restore__read_sizes(ifs, vocab_size, emb_size);
+      if (vocab_size != dep_ctx_vocabulary->size() || emb_size != size_dep)
+      {
+        std::cerr << "Restore: Dimensions fail" << std::endl;
+        return false;
+      }
+      if ( !restore__read_matrix(ifs, dep_ctx_vocabulary, size_dep, syn1_dep) )
+        return false;
+
+      restore__read_sizes(ifs, vocab_size, emb_size);
+      if (vocab_size != assoc_ctx_vocabulary->size() || emb_size != size_assoc)
+      {
+        std::cerr << "Restore: Dimensions fail" << std::endl;
+        return false;
+      }
+      if ( !restore__read_matrix(ifs, assoc_ctx_vocabulary, size_assoc, syn1_assoc) )
+        return false;
+    }
+    start_learning_tp = std::chrono::steady_clock::now();
+    return true;
   } // method-end
 
 private:
   std::shared_ptr< LearningExampleProvider > lep;
   std::shared_ptr< CustomVocabulary > w_vocabulary;
+  bool proper_names;  // признак того, что выполняется обучение векторных представлений для собственных имен
   std::shared_ptr< CustomVocabulary > dep_ctx_vocabulary;
   std::shared_ptr< CustomVocabulary > assoc_ctx_vocabulary;
   // размерность скрытого слоя (она же размерность эмбеддинга)
@@ -274,7 +388,8 @@ private:
         // Propagate errors output -> hidden
         std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
         // Learn weights hidden -> output
-        std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+        if ( !proper_names )
+          std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all samples
       // Learn weights input -> hidden
       std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
@@ -314,7 +429,8 @@ private:
         // Propagate errors output -> hidden
         std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
         // Learn weights hidden -> output
-        std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+        if ( !proper_names )
+          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all samples
       // Learn weights input -> hidden
       std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
@@ -325,26 +441,51 @@ private:
   uint64_t word_count_actual = 0;
   std::chrono::steady_clock::time_point start_learning_tp;
 
-  void saveEmbeddingsBin_helper(FILE *fo, std::shared_ptr< CustomVocabulary > vocabulary, float *weight_matrix) const
+  void saveEmbeddingsBin_helper(FILE *fo, std::shared_ptr< CustomVocabulary > vocabulary, float *weight_matrix, size_t emb_size) const
   {
     for (size_t a = 0; a < vocabulary->size(); ++a)
     {
       fprintf(fo, "%s ", vocabulary->idx_to_data(a).word.c_str());
-      for (size_t b = 0; b < layer1_size; ++b)
-        fwrite(&weight_matrix[a * layer1_size + b], sizeof(float), 1, fo);
+      for (size_t b = 0; b < emb_size; ++b)
+        fwrite(&weight_matrix[a * emb_size + b], sizeof(float), 1, fo);
       fprintf(fo, "\n");
     }
-  }
-  void saveEmbeddingsTxt_helper(FILE *fo, std::shared_ptr< CustomVocabulary > vocabulary, float *weight_matrix) const
+  } // method-end
+  void saveEmbeddingsTxt_helper(FILE *fo, std::shared_ptr< CustomVocabulary > vocabulary, float *weight_matrix, size_t emb_size) const
   {
     for (size_t a = 0; a < vocabulary->size(); ++a)
     {
       fprintf(fo, "%s", vocabulary->idx_to_data(a).word.c_str());
-      for (size_t b = 0; b < layer1_size; ++b)
-        fprintf(fo, " %lf", weight_matrix[a * layer1_size + b]);
+      for (size_t b = 0; b < emb_size; ++b)
+        fprintf(fo, " %lf", weight_matrix[a * emb_size + b]);
       fprintf(fo, "\n");
     }
-  }
+  } // method-end
+  void restore__read_sizes(std::ifstream& ifs, size_t& vocab_size, size_t& emb_size)
+  {
+    std::string buf;
+    ifs >> vocab_size;
+    ifs >> emb_size;
+    std::getline(ifs,buf); // считываем конец строки
+  } // method-end
+  bool restore__read_matrix(std::ifstream& ifs, std::shared_ptr< CustomVocabulary > vocab, size_t emb_size, float *matrix)
+  {
+    std::string buf;
+    size_t vocab_size = vocab->size();
+    for (size_t i = 0; i < vocab_size; ++i)
+    {
+      std::getline(ifs, buf, ' '); // читаем слово (до пробела)
+      if ( vocab->idx_to_data(i).word != buf )
+      {
+        std::cerr << "Restore: Vocabulary divergence" << std::endl;
+        return false;
+      }
+      float* eOffset = matrix + i*emb_size;
+      ifs.read( reinterpret_cast<char*>( eOffset ), sizeof(float)*emb_size );
+      std::getline(ifs,buf); // считываем конец строки
+    }
+    return true;
+  } // method-end
 }; // class-decl-end
 
 

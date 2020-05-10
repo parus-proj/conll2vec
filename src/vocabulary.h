@@ -58,6 +58,10 @@ public:
                             static_cast<uint64_t>(0),
                             [](const uint64_t& sum, const VocabularyData& r) -> uint64_t { return sum + r.cn; } );
   }
+  virtual void append(const std::string& word, uint64_t cn)
+  {
+    vocabulary.emplace_back(word, cn);
+  }
 protected:
   std::vector<VocabularyData> vocabulary;
 };

@@ -18,6 +18,7 @@ public:
   , words_count(0)
   , emb_size(0)
   , cmp_dims(cdAll)
+  , cmp_mode(cmWord)
   {
   }
   bool load_model(const std::string& model_fn, bool useTxtFmt = false)
@@ -73,6 +74,15 @@ public:
   } // method-end
   void run()
   {
+    // выводим подсказку
+    std::cout << std::endl << "COMMANDS: " << std::endl
+              << "  EXIT -- terminate this program" << std::endl
+              << "  DIM=ALL -- use all dimensions to calculate similarity" << std::endl
+              << "  DIM=DEP -- use only 'dependency' dimensions" << std::endl
+              << "  DIM=ASSOC -- use only 'associative' dimensions" << std::endl
+              << "  MOD=WORD -- find most similar words for selected one" << std::endl
+              << "  MOD=PAIR -- estimate similarity for pair of words" << std::endl
+              << "Initially: DIM=ALL, MOD=WORD" << std::endl << std::endl;
     // в цикле считываем слова и ищем для них ближайшие (по косинусной мере) в векторной модели
     while (true)
     {
@@ -82,44 +92,15 @@ public:
       std::cout.flush();
       std::getline(std::cin, word);
       if (word == "EXIT") break;
-      if (word == "ALL")   { cmp_dims = cdAll; continue; }
-      if (word == "DEP")   { cmp_dims = cdDepOnly; continue; }
-      if (word == "ASSOC") { cmp_dims = cdAssocOnly; continue; }
-      // ищем слово в словаре (проверим, что оно есть и получим индекс)
-      size_t widx = get_word_idx(word);
-      if (widx == words_count)
+      if (word == "DIM=ALL")   { cmp_dims = cdAll; continue; }
+      if (word == "DIM=DEP")   { cmp_dims = cdDepOnly; continue; }
+      if (word == "DIM=ASSOC") { cmp_dims = cdAssocOnly; continue; }
+      if (word == "MOD=WORD")  { cmp_mode = cmWord; continue; }
+      if (word == "MOD=PAIR")  { cmp_mode = cmPair; continue; }
+      switch ( cmp_mode )
       {
-        std::cout << "  out of dictionary word..." << std::endl;
-        continue;
-      }
-      // ищем n ближайших к указанному слову
-      float* wiOffset = embeddings + widx*emb_size;
-      std::multimap<float, std::string, std::greater<float>> best;
-      for (size_t i = 0; i < words_count; ++i)
-      {
-        if (i == widx) continue;
-        float* iOffset = embeddings + i*emb_size;
-        float sim = cosine_measure(iOffset, wiOffset);
-        if (best.size() < 40)
-          best.insert( std::make_pair(sim, vocab[i]) );
-        else
-        {
-          auto minIt = std::prev( best.end() );
-          if (sim > minIt->first)
-          {
-            best.erase(minIt);
-            best.insert( std::make_pair(sim, vocab[i]) );
-          }
-        }
-      }
-      // выводим результат поиска
-      std::cout << "                                       word | cosine similarity" << std::endl
-                << "  -------------------------------------------------------------" << std::endl;
-      for (auto& w : best)
-      {
-        size_t word_len = To_UTF32(w.second).length();
-        std::string alignedWord = (word_len >= 41) ? w.second : (std::string(41-word_len, ' ') + w.second);
-        std::cout << "  " << alignedWord << "   " << w.first << std::endl;
+      case cmWord: word_mode_helper(word); break;
+      case cmPair: pair_mode_helper(word); break;
       }
     } // infinite loop
   } // method-end
@@ -133,13 +114,19 @@ private:
   // параметры модели
   size_t words_count;
   size_t emb_size;
-  // режим сравнения (какие измерения используются)
+  // измерения для сравнения
   enum CmpDims
   {
     cdAll,
     cdDepOnly,
     cdAssocOnly
   } cmp_dims;
+  // режим сравнения
+  enum CmpMode
+  {
+    cmWord,     // вывод соседей указанного слова
+    cmPair      // оценка сходства между парой слов
+  } cmp_mode;
 
   size_t get_word_idx(const std::string& word)
   {
@@ -172,6 +159,73 @@ private:
                        break;
     }
     return result;
+  }
+
+  void word_mode_helper(const std::string& word)
+  {
+    // ищем слово в словаре (проверим, что оно есть и получим индекс)
+    size_t widx = get_word_idx(word);
+    if (widx == words_count)
+    {
+      std::cout << "  out of vocabulary word..." << std::endl;
+      return;
+    }
+    // ищем n ближайших к указанному слову
+    float* wiOffset = embeddings + widx*emb_size;
+    std::multimap<float, std::string, std::greater<float>> best;
+    for (size_t i = 0; i < words_count; ++i)
+    {
+      if (i == widx) continue;
+      float* iOffset = embeddings + i*emb_size;
+      float sim = cosine_measure(iOffset, wiOffset);
+      if (best.size() < 40)
+        best.insert( std::make_pair(sim, vocab[i]) );
+      else
+      {
+        auto minIt = std::prev( best.end() );
+        if (sim > minIt->first)
+        {
+          best.erase(minIt);
+          best.insert( std::make_pair(sim, vocab[i]) );
+        }
+      }
+    }
+    // выводим результат поиска
+    std::cout << "                                       word | cosine similarity" << std::endl
+              << "  -------------------------------------------------------------" << std::endl;
+    for (auto& w : best)
+    {
+      size_t word_len = To_UTF32(w.second).length();
+      std::string alignedWord = (word_len >= 41) ? w.second : (std::string(41-word_len, ' ') + w.second);
+      std::cout << "  " << alignedWord << "   " << w.first << std::endl;
+    }
+  } // method-end
+
+  void pair_mode_helper(const std::string& word1)
+  {
+    // запрашиваем у пользователя второе слово
+    std::string word2;
+    std::cout << "Enter second word: ";
+    std::cout.flush();
+    std::getline(std::cin, word2);
+    // ищем слова в словаре
+    size_t widx1 = get_word_idx(word1);
+    if (widx1 == words_count)
+    {
+      std::cout << "  first word is out of vocabulary..." << std::endl;
+      return;
+    }
+    size_t widx2 = get_word_idx(word2);
+    if (widx2 == words_count)
+    {
+      std::cout << "  second word is out of vocabulary..." << std::endl;
+      return;
+    }
+    // оцениваем и выводим меру близости
+    float* w1Offset = embeddings + widx1*emb_size;
+    float* w2Offset = embeddings + widx2*emb_size;
+    float sim = cosine_measure(w1Offset, w2Offset);
+    std::cout << "cosine similarity = " << sim << std::endl;
   }
 };
 

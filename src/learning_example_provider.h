@@ -169,7 +169,7 @@ public:
           else
             td.assoc_idx = INVALID_IDX;
           try {
-            td.parent_token_no = std::stoi(rec[6]);  // todo: реализовать быструю конверсию
+            td.parent_token_no = std::stoi(rec[6]);
           } catch (...) {
             td.parent_token_no = 0; // если конвертирование неудачно, считаем, что нет родителя
           }
@@ -256,7 +256,16 @@ private:
     if ( !ifs.good() )
         throw std::runtime_error(std::strerror(errno));
     return ifs.tellg();
-  }
+  } // method-end
+//  // быстрый конвертер строки в число (без какого-либо контроля корректности)
+//  unsigned int string2uint_ultrafast(const std::string& value)
+//  {
+//    const char* str = value.c_str();
+//    unsigned int val = 0;
+//    while( *str )
+//      val = val*10 + (*str++ - '0');
+//    return val;
+//  } // method-end
 };
 
 

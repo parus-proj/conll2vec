@@ -55,9 +55,9 @@ int main(int argc, char **argv)
       std::cerr << "Trainset is not defined." << std::endl;
       return -1;
     }
-    if ( !cmdLineParams.isDefined("-model") && !cmdLineParams.isDefined("-backup") )
+    if ( !cmdLineParams.isDefined("-model") )
     {
-      std::cerr << "-model or -backup parameter must be defined." << std::endl;
+      std::cerr << "-model parameter must be defined." << std::endl;
       return -1;
     }
     if ( !cmdLineParams.isDefined("-vocab_m") && !cmdLineParams.isDefined("-vocab_p") )
@@ -129,7 +129,8 @@ int main(int argc, char **argv)
                                                                                                 );
 
     // создаем объект, организующий обучение
-    Trainer trainer( lep, (needLoadMainVocab ? v_main : v_proper ) , v_dep_ctx, v_assoc_ctx,
+    Trainer trainer( lep, (needLoadMainVocab ? v_main : v_proper ), needLoadProperVocab,
+                     v_dep_ctx, v_assoc_ctx,
                      cmdLineParams.getAsInt("-size_d"),
                      cmdLineParams.getAsInt("-size_a"),
                      cmdLineParams.getAsInt("-iter"),
@@ -137,7 +138,17 @@ int main(int argc, char **argv)
                      cmdLineParams.getAsFloat("-negative"));
 
     // инициализация нейросети
-    trainer.init_net();
+    if (needLoadMainVocab)
+    {
+      trainer.create_net();
+      trainer.init_net();
+    }
+    else
+    {
+      trainer.create_net();
+      trainer.init_net();  // инициализация левой матрицы случайными значениями (для словаря собственных имен)
+      trainer.restore( cmdLineParams.getAsString("-restore"), false, true );
+    }
 
     // запускаем потоки, осуществляющие обучение
     size_t threads_count = cmdLineParams.getAsInt("-threads");
@@ -149,10 +160,18 @@ int main(int argc, char **argv)
       threads_vec[i].join();
 
     // сохраняем вычисленные вектора в файл
-    if (cmdLineParams.isDefined("-model"))
-      trainer.saveEmbeddings( cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt") );
-//    if (cmdLineParams.isDefined("-backup"))
-//      trainer.backup( cmdLineParams.getAsString("-backup") );
+    if (needLoadMainVocab)
+    {
+      if (cmdLineParams.isDefined("-model"))
+        trainer.saveEmbeddings( cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt") );
+      if (cmdLineParams.isDefined("-backup"))
+        trainer.backup( cmdLineParams.getAsString("-backup"), false, true );
+    }
+    else
+    {
+      if (cmdLineParams.isDefined("-model"))
+        trainer.appendEmbeddings( cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt") );
+    }
 
     return 0;
   } // if task == train

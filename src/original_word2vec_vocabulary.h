@@ -64,6 +64,12 @@ public:
     else
       return it->second;
   }
+  // добавление записи в словарь
+  void append(const std::string& word, uint64_t cn)
+  {
+    vocabulary_hash[word] = vocabulary.size();
+    CustomVocabulary::append(word, cn);
+  }
 private:
   // хэш-отображение слов в их индексы в словаре (для быстрого поиска)
   std::unordered_map<std::string, size_t> vocabulary_hash;
