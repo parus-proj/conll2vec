@@ -58,9 +58,16 @@ public:
                             static_cast<uint64_t>(0),
                             [](const uint64_t& sum, const VocabularyData& r) -> uint64_t { return sum + r.cn; } );
   }
+  // добавление записи в словарь
   virtual void append(const std::string& word, uint64_t cn)
   {
     vocabulary.emplace_back(word, cn);
+  }
+  // приписывание заданного суффикса всем словам словаря
+  void suffixize(const std::string& suffix)
+  {
+    for (auto& r : vocabulary)
+      r.word.append(suffix);
   }
 protected:
   std::vector<VocabularyData> vocabulary;

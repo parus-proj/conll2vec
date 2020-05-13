@@ -12,6 +12,7 @@ public:
     params_ = {
         {"-task",         {"Values: fit, vocab, train, punct, sim", std::nullopt, std::nullopt}},
         {"-model",        {"The model <file>", std::nullopt, std::nullopt}},
+        {"-model_fmt",    {"The model format (bin|txt)", "bin", std::nullopt}},
         {"-train",        {"Training data <file>.conll", std::nullopt, std::nullopt}},
         {"-vocab_m",      {"Main vocabulary <file>", std::nullopt, std::nullopt}},
         {"-vocab_p",      {"Proper names vocabulary <file>", std::nullopt, std::nullopt}},
@@ -32,7 +33,7 @@ public:
         {"-alpha",        {"Set the starting learning rate", "0.025", std::nullopt}},
         {"-iter",         {"Run more training iterations", "3", std::nullopt}},
         {"-threads",      {"Use <int> threads", "8", std::nullopt}},
-        {"-model_fmt",    {"The model format (bin|txt)", "bin", std::nullopt}}
+        {"-fit_result",   {"<file>.conll with fit results", std::nullopt, std::nullopt}}
     };
   }
 };

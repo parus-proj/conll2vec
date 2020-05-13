@@ -3,6 +3,7 @@
 
 #include "conll_reader.h"
 
+#include <memory>
 #include <vector>
 #include <optional>
 #include <cstring>       // for std::strerror

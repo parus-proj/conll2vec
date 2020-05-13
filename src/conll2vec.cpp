@@ -1,14 +1,16 @@
-#include <memory>
-#include <string>
-#include <thread>
-
 #include "command_line_parameters_defs.h"
 #include "simple_profiler.h"
+#include "fit_parus.h"
 #include "vocabs_builder.h"
 #include "original_word2vec_vocabulary.h"
 #include "learning_example_provider.h"
 #include "trainer.h"
 #include "sim_estimator.h"
+
+#include <memory>
+#include <string>
+#include <iostream>
+#include <thread>
 
 
 
@@ -32,6 +34,14 @@ int main(int argc, char **argv)
     return -1;
   }
   auto&& task = cmdLineParams.getAsString("-task");
+
+  // если поставлена задача преобразования conll-файла
+  if (task == "fit")
+  {
+    FitParus fitter;
+    fitter.run( cmdLineParams.getAsString("-train"), cmdLineParams.getAsString("-fit_result") );
+    return 0;
+  }
 
   // если поставлена задача построения словарей
   if (task == "vocab")
@@ -169,6 +179,7 @@ int main(int argc, char **argv)
     }
     else
     {
+      v_proper->suffixize("_PN");
       if (cmdLineParams.isDefined("-model"))
         trainer.appendEmbeddings( cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt") );
     }

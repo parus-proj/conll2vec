@@ -48,7 +48,7 @@ public:
       if ( delimiters_count != 9 ) // должно быть 10 полей, т.е. 9 разделителей
         status = false;
       result.emplace_back(delimiters_count+1);
-      auto&& last_token = result.back();
+      auto& last_token = result.back();
       size_t fieldStartPos = 0;
       size_t idx = 0;
       while (true)

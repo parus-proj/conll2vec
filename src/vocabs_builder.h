@@ -3,6 +3,7 @@
 
 #include "conll_reader.h"
 
+#include <memory>
 #include <string>
 #include <cstring>       // for std::strerror
 #include <vector>
@@ -122,11 +123,13 @@ private:
   }
   void process_sentence_main(VocabMappingPtr vocab, const SentenceMatrix& sentence, size_t column)
   {
-    for (auto& token : sentence)
+    for ( auto& token : sentence )
     {
       if (token[7] == "PUNC")  // знаки препинания в основной словарь не включаем (они обрабатываются особо)
         continue;
       if ( isProperName(token[5]) )
+        continue;
+      if ( token[column] == "_" ) // символ отсутствия значения в conll
         continue;
       auto&& word = token[column];
       auto it = vocab->find( word );
@@ -142,6 +145,8 @@ private:
     {
       if ( !isProperName(token[5]) )
         continue;
+      if ( token[column] == "_" ) // символ отсутствия значения в conll
+        continue;
       auto&& word = token[column];
       auto it = vocab->find( word );
       if (it == vocab->end())
@@ -156,6 +161,8 @@ private:
     {
       if (token[7] == "PUNC")  // знаки препинания в словарь синтаксических контекстов не включаем
         continue;
+      if ( token[column] == "_" ) // символ отсутствия значения в conll
+        continue;
       auto&& word = token[column];
       auto it = vocab->find( word );
       if (it == vocab->end())
@@ -169,6 +176,8 @@ private:
     for (auto& token : sentence)
     {
       if (token[7] == "PUNC")  // знаки препинания в словарь контекстов для моделирования ассоциаций не включаем
+        continue;
+      if ( token[column] == "_" ) // символ отсутствия значения в conll
         continue;
       auto&& word = token[column];
       auto it = vocab->find( word );

@@ -1,12 +1,13 @@
 #ifndef SIM_ESTIMATOR_H_
 #define SIM_ESTIMATOR_H_
 
+#include "str_conv.h"
+
 #include <string>
 #include <vector>
 #include <map>
 #include <cmath>
 #include <numeric>
-#include <codecvt>
 
 class SimilarityEstimator
 {
@@ -137,12 +138,6 @@ private:
     return widx;
   } // method-end
 
-  std::u32string To_UTF32(const std::string &s)
-  {
-      std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> conv;
-      return conv.from_bytes(s);
-  }
-
   float cosine_measure(float* w1_Offset, float* w2_Offset)
   {
     float result = 0;
@@ -195,7 +190,7 @@ private:
               << "  -------------------------------------------------------------" << std::endl;
     for (auto& w : best)
     {
-      size_t word_len = To_UTF32(w.second).length();
+      size_t word_len = StrConv::To_UTF32(w.second).length();
       std::string alignedWord = (word_len >= 41) ? w.second : (std::string(41-word_len, ' ') + w.second);
       std::cout << "  " << alignedWord << "   " << w.first << std::endl;
     }
