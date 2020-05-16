@@ -96,6 +96,16 @@ private:
     process_unknonw(data);
     // обобщение токенов, содержащих числовые величины
     process_nums(data);
+    // фильтрация синтаксических отношений, не заслуживающих внимания
+    reltypes_filter(data);
+    // поглощение предлогов
+    process_prepositions(data);
+    // перешагивание через глагол-связку (конструкции с присвязочным отношением)
+    process_linking(data);
+    // обработка аналитических конструкций (перешагивание через глагол-связку)
+    process_analitic(data);
+    // обработка конструкций с пассивным залогом
+    process_passive(data);
   } // method-end
   // исправление типа синтаксической связи у знаков пунктуации
   void process_punc(u32SentenceMatrix& data)
@@ -163,7 +173,125 @@ private:
       }
     } // for all tokens in sentence
   } // method-end
-};
+  void reltypes_filter(u32SentenceMatrix& data)
+  {
+    std::set<std::u32string> permissible_reltypes = {
+        U"предик", U"агент", U"квазиагент", U"дат-субъект",
+        U"присвяз", U"аналит", U"пасс-анал",
+        U"1-компл", U"2-компл", U"3-компл", U"4-компл", U"неакт-компл",
+        // U"сочин", U"соч-союзн", U"кратн",
+        U"предл",
+        U"атриб", U"опред", U"оп-опред",
+        U"обст", U"обст-тавт", U"суб-обст", U"об-обст", U"длительн", U"кратно-длительн", U"дистанц",
+        U"аппоз", U"количест",
+        U"PUNC"
+      };
+    for (auto& t : data)
+    {
+      if ( permissible_reltypes.find(t[7]) == permissible_reltypes.end() )
+      {
+        t[6] = U"0";
+        t[7] = U"_";
+      }
+    }
+  } // method-end
+  // поглощение предлогов
+  void process_prepositions(u32SentenceMatrix& data)
+  {
+    for (auto& t : data)
+    {
+      if ( t[7] == U"предл" )
+      {
+        size_t prepos_token_no = std::stoi( StrConv::To_UTF8(t[6]) );
+        if ( prepos_token_no < 1 || prepos_token_no > data.size() )
+          continue;
+        auto& prepos_token = data[ prepos_token_no - 1  ];
+        t[6] = prepos_token[6];
+        t[7] = prepos_token[7];
+        prepos_token[6] = U"0";
+        prepos_token[7] = U"_";
+      }
+    }
+  } // method-end
+  // перешагивание через глагол-связку (конструкции с присвязочным отношением к именной части сказуемого или адъективу)
+  void process_linking(u32SentenceMatrix& data)
+  {
+    for (auto& t : data)
+    {
+      if ( t[7] == U"присвяз" )
+      {
+        size_t predicate_token_no = find_child(data, t[6], U"предик");
+        if ( predicate_token_no == 0 )
+          continue;
+        auto& predicate_token = data[ predicate_token_no - 1 ];
+        if ( t[5].length() > 0 && (t[5][0] == U'N' || t[5][0] == U'A') && predicate_token[5].length() > 0 && predicate_token[5][0] == U'N' )
+          predicate_token[6] = t[0];
+        // t[6] = U"0";
+        // t[7] = U"_";
+      }
+    }
+  } // method-end
+  // обработка аналитических конструкций (перешагивание через глагол-связку)
+  void process_analitic(u32SentenceMatrix& data)
+  {
+    for (auto& t : data)
+    {
+      if ( t[7] == U"аналит" && t[2] != U"бы" && t[2] != U"б" )
+      {
+        // всех потомков глагола-связки перевесим на содержательный глагол
+        for (auto& ti : data)
+        {
+          if ( ti[6] == t[6] && ti[0] != t[0] && ti[7] != U"присвяз" )
+            ti[6] = t[0];
+        }
+        //t[6] = U"0";
+        //t[7] = U"_";
+      }
+    }
+  } // method-end
+  // обработка конструкций с пассивным залогом
+  void process_passive(u32SentenceMatrix& data)
+  {
+    for (auto& t : data)
+    {
+      if ( t[7] == U"пасс-анал" ) // преобразование пассивно-аналитической конструкции
+      {
+        // всех потомков глагола-связки перевесим на содержательный глагол
+        for (auto& ti : data)
+        {
+          if ( ti[6] == t[6] && ti[0] != t[0] && ti[7] != U"присвяз" )
+          {
+            ti[6] = t[0];
+            if ( ti[7] == U"предик" )
+              ti[7] = U"предик-пасс";
+          }
+        }
+        //t[6] = U"0";
+        //t[7] = U"_";
+      }
+      if ( t[7] == U"предик" )
+      {
+        size_t head_token_no = std::stoi( StrConv::To_UTF8(t[6]) );
+        if ( head_token_no < 1 || head_token_no > data.size() )
+          continue;
+        auto& head_token = data[ head_token_no - 1  ];
+        auto& head_msd = head_token[5];
+        if ( head_msd.length() >= 8 && head_msd[0] == U'V' && head_msd[2] == U'p' && head_msd[7] == U'p' ) // причастие в пассивном залоге
+          t[7] = U"предик-пасс";
+      }
+    } // for all tokens in sentence
+  } // method-end
+  // поиск первого потомка с заданным типом отношения к родителю
+  size_t find_child(const u32SentenceMatrix& data, const std::u32string& node_no, const std::u32string& rel_type)
+  {
+    for (auto& t : data)
+    {
+      if ( t[6] == node_no && t[7] == rel_type )
+        return std::stoi( StrConv::To_UTF8(t[0]) );
+    }
+    return 0;
+  } // method-end
+}; // class-decl-end
 
 
 #endif /* FIT_PARUS_H_ */

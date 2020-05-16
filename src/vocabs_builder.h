@@ -143,6 +143,8 @@ private:
   {
     for (auto& token : sentence)
     {
+      if (token[7] == "PUNC")  // знаки препинания в словарь собственных имен не включаем
+        continue;
       if ( !isProperName(token[5]) )
         continue;
       if ( token[column] == "_" ) // символ отсутствия значения в conll
