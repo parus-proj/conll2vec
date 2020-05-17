@@ -24,7 +24,11 @@ public:
   void run(const std::string& input_fn, const std::string& output_fn)
   {
     // открываем файл с тренировочными данными
-    FILE *conll_file = fopen(input_fn.c_str(), "rb");
+    FILE *conll_file = nullptr;
+    if ( input_fn == "stdin" )
+      conll_file = stdin;
+    else
+      conll_file = fopen(input_fn.c_str(), "r");
     if ( conll_file == nullptr )
     {
       std::cerr << "Train-file open: error: " << std::strerror(errno) << std::endl;
@@ -72,7 +76,8 @@ public:
       // сохраняем результат
       save_sentence(ofs, sentence_matrix);
     }
-    fclose(conll_file);
+    if ( input_fn != "stdin" )
+      fclose(conll_file);
   } // method-end
 private:
   // номер conll-колонки, куда записывается результат оптимизации синтаксического контекста

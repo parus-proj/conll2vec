@@ -16,9 +16,7 @@ make
 
 echo ""
 echo "TRAINSET EXTRACTION AND FITTING"
-gzip --decompress --stdout ./data/parus_first_10m_lines.conll.zip > trainset.conll
-./conll2vec -task fit -train trainset.conll -fit_result $TRAIN_FN
-rm trainset.conll
+gzip --decompress --stdout ./data/parus_first_10m_lines.conll.zip | ./conll2vec -task fit -fit_input stdin -train $TRAIN_FN
 
 echo ""
 echo "BUILDING VOCABULARIES"

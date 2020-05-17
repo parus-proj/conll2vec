@@ -39,7 +39,7 @@ int main(int argc, char **argv)
   if (task == "fit")
   {
     FitParus fitter;
-    fitter.run( cmdLineParams.getAsString("-train"), cmdLineParams.getAsString("-fit_result") );
+    fitter.run( cmdLineParams.getAsString("-fit_input"), cmdLineParams.getAsString("-train") );
     return 0;
   }
 

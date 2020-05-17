@@ -34,7 +34,7 @@ public:
         {"-alpha",        {"Set the starting learning rate", "0.025", std::nullopt}},
         {"-iter",         {"Run more training iterations", "3", std::nullopt}},
         {"-threads",      {"Use <int> threads", "8", std::nullopt}},
-        {"-fit_result",   {"<file>.conll with fit results", std::nullopt, std::nullopt}}
+        {"-fit_input",    {"<file>.conll to fit (or stdin)", std::nullopt, std::nullopt}}
     };
   }
 };
