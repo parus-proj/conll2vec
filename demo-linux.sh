@@ -13,6 +13,7 @@ THREADS=8
 
 echo "MAKING BINARIES"
 make
+cp ./data/stopwords.assoc ./
 
 echo ""
 echo "TRAINSET EXTRACTION AND FITTING"
