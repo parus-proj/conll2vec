@@ -18,16 +18,6 @@ struct LearningExample
 };
 
 
-// представление токена предложения через индексы слов в разных словарях
-struct TokenData
-{
-  size_t word_idx;
-  size_t dep_idx;
-  size_t assoc_idx;
-  size_t parent_token_no;
-  std::vector<size_t> deps;
-};
-
 // информация, описывающая рабочий контекст одного потока управления (thread)
 struct ThreadEnvironment
 {
@@ -36,13 +26,15 @@ struct ThreadEnvironment
   int position_in_sentence;                            // текущая позиция в предложении
   unsigned long long next_random;                      // поле для вычисления случайных величин
   unsigned long long words_count;                      // количество прочитанных словарных слов
+  std::vector< std::vector<std::string> > sentence_matrix; // conll-матрица для предложения
   ThreadEnvironment()
   : fi(nullptr)
   , position_in_sentence(-1)
   , next_random(0)
   , words_count(0)
   {
-    sentence.reserve(5000);
+    sentence.reserve(1000);
+    sentence_matrix.reserve(1000);
   }
   inline void update_random()
   {
@@ -61,7 +53,7 @@ public:
   LearningExampleProvider(const std::string& trainFilename, size_t threadsCount,
                           std::shared_ptr< OriginalWord2VecVocabulary> wordsVocabulary,
                           std::shared_ptr< OriginalWord2VecVocabulary> depCtxVocabulary, std::shared_ptr< OriginalWord2VecVocabulary> assocCtxVocabulary,
-                          size_t embColumn, size_t depColumn)
+                          size_t embColumn, size_t depColumn, bool useDeprel)
   : threads_count(threadsCount)
   , train_filename(trainFilename)
   , train_file_size(0)
@@ -71,6 +63,7 @@ public:
   , assoc_ctx_vocabulary(assocCtxVocabulary)
   , emb_column(embColumn)
   , dep_column(depColumn)
+  , use_deprel(useDeprel)
   {
     thread_environment.resize(threads_count);
     for (size_t i = 0; i < threads_count; ++i)
@@ -137,75 +130,71 @@ public:
         return std::nullopt;
       while (true)
       {
-        std::vector< std::vector<std::string> > sentence_matrix; // todo: можно вынести в t_environment, а здесь делать только clear (для оптимизации)
-        sentence_matrix.reserve(200);
+        auto& sentence_matrix = t_environment.sentence_matrix;
+        sentence_matrix.clear();
         bool succ = ConllReader::read_sentence(t_environment.fi, sentence_matrix);
         if ( feof(t_environment.fi) ) // не настал ли конец эпохи?
           return std::nullopt;
         if ( !succ )
           continue;
+        auto sm_size = sentence_matrix.size();
+        if (sm_size == 0)
+          continue;
         // проконтролируем, что номер первого токена равен единице
-        if (sentence_matrix.size() > 0)
-        {
-          try {
-            int tn = std::stoi( sentence_matrix[0][0] );
-            if (tn != 1) continue;
-          } catch (...) {
-            continue;
-          }
+        try {
+          int tn = std::stoi( sentence_matrix[0][0] );
+          if (tn != 1) continue;
+        } catch (...) {
+          continue;
         }
-        // конвертируем conll-таблицу в более удобную структуру
+        // конвертируем conll-таблицу в более удобные структуры
         const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
-        std::vector< TokenData > sentence_idxs;
-        for (auto& rec : sentence_matrix)
-        {
-          TokenData td;
-          td.word_idx = words_vocabulary->word_to_idx(rec[emb_column]);
-          if ( dep_ctx_vocabulary )
-            td.dep_idx = dep_ctx_vocabulary->word_to_idx(rec[dep_column]);
-          else
-            td.dep_idx = INVALID_IDX;
-          if ( assoc_ctx_vocabulary )
-            td.assoc_idx = assoc_ctx_vocabulary->word_to_idx(rec[2]);       // lemma column
-          else
-            td.assoc_idx = INVALID_IDX;
-          try {
-            td.parent_token_no = std::stoi(rec[6]);
-          } catch (...) {
-            td.parent_token_no = 0; // если конвертирование неудачно, считаем, что нет родителя
-          }
-          sentence_idxs.push_back(td);
-        }
+        std::vector< std::vector<size_t> > deps( sm_size );  // хранилище синатксических контекстов для каждого токена
+        std::set<size_t> associations; // хранилище ассоциативных контекстов для всего предложения
         if ( dep_ctx_vocabulary )
         {
-          for (size_t i = 0; i < sentence_idxs.size(); ++i)
+          for (size_t i = 0; i < sm_size; ++i)
           {
-            if ( sentence_idxs[i].parent_token_no == 0 ) continue;
-            if ( sentence_idxs[i].parent_token_no > sentence_idxs.size() ) continue;
-            auto& parent = sentence_idxs[ sentence_idxs[i].parent_token_no - 1 ];
-            if ( parent.dep_idx != INVALID_IDX )
-              sentence_idxs[i].deps.push_back( parent.dep_idx );
-            if ( sentence_idxs[i].dep_idx != INVALID_IDX )
-              parent.deps.push_back( sentence_idxs[i].dep_idx );
+            auto& token = sentence_matrix[i];
+            size_t parent_token_no = 0;
+            try {
+              parent_token_no = std::stoi(token[6]);
+            } catch (...) {
+              parent_token_no = 0; // если конвертирование неудачно, считаем, что нет родителя
+            }
+            if ( parent_token_no < 1 || parent_token_no > sm_size ) continue;
+
+            // рассматриваем контекст с точки зрения родителя в синтаксической связи
+            auto ctx__from_head_viewpoint = ( use_deprel ? token[dep_column] + "<" + token[7] : token[dep_column] );
+            auto ctx__fhvp_idx = dep_ctx_vocabulary->word_to_idx( ctx__from_head_viewpoint );
+            if ( ctx__fhvp_idx != INVALID_IDX )
+              deps[ parent_token_no - 1 ].push_back( ctx__fhvp_idx );
+            // рассматриваем контекст с точки зрения потомка в синтаксической связи
+            auto& parent = sentence_matrix[ parent_token_no - 1 ];
+            auto ctx__from_child_viewpoint = (use_deprel ? parent[dep_column] + ">" + token[7] : parent[dep_column] );
+            auto ctx__fcvp_idx = dep_ctx_vocabulary->word_to_idx( ctx__from_child_viewpoint );
+            if ( ctx__fcvp_idx != INVALID_IDX )
+              deps[ i ].push_back( ctx__fcvp_idx );
           }
         }
-        std::set<size_t> associations;
         if ( assoc_ctx_vocabulary )
         {
-          for (auto& rec : sentence_idxs)
+          for (auto& rec : sentence_matrix)
           {
-            if ( rec.assoc_idx != INVALID_IDX )
-              associations.insert(rec.assoc_idx);
+            size_t assoc_idx = assoc_ctx_vocabulary->word_to_idx(rec[2]);       // lemma column
+            if ( assoc_idx != INVALID_IDX )
+              associations.insert(assoc_idx);
           }
         }
         // конвертируем в структуру для итерирования (фильтрация несловарных)
-        for (auto& rec : sentence_idxs)
+        for (size_t i = 0; i < sm_size; ++i)
         {
-          if ( rec.word_idx != INVALID_IDX )
+          auto word_idx = words_vocabulary->word_to_idx(sentence_matrix[i][emb_column]);
+          if ( word_idx != INVALID_IDX )
           {
             LearningExample le;
-            le.word = rec.word_idx;
-            le.dep_context = rec.deps;
+            le.word = word_idx;
+            le.dep_context = deps[i];
             std::copy(associations.begin(), associations.end(), std::back_inserter(le.assoc_context));   // текущее слово считаем себе ассоциативным
             t_environment.sentence.push_back(le);
           }
@@ -248,6 +237,8 @@ private:
   // номера колонок в conll, откуда считывать данные
   size_t emb_column;
   size_t dep_column;
+  // следует ли задействовать тип и направление синтаксической связи в определении синтаксического контекста
+  bool use_deprel;
 
   // получение размера файла
   uint64_t get_file_size(const std::string& filename)

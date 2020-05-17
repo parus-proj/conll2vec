@@ -52,7 +52,8 @@ int main(int argc, char **argv)
                                  cmdLineParams.getAsString("-vocab_d"), cmdLineParams.getAsString("-vocab_a"),
                                  cmdLineParams.getAsInt("-min-count_m"), cmdLineParams.getAsInt("-min-count_p"),
                                  cmdLineParams.getAsInt("-min-count_d"), cmdLineParams.getAsInt("-min-count_a"),
-                                 cmdLineParams.getAsInt("-col_emb") - 1, cmdLineParams.getAsInt("-col_ctx_d") - 1
+                                 cmdLineParams.getAsInt("-col_emb") - 1, cmdLineParams.getAsInt("-col_ctx_d") - 1,
+                                 (cmdLineParams.getAsInt("-use_deprel") == 1)
                                );
     return ( succ ? 0 : -1 );
   }
@@ -135,7 +136,8 @@ int main(int argc, char **argv)
                                                                                                   (needLoadMainVocab ? v_main : v_proper ),
                                                                                                   v_dep_ctx, v_assoc_ctx,
                                                                                                   cmdLineParams.getAsInt("-col_emb") - 1,
-                                                                                                  cmdLineParams.getAsInt("-col_ctx_d") - 1
+                                                                                                  cmdLineParams.getAsInt("-col_ctx_d") - 1,
+                                                                                                  (cmdLineParams.getAsInt("-use_deprel") == 1)
                                                                                                 );
 
     // создаем объект, организующий обучение

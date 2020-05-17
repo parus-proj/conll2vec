@@ -23,7 +23,8 @@ public:
   bool build_vocabs(const std::string& conll_fn, const std::string& voc_m_fn, const std::string& voc_p_fn,
                     const std::string& voc_d_fn, const std::string& voc_a_fn,
                     size_t limit_m, size_t limit_p, size_t limit_d, size_t limit_a,
-                    size_t embeddings_vocabulary_column, size_t ctx_vocabulary_column_d)
+                    size_t embeddings_vocabulary_column, size_t ctx_vocabulary_column_d,
+                    bool use_deprel)
   {
     // открываем файл с тренировочными данными
     FILE *conll_file = fopen(conll_fn.c_str(), "rb");
@@ -69,7 +70,7 @@ public:
         continue;
       process_sentence_main(vocab_main, sentence_matrix, embeddings_vocabulary_column);
       process_sentence_proper(vocab_proper, sentence_matrix, embeddings_vocabulary_column);
-      process_sentence_dep_ctx(vocab_dep, sentence_matrix, ctx_vocabulary_column_d);
+      process_sentence_dep_ctx(vocab_dep, sentence_matrix, ctx_vocabulary_column_d, use_deprel);
       process_sentence_assoc_ctx(vocab_assoc, sentence_matrix, 2); // всегда строим по леммам (нормальным формам)
     }
     fclose(conll_file);
@@ -131,7 +132,7 @@ private:
         continue;
       if ( token[column] == "_" ) // символ отсутствия значения в conll
         continue;
-      auto&& word = token[column];
+      auto& word = token[column];
       auto it = vocab->find( word );
       if (it == vocab->end())
         (*vocab)[word] = 1;
@@ -149,7 +150,7 @@ private:
         continue;
       if ( token[column] == "_" ) // символ отсутствия значения в conll
         continue;
-      auto&& word = token[column];
+      auto& word = token[column];
       auto it = vocab->find( word );
       if (it == vocab->end())
         (*vocab)[word] = 1;
@@ -157,20 +158,53 @@ private:
         ++it->second;
     }
   } // method-end
-  void process_sentence_dep_ctx(VocabMappingPtr vocab, const SentenceMatrix& sentence, size_t column)
+  void process_sentence_dep_ctx(VocabMappingPtr vocab, const SentenceMatrix& sentence, size_t column, bool use_deprel)
   {
     for (auto& token : sentence)
     {
-      if (token[7] == "PUNC")  // знаки препинания в словарь синтаксических контекстов не включаем
-        continue;
-      if ( token[column] == "_" ) // символ отсутствия значения в conll
-        continue;
-      auto&& word = token[column];
-      auto it = vocab->find( word );
-      if (it == vocab->end())
-        (*vocab)[word] = 1;
+      if ( use_deprel )
+      {
+        if ( token[7] == "PUNC" )  // знаки препинания в словарь синтаксических контекстов не включаем
+          continue;
+        if ( token[column] == "_" || token[7] == "_" )  // символ отсутствия значения в conll
+          continue;
+        size_t parent_token_no = 0;
+        try {
+          parent_token_no = std::stoi(token[6]);
+        } catch (...) {
+          parent_token_no = 0; // если конвертирование неудачно, считаем, что нет родителя
+        }
+        if ( parent_token_no == 0 )
+          continue;
+        // рассматриваем контекст с точки зрения родителя в синтаксической связи
+        auto ctx__from_head_viewpoint = token[column] + "<" + token[7];
+        auto it_h = vocab->find( ctx__from_head_viewpoint );
+        if (it_h == vocab->end())
+          (*vocab)[ctx__from_head_viewpoint] = 1;
+        else
+          ++it_h->second;
+        // рассматриваем контекст с точки зрения потомка в синтаксической связи
+        auto& parent = sentence[ parent_token_no - 1 ];
+        auto ctx__from_child_viewpoint = parent[column] + ">" + token[7];
+        auto it_c = vocab->find( ctx__from_child_viewpoint );
+        if (it_c == vocab->end())
+          (*vocab)[ctx__from_child_viewpoint] = 1;
+        else
+          ++it_c->second;
+      }
       else
-        ++it->second;
+      {
+        if ( token[7] == "PUNC" )   // знаки препинания в словарь синтаксических контекстов не включаем
+          continue;
+        if ( token[column] == "_" ) // символ отсутствия значения в conll
+          continue;
+        auto& word = token[column];
+        auto it = vocab->find( word );
+        if (it == vocab->end())
+          (*vocab)[word] = 1;
+        else
+          ++it->second;
+      } // if ( use_depre ) then ... else ...
     }
   } // method-end
   void process_sentence_assoc_ctx(VocabMappingPtr vocab, const SentenceMatrix& sentence, size_t column)
@@ -181,7 +215,7 @@ private:
         continue;
       if ( token[column] == "_" ) // символ отсутствия значения в conll
         continue;
-      auto&& word = token[column];
+      auto& word = token[column];
       auto it = vocab->find( word );
       if (it == vocab->end())
         (*vocab)[word] = 1;

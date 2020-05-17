@@ -1,21 +1,38 @@
+SIZE_DEP=80
+SIZE_ASSOC=20
+TRAIN_FN=parus_first_10m_lines.conll
+COL_EMB=3
+COL_CTX_D=3
+USE_DEPREL=1
+MODEL_FN=vectors.bin
+VOC_M=main.vocab
+VOC_P=proper.vocab
+VOC_D=ctx_dep.vocab
+VOC_A=ctx_assoc.vocab
+THREADS=8
+
 echo "MAKING BINARIES"
 make
 
 echo ""
-echo "DOWNLOADING TRAINING TEXT DATA"
-if [ ! -e text8 ]; then
-  wget http://mattmahoney.net/dc/text8.zip -O text8.gz
-  gzip -d text8.gz -f
-fi
+echo "TRAINSET EXTRACTION AND FITTING"
+gzip --decompress --stdout ./data/parus_first_10m_lines.conll.zip > trainset.conll
+./conll2vec -task fit -train trainset.conll -fit_result $TRAIN_FN
+rm trainset.conll
 
 echo ""
-echo "BUILDING VOCABULARY"
-./build_dict -train text8 -min-count 200 -save-vocab text8.vocab_200
+echo "BUILDING VOCABULARIES"
+./conll2vec -task vocab -train $TRAIN_FN -col_emb $COL_EMB -col_ctx_d $COL_CTX_D -vocab_m $VOC_M -vocab_p $VOC_P -vocab_d $VOC_D -vocab_a $VOC_A -min-count_m 70 -min-count_p 100 -min-count_d 20 -min-count_a 20 -use_deprel $USE_DEPREL
 
 echo ""
-echo "TRAINING EMBEDDINGS"
-./cbow -train text8 -words-vocab text8.vocab_200 -output vectors.bin -size 200 -window 2 -iter 5 -threads 8 -optimization ns -negative 5
+echo "TRAINING EMBEDDINGS -- MAIN"
+./conll2vec -task train -train $TRAIN_FN -col_emb $COL_EMB -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL -vocab_m $VOC_M -backup backup.data -vocab_d $VOC_D -vocab_a $VOC_A -model $MODEL_FN -size_d $SIZE_DEP -size_a $SIZE_ASSOC -negative 5 -iter 10 -threads $THREADS
+
+echo ""
+echo "TRAINING EMBEDDINGS -- PROPER"
+./conll2vec -task train -train $TRAIN_FN -col_emb $COL_EMB -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL -vocab_p $VOC_P -restore backup.data -vocab_d $VOC_D -vocab_a $VOC_A -model $MODEL_FN -size_d $SIZE_DEP -size_a $SIZE_ASSOC -negative 5 -iter 5 -threads $THREADS
 
 echo ""
 echo "RUN SIMILARITY METER"
-./distance vectors.bin
+./conll2vec -task sim -model $MODEL_FN -model_fmt bin -size_d $SIZE_DEP -size_a $SIZE_ASSOC
+

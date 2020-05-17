@@ -27,6 +27,7 @@ public:
         {"-min-count_a",  {"Min frequency in Associative vocabulary", "50", std::nullopt}},
         {"-col_emb",      {"Embeddings vocabulary column (in conll)", "2", std::nullopt}},
         {"-col_ctx_d",    {"Dependency contexts vocabulary column (in conll)", "3", std::nullopt}},
+        {"-use_deprel",   {"Include DEPREL field in dependency context", "0", std::nullopt}},
         {"-size_d",       {"Size of Dependency part of word vectors", "80", std::nullopt}},
         {"-size_a",       {"Size of Associative part of word vectors", "20", std::nullopt}},
         {"-negative",     {"Number of negative examples", "3", std::nullopt}},
