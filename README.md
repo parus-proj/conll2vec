@@ -23,7 +23,11 @@ conll2vec — утилита для построения векторных пр
     <td>Запустите «Командную строку разработчика для VS 2017» (это обеспечит настройку окружения для сборки утилит). Перейдите в папку, в которой хотите развернуть программное обеспечение.</td>
   </tr>
   <tr>
-    <td colspan="2" align="center">git clone https://github.com/parus-proj/conll2vec.git<br/>cd conll2vec</td>
+    <td colspan="2" align="center">
+      <em>Примечание</em>: для загрузки обучающего дейтасета необходим <a href="https://git-lfs.github.com/">git-lfs</a>.<br/>
+      git clone https://github.com/parus-proj/conll2vec.git<br/>
+      cd conll2vec
+    </td>
   </tr>
   <tr>
     <td align="center">./demo-linux.sh</td>
