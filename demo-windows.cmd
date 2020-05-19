@@ -19,14 +19,14 @@ if not exist conll2vec.exe (
   echo.
   echo "MAKING BINARIES"
   nmake -f makefile.msvc
-  copy ./data/stopwords.assoc .
+  copy data\stopwords.assoc .
 )
 
 if not exist %TRAIN_FN% (
   echo.
   echo TRAINSET EXTRACTION AND FITTING
   echo   please wait...
-  cscript //Nologo helpers/demo.cmd.unzip.vbs %cd% %cd%\data\parus_first_10m_lines.conll.zip
+  cscript //NoLogo helpers\demo.cmd.unzip.vbs %cd% %cd%\data\parus_first_10m_lines.conll.zip
   rename parus_first_10m_lines.conll pre_fit.conll
   conll2vec -task fit -fit_input pre_fit.conll -train %TRAIN_FN%
   del /f pre_fit.conll
@@ -47,4 +47,3 @@ conll2vec -task train -train %TRAIN_FN% -col_emb %COL_EMB% -col_ctx_d %COL_CTX_D
 echo.
 echo RUN SIMILARITY METER
 conll2vec -task sim -model %MODEL_FN% -model_fmt bin -size_d %SIZE_DEP% -size_a %SIZE_ASSOC%
-

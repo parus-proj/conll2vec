@@ -35,7 +35,7 @@ public:
       return;
     }
     // открываем файл для сохранения результатов
-    std::ofstream ofs(output_fn.c_str());
+    std::ofstream ofs( output_fn.c_str(), std::ios::binary );   // открываем в бинарном режиме, чтобы в windows не было ретрансляции \n
     if ( !ofs.good() )
     {
       std::cerr << "Resulting-file open: error" << std::endl;
@@ -180,7 +180,7 @@ private:
   } // method-end
   void reltypes_filter(u32SentenceMatrix& data)
   {
-    std::set<std::u32string> permissible_reltypes = {
+    const std::set<std::u32string> permissible_reltypes = {
         U"предик", U"агент", U"квазиагент", U"дат-субъект",
         U"присвяз", U"аналит", U"пасс-анал",
         U"1-компл", U"2-компл", U"3-компл", U"4-компл", U"неакт-компл",

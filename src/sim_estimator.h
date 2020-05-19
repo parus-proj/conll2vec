@@ -8,6 +8,9 @@
 #include <map>
 #include <cmath>
 #include <numeric>
+#ifdef _MSC_VER
+#include <windows.h>
+#endif
 
 class SimilarityEstimator
 {
@@ -75,6 +78,12 @@ public:
   } // method-end
   void run()
   {
+    #ifdef _MSC_VER
+      UINT sys_input_code_page = GetConsoleCP();
+      UINT sys_output_code_page = GetConsoleOutputCP();
+      SetConsoleCP(CP_UTF8);          // setup utf-8 as console code page
+      SetConsoleOutputCP(CP_UTF8);
+    #endif
     // выводим подсказку
     std::cout << std::endl << "COMMANDS: " << std::endl
               << "  EXIT -- terminate this program" << std::endl
@@ -104,6 +113,10 @@ public:
       case cmPair: pair_mode_helper(word); break;
       }
     } // infinite loop
+    #ifdef _MSC_VER
+      SetConsoleCP(sys_input_code_page);
+      SetConsoleOutputCP(sys_output_code_page);
+    #endif
   } // method-end
 private:
   size_t dep_size;

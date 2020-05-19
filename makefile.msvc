@@ -1,12 +1,12 @@
 CXX=cl
-CXXFLAGS=-std:c++17 /O2 /Oi /MD -DNDEBUG
+CXXFLAGS=-std:c++17 /O2 /Oi /MD -DNDEBUG /source-charset:utf-8
 
 all: conll2vec.exe
 
 conll2vec.exe: 
 	if exist $@ del $@
 	cl /nologo /c /EHsc /Fosrc\ $(CXXFLAGS) src/conll2vec.cpp
-	link /nologo /SUBSYSTEM:CONSOLE /OUT:$@ src/conll2vec.obj
+	link /nologo /SUBSYSTEM:CONSOLE /MACHINE:X64 /OUT:$@ src/conll2vec.obj
 
 clean:
 	-if exist src\*.obj del src\*.obj
