@@ -8,6 +8,11 @@
 #include <map>
 #include <cmath>
 #include <numeric>
+#include <iostream>
+#ifdef _MSC_VER
+  #include <io.h>
+  #include <fcntl.h>
+#endif
 
 class SimilarityEstimator
 {
@@ -75,6 +80,10 @@ public:
   } // method-end
   void run()
   {
+    #ifdef _MSC_VER
+      _setmode( _fileno(stdout), _O_U16TEXT );
+      _setmode( _fileno(stdin), _O_U16TEXT );
+    #endif
     // выводим подсказку
     str_to_console( "\nCOMMANDS: \n"
                     "  EXIT -- terminate this program\n"
