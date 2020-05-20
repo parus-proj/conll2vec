@@ -8,9 +8,6 @@
 #include <map>
 #include <cmath>
 #include <numeric>
-#ifdef _MSC_VER
-  #include <windows.h>
-#endif
 
 class SimilarityEstimator
 {
@@ -78,43 +75,21 @@ public:
   } // method-end
   void run()
   {
-    #ifdef _MSC_VER
-      UINT sys_input_code_page = GetConsoleCP();
-      UINT sys_output_code_page = GetConsoleOutputCP();
-      SetConsoleCP(CP_UTF8);          // setup utf-8 as console code page
-      SetConsoleOutputCP(CP_UTF8);
-      //setlocale( LC_ALL, "english_us.65001" );
-    #endif
     // выводим подсказку
-    std::cout << std::endl << "COMMANDS: " << std::endl
-              << "  EXIT -- terminate this program" << std::endl
-              << "  DIM=ALL -- use all dimensions to calculate similarity" << std::endl
-              << "  DIM=DEP -- use only 'dependency' dimensions" << std::endl
-              << "  DIM=ASSOC -- use only 'associative' dimensions" << std::endl
-              << "  MOD=WORD -- find most similar words for selected one" << std::endl
-              << "  MOD=PAIR -- estimate similarity for pair of words" << std::endl
-              << "Initially: DIM=ALL, MOD=WORD" << std::endl << std::endl;
+    str_to_console( "\nCOMMANDS: \n"
+                    "  EXIT -- terminate this program\n"
+                    "  DIM=ALL -- use all dimensions to calculate similarity\n"
+                    "  DIM=DEP -- use only 'dependency' dimensions\n"
+                    "  DIM=ASSOC -- use only 'associative' dimensions\n"
+                    "  MOD=WORD -- find most similar words for selected one\n"
+                    "  MOD=PAIR -- estimate similarity for pair of words\n"
+                    "Initially: DIM=ALL, MOD=WORD\n\n" );
     // в цикле считываем слова и ищем для них ближайшие (по косинусной мере) в векторной модели
     while (true)
     {
       // запрашиваем у пользователя очередное слово
-      std::string word;
-      std::cout << "Enter word (EXIT to break): ";
-      std::cout.flush();
-      #ifdef _MSC_VER
-        char current_char = '\x00';
-        word.clear();
-        while (true)
-        {
-          std::cin.get(current_char);
-          if ( current_char == '\n' ) // utf-8-safe
-            break;
-          else
-            word.push_back(current_char);
-        }
-      #else
-        std::getline(std::cin, word);
-      #endif
+      str_to_console( "Enter word (EXIT to break): " );
+      std::string word = str_from_console();
       if (word == "EXIT") break;
       if (word == "DIM=ALL")   { cmp_dims = cdAll; continue; }
       if (word == "DIM=DEP")   { cmp_dims = cdDepOnly; continue; }
@@ -127,10 +102,6 @@ public:
       case cmPair: pair_mode_helper(word); break;
       }
     } // infinite loop
-    #ifdef _MSC_VER
-      SetConsoleCP(sys_input_code_page);
-      SetConsoleOutputCP(sys_output_code_page);
-    #endif
   } // method-end
 private:
   size_t dep_size;
@@ -189,7 +160,7 @@ private:
     size_t widx = get_word_idx(word);
     if (widx == words_count)
     {
-      std::cout << "  out of vocabulary word..." << std::endl;
+      str_to_console( "  out of vocabulary word...\n" );
       return;
     }
     // ищем n ближайших к указанному слову
@@ -213,13 +184,13 @@ private:
       }
     }
     // выводим результат поиска
-    std::cout << "                                       word | cosine similarity" << std::endl
-              << "  -------------------------------------------------------------" << std::endl;
+    str_to_console( "                                       word | cosine similarity\n"
+                    "  -------------------------------------------------------------\n" );
     for (auto& w : best)
     {
       size_t word_len = StrConv::To_UTF32(w.second).length();
       std::string alignedWord = (word_len >= 41) ? w.second : (std::string(41-word_len, ' ') + w.second);
-      std::cout << "  " << alignedWord << "   " << w.first << std::endl;
+      str_to_console( "  " + alignedWord + "   " + std::to_string(w.first) + "\n" );
     }
   } // method-end
 
@@ -227,27 +198,54 @@ private:
   {
     // запрашиваем у пользователя второе слово
     std::string word2;
-    std::cout << "Enter second word: ";
-    std::cout.flush();
-    std::getline(std::cin, word2);
+    str_to_console( "Enter second word: " );
+    word2 = str_from_console();
     // ищем слова в словаре
     size_t widx1 = get_word_idx(word1);
     if (widx1 == words_count)
     {
-      std::cout << "  first word is out of vocabulary..." << std::endl;
+      str_to_console( "  first word is out of vocabulary...\n" );
       return;
     }
     size_t widx2 = get_word_idx(word2);
     if (widx2 == words_count)
     {
-      std::cout << "  second word is out of vocabulary..." << std::endl;
+      str_to_console( "  second word is out of vocabulary...\n" );
       return;
     }
     // оцениваем и выводим меру близости
     float* w1Offset = embeddings + widx1*emb_size;
     float* w2Offset = embeddings + widx2*emb_size;
     float sim = cosine_measure(w1Offset, w2Offset);
-    std::cout << "cosine similarity = " << sim << std::endl;
+    str_to_console( "cosine similarity = " + std::to_string(sim) + "\n" );
+  }
+
+  // вывод в консоль
+  void str_to_console(const std::string& str)
+  {
+    #ifdef _MSC_VER
+      static std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+      std::wstring wide_str = converter.from_bytes(str);
+      std::wcout << wide_str;
+      std::wcout.flush();
+    #else
+      std::cout << str;
+      std::cout.flush();
+    #endif
+  }
+  // ввод строки из консоли
+  std::string str_from_console()
+  {
+    #ifdef _MSC_VER
+      std::wstring line;
+      std::getline(std::wcin, line);
+      static std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+      return converter.to_bytes(line);
+    #else
+      std::string line;
+      std::getline(std::cin, line);
+      return line;
+    #endif
   }
 };
 
