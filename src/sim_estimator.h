@@ -9,7 +9,7 @@
 #include <cmath>
 #include <numeric>
 #ifdef _MSC_VER
-#include <windows.h>
+  #include <windows.h>
 #endif
 
 class SimilarityEstimator
@@ -83,6 +83,7 @@ public:
       UINT sys_output_code_page = GetConsoleOutputCP();
       SetConsoleCP(CP_UTF8);          // setup utf-8 as console code page
       SetConsoleOutputCP(CP_UTF8);
+      //setlocale( LC_ALL, "english_us.65001" );
     #endif
     // выводим подсказку
     std::cout << std::endl << "COMMANDS: " << std::endl
@@ -100,7 +101,20 @@ public:
       std::string word;
       std::cout << "Enter word (EXIT to break): ";
       std::cout.flush();
-      std::getline(std::cin, word);
+      #ifdef _MSC_VER
+        char current_char = '\x00';
+        word.clear();
+        while (true)
+        {
+          std::cin.get(current_char);
+          if ( current_char == '\n' ) // utf-8-safe
+            break;
+          else
+            word.push_back(current_char);
+        }
+      #else
+        std::getline(std::cin, word);
+      #endif
       if (word == "EXIT") break;
       if (word == "DIM=ALL")   { cmp_dims = cdAll; continue; }
       if (word == "DIM=DEP")   { cmp_dims = cdDepOnly; continue; }

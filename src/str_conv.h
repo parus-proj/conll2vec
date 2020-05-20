@@ -2,12 +2,9 @@
 #define STR_CONV_H_
 
 #include <string>
-#ifdef _MSC_VER
-  #include <codecvt>
-#else
-  #include <bits/locale_conv.h>        // определение std::wstring_convert (todo: странность gcc?)
-  #include <codecvt>
-#endif
+#include <locale>
+#include <codecvt>
+
 
 class StrConv
 {
