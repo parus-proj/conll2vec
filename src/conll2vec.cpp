@@ -137,7 +137,8 @@ int main(int argc, char **argv)
                                                                                                   v_dep_ctx, v_assoc_ctx,
                                                                                                   cmdLineParams.getAsInt("-col_emb") - 1,
                                                                                                   cmdLineParams.getAsInt("-col_ctx_d") - 1,
-                                                                                                  (cmdLineParams.getAsInt("-use_deprel") == 1)
+                                                                                                  (cmdLineParams.getAsInt("-use_deprel") == 1),
+                                                                                                  cmdLineParams.getAsFloat("-sample_a")
                                                                                                 );
 
     // создаем объект, организующий обучение
@@ -147,7 +148,9 @@ int main(int argc, char **argv)
                      cmdLineParams.getAsInt("-size_a"),
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
-                     cmdLineParams.getAsFloat("-negative"));
+                     cmdLineParams.getAsFloat("-negative"),
+                     cmdLineParams.getAsFloat("-zerolize"),
+                     cmdLineParams.getAsFloat("-space_lim") );
 
     // инициализация нейросети
     if (needLoadMainVocab)

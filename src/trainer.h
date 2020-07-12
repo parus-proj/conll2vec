@@ -11,6 +11,8 @@
 #include <iostream>
 #include <fstream>
 #include <cmath>
+#include <mutex>
+#include <condition_variable>
 
 #ifdef _MSC_VER
   #define posix_memalign(p, a, s) (((*(p)) = _aligned_malloc((s), (a))), *(p) ? 0 : errno)
@@ -31,15 +33,17 @@ class Trainer
 public:
   // конструктор
   Trainer( std::shared_ptr< LearningExampleProvider> learning_example_provider,
-                 std::shared_ptr< CustomVocabulary > words_vocabulary,
-                 bool trainProperNames,
-                 std::shared_ptr< CustomVocabulary > dep_contexts_vocabulary,
-                 std::shared_ptr< CustomVocabulary > assoc_contexts_vocabulary,
-                 size_t embedding_dep_size,
-                 size_t embedding_assoc_size,
-                 size_t epochs,
-                 float learning_rate,
-                 size_t negative_count )
+           std::shared_ptr< CustomVocabulary > words_vocabulary,
+           bool trainProperNames,
+           std::shared_ptr< CustomVocabulary > dep_contexts_vocabulary,
+           std::shared_ptr< CustomVocabulary > assoc_contexts_vocabulary,
+           size_t embedding_dep_size,
+           size_t embedding_assoc_size,
+           size_t epochs,
+           float learning_rate,
+           size_t negative_count,
+           float zerolize_value,
+           float wspace_lim_value )
   : lep(learning_example_provider)
   , w_vocabulary(words_vocabulary)
   , proper_names(trainProperNames)
@@ -53,6 +57,8 @@ public:
   , starting_alpha(learning_rate)
   , negative(negative_count)
   , next_random_ns(0)
+  , zerolize_period(zerolize_value * 0.01)
+  , w_space_lim_factor(wspace_lim_value)
   {
     // предварительный табличный расчет для логистической функции
     expTable = (float *)malloc((EXP_TABLE_SIZE + 1) * sizeof(float));
@@ -161,16 +167,41 @@ public:
               word_count_actual / (learning_seconds.count() * 1000) );
             fflush(stdout);
           }
-          alpha = starting_alpha * (1 - word_count_actual / (float)(epoch_count * train_words + 1));
+          float fraction = word_count_actual / (float)(epoch_count * train_words + 1);
+          alpha = starting_alpha * (1 - fraction);
           if ( alpha < starting_alpha * 0.0001 )
             alpha = starting_alpha * 0.0001;
-        }
+          // обновление пределов векторного пространства
+          w_space_up_d = (0.5 / layer1_size) * (1.0 + fraction * w_space_lim_factor);
+          w_space_down_d = - w_space_up_d;
+          w_space_up_a = w_space_up_d * 0.8;
+          w_space_down_a = - w_space_up_a;
+          // ликвидация смещений нулей в векторном пространстве
+          if ( thread_idx == 0 )
+          {
+            if ( (fraction - fixed_fraction) > zerolize_period )
+            {
+              std::lock_guard<std::mutex> syn0_lock(mtx1);
+              std::unique_lock<std::mutex> cv_lock(mtx2);
+              cv.wait(cv_lock, [this]{return threads_in_work_counter == 1;});
+              fixed_fraction += zerolize_period;
+              mean_to_zero(syn0, layer1_size, w_vocabulary->size());
+            }
+          }
+          else
+          {
+            update_threads_in_work_counter(-1);
+            {
+              std::lock_guard<std::mutex> syn0_lock(mtx1);
+            }
+            update_threads_in_work_counter(+1);
+          }
+        } // if ('checkpoint')
         // читаем очередной обучающий пример
         auto learning_example = lep->get(thread_idx);
         word_count = lep->getWordsCount(thread_idx);
         if (!learning_example) break; // признак окончания эпохи (все обучающие примеры перебраны)
         // используем обучающий пример для обучения нейросети
-        //todo: сделать различение между обучением основного словаря и словаря собственных имен
         skip_gram( learning_example.value(), neu1e );
       } // for all learning examples
       word_count_actual += (word_count - last_word_count);
@@ -410,7 +441,19 @@ private:
           std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all samples
       // Learn weights input -> hidden
-      std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
+      //std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
+      std::transform( targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr,
+                      [this](float a, float b) -> float
+                      {
+                        float tmp = a + b;
+                        if (tmp > w_space_up_d)
+                          return w_space_up_d;
+                        else if (tmp < w_space_down_d)
+                          return w_space_down_d;
+                        else
+                          return tmp;
+                      }
+                    );
     } // for all dep contexts
     // цикл по ассоциативным контекстам
     targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
@@ -451,7 +494,19 @@ private:
           std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all samples
       // Learn weights input -> hidden
-      std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
+      //std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
+      std::transform( targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr,
+                      [this](float a, float b) -> float
+                      {
+                        float tmp = a + b;
+                        if (tmp > w_space_up_a)
+                          return w_space_up_a;
+                        else if (tmp < w_space_down_a)
+                          return w_space_down_a;
+                        else
+                          return tmp;
+                      }
+                    );
     } // for all assoc contexts
   } // method-end
 private:
@@ -504,6 +559,65 @@ private:
     }
     return true;
   } // method-end
+private:
+  // объекты синхронизации
+  std::mutex mtx1, mtx2;
+  std::condition_variable cv;
+  // счетчик работающих потоков (служит для приостановки потоков на время ликвидации смещений в матрице векторных представлений)
+  size_t threads_in_work_counter = 0;
+  // доля проанализированных данных (квантированная; служит для фиксации моментов, когда выполняется ликвидация смещений в матрице векторных представлений)
+  float fixed_fraction = 0;
+  // периодичность ликвидации смещений в матрице векторных представлений
+  float zerolize_period = 0.0025;
+  // ограничение векторного пространства (для syn0)
+  float w_space_up_d = 0;
+  float w_space_down_d = 0;
+  float w_space_up_a = 0;
+  float w_space_down_a = 0;
+  // коэффициент, от которого зависит степень и скорость расширения векторного пространства syn0
+  float w_space_lim_factor = 1000.0;
+
+  // функция ликвидации смещений в матрице векторных представлений
+  void mean_to_zero(float* embeddings, size_t emb_size, size_t vocab_size)
+  {
+    // устраняем смещение нулей в измерениях векторного представления
+    for (uint64_t d = 0; d < emb_size; ++d)
+    {
+      // воспользуемся методом Уэлфорда для вычисления среднего (чтобы избежать рисков переполнения при суммировании)
+      // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
+      float meanValue = 0;
+      size_t count = 0;
+      for (uint64_t w = 0; w < vocab_size; ++w)
+      {
+        float* offset = embeddings + w*emb_size + d;
+        ++count;
+        meanValue += ((*offset) - meanValue) / count;
+      }
+      for (uint64_t w = 0; w < vocab_size; ++w)
+      {
+        float* offset = embeddings + w*emb_size + d;
+        *offset -= meanValue;
+      }
+    }
+  } // method-end
+  // вспомогательная функция для обновленая счётчика работающих потоков
+  inline void update_threads_in_work_counter(int val)
+  {
+    {
+      std::lock_guard<std::mutex> cv_lock(mtx2);
+      threads_in_work_counter += val;
+    }
+    cv.notify_one();
+  }
+  // RAII-класс для scope-обновления счетчика работающих потоков
+  class ThreadsInWorkCounterGuard
+  {
+  public:
+    ThreadsInWorkCounterGuard(Trainer* t) : trainer(t) {  trainer->update_threads_in_work_counter(+1);  }
+    ~ThreadsInWorkCounterGuard() {  trainer->update_threads_in_work_counter(-1);  }
+  private:
+    Trainer* trainer;
+  };
 }; // class-decl-end
 
 

@@ -7,6 +7,7 @@
 #include <vector>
 #include <optional>
 #include <cstring>       // for std::strerror
+#include <cmath>
 
 
 // структура, представляющая обучающий пример
@@ -53,23 +54,25 @@ public:
   LearningExampleProvider(const std::string& trainFilename, size_t threadsCount,
                           std::shared_ptr< OriginalWord2VecVocabulary> wordsVocabulary,
                           std::shared_ptr< OriginalWord2VecVocabulary> depCtxVocabulary, std::shared_ptr< OriginalWord2VecVocabulary> assocCtxVocabulary,
-                          size_t embColumn, size_t depColumn, bool useDeprel)
+                          size_t embColumn, size_t depColumn, bool useDeprel,
+                          float assocSubsample)
   : threads_count(threadsCount)
   , train_filename(trainFilename)
-  , train_file_size(0)
-  , train_words(0)
   , words_vocabulary(wordsVocabulary)
   , dep_ctx_vocabulary(depCtxVocabulary)
   , assoc_ctx_vocabulary(assocCtxVocabulary)
   , emb_column(embColumn)
   , dep_column(depColumn)
   , use_deprel(useDeprel)
+  , sample_a(assocSubsample)
   {
     thread_environment.resize(threads_count);
     for (size_t i = 0; i < threads_count; ++i)
       thread_environment[i].next_random = i;
     if ( words_vocabulary )
       train_words = words_vocabulary->cn_sum();
+    if ( assoc_ctx_vocabulary )
+      train_words_assoc = assoc_ctx_vocabulary->cn_sum();
     try
     {
       train_file_size = get_file_size(train_filename);
@@ -183,7 +186,18 @@ public:
           {
             size_t assoc_idx = assoc_ctx_vocabulary->word_to_idx(rec[2]);       // lemma column
             if ( assoc_idx != INVALID_IDX )
+            {
+              // к ассоциациями применяем сабсэмплинг
+              if (sample_a > 0)
+              {
+                  auto&& assoc_record = assoc_ctx_vocabulary->idx_to_data(assoc_idx);
+                  float ran = (std::sqrt(assoc_record.cn / (sample_a * train_words_assoc)) + 1) * (sample_a * train_words_assoc) / assoc_record.cn;
+                  t_environment.update_random();
+                  if (ran < (t_environment.next_random & 0xFFFF) / (float)65536)
+                    continue;
+              }
               associations.insert(assoc_idx);
+            }
           }
         }
         // конвертируем в структуру для итерирования (фильтрация несловарных)
@@ -221,15 +235,17 @@ public:
   }
 private:
   // количество потоков управления (thread), параллельно работающих с поставщиком обучающих примеров
-  size_t threads_count;
+  size_t threads_count = 0;
   // информация, описывающая рабочие контексты потоков управления (thread)
   std::vector<ThreadEnvironment> thread_environment;
   // имя файла, содержащего обучающее множество (conll)
   std::string train_filename;
   // размер тренировочного файла
-  uint64_t train_file_size;
+  uint64_t train_file_size = 0;
   // количество слов в обучающем множестве (приблизительно, т.к. могло быть подрезание по порогу частоты при построении словаря)
-  uint64_t train_words;
+  uint64_t train_words = 0;
+  // количество слов в обучающем множестве, вошедших в словарь ассоциативных контекстов (приблизительно, т.к. могло быть подрезание по порогу частоты при построении словаря)
+  uint64_t train_words_assoc = 0;
   // словари
   std::shared_ptr< OriginalWord2VecVocabulary> words_vocabulary;
   std::shared_ptr< OriginalWord2VecVocabulary> dep_ctx_vocabulary;
@@ -239,6 +255,8 @@ private:
   size_t dep_column;
   // следует ли задействовать тип и направление синтаксической связи в определении синтаксического контекста
   bool use_deprel;
+  // порог для алгоритма сэмплирования (subsampling) -- для ассоциативных контекстов
+  float sample_a = 1e-3;
 
   // получение размера файла
   uint64_t get_file_size(const std::string& filename)
