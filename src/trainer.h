@@ -63,8 +63,10 @@ public:
     // запомним количество обучающих примеров
     train_words = w_vocabulary->cn_sum();
     // инициализируем распределения, имитирующие шум (для словарей контекстов)
-    InitUnigramTable(table_dep, dep_ctx_vocabulary);
-    InitUnigramTable(table_assoc, assoc_ctx_vocabulary);
+    if ( dep_ctx_vocabulary )
+      InitUnigramTable(table_dep, dep_ctx_vocabulary);
+    if ( assoc_ctx_vocabulary )
+      InitUnigramTable(table_assoc, assoc_ctx_vocabulary);
   }
   // деструктор
   virtual ~Trainer()
@@ -84,28 +86,30 @@ public:
   // функция создания весовых матриц нейросети
   void create_net()
   {
-    size_t w_vocab_size = w_vocabulary->size();
-    size_t dep_vocab_size = dep_ctx_vocabulary->size();
-    size_t assoc_vocab_size = assoc_ctx_vocabulary->size();
-    long long ap;
+    long long ap = 0;
 
+    size_t w_vocab_size = w_vocabulary->size();
     ap = posix_memalign((void **)&syn0, 128, (long long)w_vocab_size * layer1_size * sizeof(float));
     if (syn0 == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
 
-    ap = posix_memalign((void **)&syn1_dep, 128, (long long)dep_vocab_size * size_dep * sizeof(float));
-    if (syn1_dep == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
-
-    ap = posix_memalign((void **)&syn1_assoc, 128, (long long)assoc_vocab_size * layer1_size * sizeof(float));
-    if (syn1_assoc == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
-  }
+    if ( dep_ctx_vocabulary )
+    {
+      size_t dep_vocab_size = dep_ctx_vocabulary->size();
+      ap = posix_memalign((void **)&syn1_dep, 128, (long long)dep_vocab_size * size_dep * sizeof(float));
+      if (syn1_dep == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
+    }
+    if ( assoc_ctx_vocabulary )
+    {
+      size_t assoc_vocab_size = assoc_ctx_vocabulary->size();
+      ap = posix_memalign((void **)&syn1_assoc, 128, (long long)assoc_vocab_size * size_assoc * sizeof(float));
+      if (syn1_assoc == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
+    }
+  } // method-end
   // функция инициализации нейросети
   void init_net()
   {
-    size_t w_vocab_size = w_vocabulary->size();
-    size_t dep_vocab_size = dep_ctx_vocabulary->size();
-    size_t assoc_vocab_size = assoc_ctx_vocabulary->size();
     unsigned long long next_random = 1;
-
+    size_t w_vocab_size = w_vocabulary->size();
     for (size_t a = 0; a < w_vocab_size; ++a)
       for (size_t b = 0; b < layer1_size; ++b)
       {
@@ -113,9 +117,17 @@ public:
         syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (float)65536) - 0.5) / layer1_size;
       }
 
-    std::fill(syn1_dep, syn1_dep+dep_vocab_size*size_dep, 0.0);
+    if ( dep_ctx_vocabulary )
+    {
+      size_t dep_vocab_size = dep_ctx_vocabulary->size();
+      std::fill(syn1_dep, syn1_dep+dep_vocab_size*size_dep, 0.0);
+    }
 
-    std::fill(syn1_assoc, syn1_assoc+assoc_vocab_size*size_assoc, 0.0);
+    if ( assoc_ctx_vocabulary )
+    {
+      size_t assoc_vocab_size = assoc_ctx_vocabulary->size();
+      std::fill(syn1_assoc, syn1_assoc+assoc_vocab_size*size_assoc, 0.0);
+    }
 
     start_learning_tp = std::chrono::steady_clock::now();
   } // method-end
@@ -236,10 +248,16 @@ public:
     // сохраняем весовые матрицы между скрытым и выходным слоем
     if (right)
     {
-      fprintf(fo, "%lu %lu\n", dep_ctx_vocabulary->size(), size_dep);
-      saveEmbeddingsBin_helper(fo, dep_ctx_vocabulary, syn1_dep, size_dep);
-      fprintf(fo, "%lu %lu\n", assoc_ctx_vocabulary->size(), size_assoc);
-      saveEmbeddingsBin_helper(fo, assoc_ctx_vocabulary, syn1_assoc, size_assoc);
+      if ( dep_ctx_vocabulary )
+      {
+        fprintf(fo, "%lu %lu\n", dep_ctx_vocabulary->size(), size_dep);
+        saveEmbeddingsBin_helper(fo, dep_ctx_vocabulary, syn1_dep, size_dep);
+      }
+      if ( assoc_ctx_vocabulary )
+      {
+        fprintf(fo, "%lu %lu\n", assoc_ctx_vocabulary->size(), size_assoc);
+        saveEmbeddingsBin_helper(fo, assoc_ctx_vocabulary, syn1_assoc, size_assoc);
+      }
     }
     fclose(fo);
   } // method-end
