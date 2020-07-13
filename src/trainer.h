@@ -140,6 +140,7 @@ public:
   // обобщенная процедура обучения (точка входа для потоков)
   void train_entry_point( size_t thread_idx )
   {
+    ThreadsInWorkCounterGuard threads_in_work_counter_guard(this);
     next_random_ns = thread_idx;
     // выделение памяти для хранения величины ошибки
     float *neu1e = (float *)calloc(layer1_size, sizeof(float));
