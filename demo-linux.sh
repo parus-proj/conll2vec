@@ -25,11 +25,11 @@ echo "BUILDING VOCABULARIES"
 
 echo ""
 echo "TRAINING EMBEDDINGS -- MAIN"
-./conll2vec -task train -train $TRAIN_FN -col_emb $COL_EMB -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL -vocab_m $VOC_M -backup backup.data -vocab_d $VOC_D -vocab_a $VOC_A -model $MODEL_FN -size_d $SIZE_DEP -size_a $SIZE_ASSOC -negative 10 -sample_a 1e-4 -zerolize 0.25 -space_lim 1000 -iter 10 -threads $THREADS
+./conll2vec -task train -train $TRAIN_FN -col_emb $COL_EMB -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL -vocab_m $VOC_M -backup backup.data -vocab_d $VOC_D -vocab_a $VOC_A -model $MODEL_FN -size_d $SIZE_DEP -size_a $SIZE_ASSOC -negative 7 -sample_a 1e-4 -zerolize 0.25 -space_lim 1000 -iter 10 -threads $THREADS
 
 echo ""
 echo "TRAINING EMBEDDINGS -- PROPER"
-./conll2vec -task train -train $TRAIN_FN -col_emb $COL_EMB -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL -vocab_p $VOC_P -restore backup.data -vocab_d $VOC_D -vocab_a $VOC_A -model $MODEL_FN -size_d $SIZE_DEP -size_a $SIZE_ASSOC -negative 5 -sample_a 1e-4 -zerolize 0.25 -space_lim 1000 -iter 5 -threads $THREADS
+./conll2vec -task train -train $TRAIN_FN -col_emb $COL_EMB -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL -vocab_p $VOC_P -restore backup.data -vocab_d $VOC_D -vocab_a $VOC_A -model $MODEL_FN -size_d $SIZE_DEP -size_a $SIZE_ASSOC -negative 5 -sample_a 1e-4 -zerolize 111 -space_lim 1000 -iter 5 -threads $THREADS
 
 echo ""
 echo "RUN SIMILARITY METER"
