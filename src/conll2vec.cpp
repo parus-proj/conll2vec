@@ -150,7 +150,8 @@ int main(int argc, char **argv)
                      cmdLineParams.getAsFloat("-alpha"),
                      cmdLineParams.getAsFloat("-negative"),
                      cmdLineParams.getAsFloat("-zerolize"),
-                     cmdLineParams.getAsFloat("-space_lim") );
+                     cmdLineParams.getAsFloat("-space_lim"),
+                     cmdLineParams.getAsInt("-threads") );
 
     // инициализация нейросети
     if (needLoadMainVocab)

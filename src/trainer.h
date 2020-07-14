@@ -13,6 +13,8 @@
 #include <cmath>
 #include <mutex>
 #include <condition_variable>
+#include <thread>
+#include <chrono>
 
 #ifdef _MSC_VER
   #define posix_memalign(p, a, s) (((*(p)) = _aligned_malloc((s), (a))), *(p) ? 0 : errno)
@@ -43,7 +45,8 @@ public:
            float learning_rate,
            size_t negative_count,
            float zerolize_value,
-           float wspace_lim_value )
+           float wspace_lim_value,
+           size_t total_threads_count )
   : lep(learning_example_provider)
   , w_vocabulary(words_vocabulary)
   , proper_names(trainProperNames)
@@ -68,6 +71,12 @@ public:
     }
     // запомним количество обучающих примеров
     train_words = w_vocabulary->cn_sum();
+    // настроим периодичность обновления "коэффициента скорости обучения" и ограничителей векторного пространства
+    alpha_chunk = (train_words - 1) / total_threads_count;
+    if (alpha_chunk > 10000)
+      alpha_chunk = 10000;
+    // инициализируем ограничители векторного пространства
+    w_space_lims_update(0);
     // инициализируем распределения, имитирующие шум (для словарей контекстов)
     if ( dep_ctx_vocabulary )
       InitUnigramTable(table_dep, dep_ctx_vocabulary);
@@ -141,6 +150,7 @@ public:
   void train_entry_point( size_t thread_idx )
   {
     ThreadsInWorkCounterGuard threads_in_work_counter_guard(this);
+    std::this_thread::sleep_for( std::chrono::seconds(1) ); // чтобы все потоки успели взвести свой счетчик в ThreadsInWorkCounterGuard до первой ликвидации смещения нулей в векторном пространстве
     next_random_ns = thread_idx;
     // выделение памяти для хранения величины ошибки
     float *neu1e = (float *)calloc(layer1_size, sizeof(float));
@@ -155,28 +165,26 @@ public:
       {
         // вывод прогресс-сообщений
         // и корректировка коэффициента скорости обучения (alpha)
-        if (word_count - last_word_count > 10000)
+        // и эвристики, ограничивающие векторное пространство
+        if (word_count - last_word_count > alpha_chunk)
         {
           word_count_actual += (word_count - last_word_count);
           last_word_count = word_count;
-          //if ( debug_mode > 1 )
+          float fraction = word_count_actual / (float)(epoch_count * train_words + 1);
+          //if ( debug_mode != 0 )
           {
             std::chrono::steady_clock::time_point current_learning_tp = std::chrono::steady_clock::now();
             std::chrono::duration< double, std::ratio<1> > learning_seconds = current_learning_tp - start_learning_tp;
-            printf("%cAlpha: %f  Progress: %.2f%%  Words/sec: %.2fk  ", 13, alpha,
-              word_count_actual / (float)(epoch_count * train_words + 1) * 100,
-              word_count_actual / (learning_seconds.count() * 1000) );
+            printf( "%cAlpha: %f  Progress: %.2f%%  Words/sec: %.2fk  ", 13, alpha,
+                    fraction * 100,
+                    word_count_actual / (learning_seconds.count() * 1000) );
             fflush(stdout);
           }
-          float fraction = word_count_actual / (float)(epoch_count * train_words + 1);
-          alpha = starting_alpha * (1 - fraction);
+          alpha = starting_alpha * (1.0 - fraction);
           if ( alpha < starting_alpha * 0.0001 )
             alpha = starting_alpha * 0.0001;
           // обновление пределов векторного пространства
-          w_space_up_d = (0.5 / layer1_size) * (1.0 + fraction * w_space_lim_factor);
-          w_space_down_d = - w_space_up_d;
-          w_space_up_a = w_space_up_d * 0.8;
-          w_space_down_a = - w_space_up_a;
+          w_space_lims_update(fraction);
           // ликвидация смещений нулей в векторном пространстве
           if ( thread_idx == 0 )
           {
@@ -185,7 +193,7 @@ public:
               std::lock_guard<std::mutex> syn0_lock(mtx1);
               std::unique_lock<std::mutex> cv_lock(mtx2);
               cv.wait(cv_lock, [this]{return threads_in_work_counter == 1;});
-              fixed_fraction += zerolize_period;
+              fixed_fraction = fraction;
               mean_to_zero(syn0, layer1_size, w_vocabulary->size());
             }
           }
@@ -513,6 +521,8 @@ private:
 private:
   uint64_t train_words = 0;
   uint64_t word_count_actual = 0;
+  // периодичность, с которой корректируется "коэф.скорости обучения" и ограничители векторного пространства
+  long long alpha_chunk = 0;
   std::chrono::steady_clock::time_point start_learning_tp;
 
   void saveEmbeddingsBin_helper(FILE *fo, std::shared_ptr< CustomVocabulary > vocabulary, float *weight_matrix, size_t emb_size) const
@@ -578,6 +588,14 @@ private:
   // коэффициент, от которого зависит степень и скорость расширения векторного пространства syn0
   float w_space_lim_factor = 1000.0;
 
+  // функция вычисления ограничителей векторного пространства
+  void w_space_lims_update(float fraction)
+  {
+    w_space_up_d = (0.5 / layer1_size) * (1.0 + fraction * w_space_lim_factor);
+    w_space_down_d = - w_space_up_d;
+    w_space_up_a = w_space_up_d * 0.8;
+    w_space_down_a = - w_space_up_a;
+  } // method-end
   // функция ликвидации смещений в матрице векторных представлений
   void mean_to_zero(float* embeddings, size_t emb_size, size_t vocab_size)
   {
