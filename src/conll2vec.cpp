@@ -149,7 +149,7 @@ int main(int argc, char **argv)
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
                      cmdLineParams.getAsFloat("-negative"),
-                     cmdLineParams.getAsFloat("-zerolize"),
+//                     cmdLineParams.getAsFloat("-zerolize"),
                      cmdLineParams.getAsFloat("-space_lim"),
                      cmdLineParams.getAsInt("-threads") );
 

@@ -209,7 +209,10 @@ public:
             LearningExample le;
             le.word = word_idx;
             le.dep_context = deps[i];
-            std::copy(associations.begin(), associations.end(), std::back_inserter(le.assoc_context));   // текущее слово считаем себе ассоциативным
+            //std::copy(associations.begin(), associations.end(), std::back_inserter(le.assoc_context));   // текущее слово считаем себе ассоциативным
+            for (auto& a : associations) // текущее слово не считаем себе ассоциативным
+              if (a != word_idx)
+                le.assoc_context.push_back(a);
             t_environment.sentence.push_back(le);
           }
         }
