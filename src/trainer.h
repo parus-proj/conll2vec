@@ -10,11 +10,8 @@
 #include <chrono>
 #include <iostream>
 #include <fstream>
-#include <cmath>
-//#include <mutex>
-//#include <condition_variable>
-//#include <thread>
-//#include <chrono>
+//#include <cmath>
+#include <atomic>
 
 #ifdef _MSC_VER
   #define posix_memalign(p, a, s) (((*(p)) = _aligned_malloc((s), (a))), *(p) ? 0 : errno)
@@ -44,8 +41,9 @@ public:
            size_t epochs,
            float learning_rate,
            size_t negative_count,
-//           float zerolize_value,
-           float wspace_lim_value,
+//           float wspace_lim_value,
+           float zero_regularization_factor_dep,
+           float zero_regularization_factor_assoc,
            size_t total_threads_count )
   : lep(learning_example_provider)
   , w_vocabulary(words_vocabulary)
@@ -60,8 +58,10 @@ public:
   , starting_alpha(learning_rate)
   , negative(negative_count)
   , next_random_ns(0)
-//  , zerolize_period(zerolize_value * 0.01)
-  , w_space_lim_factor(wspace_lim_value)
+//  , w_space_lim_factor(wspace_lim_value)
+  , z_reg_d(zero_regularization_factor_dep)
+  , z_reg_a(zero_regularization_factor_assoc)
+  , all_done(false)
   {
     // предварительный табличный расчет для логистической функции
     expTable = (float *)malloc((EXP_TABLE_SIZE + 1) * sizeof(float));
@@ -75,8 +75,8 @@ public:
     alpha_chunk = (train_words - 1) / total_threads_count;
     if (alpha_chunk > 10000)
       alpha_chunk = 10000;
-    // инициализируем ограничители векторного пространства
-    w_space_lims_update(0);
+//    // инициализируем ограничители векторного пространства
+//    w_space_lims_update(0);
     // выделение памяти для хранения смещений в измерениях
     sh0 = (float *)calloc(layer1_size, sizeof(float));
     // инициализируем распределения, имитирующие шум (для словарей контекстов)
@@ -149,11 +149,35 @@ public:
 
     start_learning_tp = std::chrono::steady_clock::now();
   } // method-end
+  // процедура регуляризации (точка входа для потока вычисления параметров регуляризации)
+  void regularization_entry_point()
+  {
+    size_t wv_size = w_vocabulary->size();
+    while ( !all_done )
+    {
+      for (size_t d = 0; d < layer1_size; ++d)
+      {
+        // воспользуемся методом Уэлфорда для вычисления среднего (чтобы избежать рисков переполнения при суммировании)
+        // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
+        float meanValue = 0;
+        float* offset = syn0 + d;
+        for (size_t w = 1; w <= wv_size; ++w)
+        {
+          meanValue += ((*offset) - meanValue) / w;
+          offset += layer1_size;
+        }
+        *(sh0 + d) = meanValue;
+      }
+    }
+  } // method-end: regularization_entry_point
+  // сигнал завершения для потока вычисления параметров регуляризации
+  void all_done_signal()
+  {
+    all_done.exchange(true);
+  }
   // обобщенная процедура обучения (точка входа для потоков)
   void train_entry_point( size_t thread_idx )
   {
-//    ThreadsInWorkCounterGuard threads_in_work_counter_guard(this);
-//    std::this_thread::sleep_for( std::chrono::seconds(1) ); // чтобы все потоки успели взвести свой счетчик в ThreadsInWorkCounterGuard до первой ликвидации смещения нулей в векторном пространстве
     next_random_ns = thread_idx;
     // выделение памяти для хранения величины ошибки
     float *neu1e = (float *)calloc(layer1_size, sizeof(float));
@@ -169,24 +193,6 @@ public:
         // вывод прогресс-сообщений
         // и корректировка коэффициента скорости обучения (alpha)
         // и эвристики, ограничивающие векторное пространство
-        if ( thread_idx == 0 && word_count % 100 == 0 )
-        {
-          for (uint64_t d = 0; d < layer1_size; ++d)
-          {
-            // воспользуемся методом Уэлфорда для вычисления среднего (чтобы избежать рисков переполнения при суммировании)
-            // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
-            float meanValue = 0;
-            size_t count = 0;
-            for (uint64_t w = 0; w < w_vocabulary->size(); ++w)
-            {
-              float* offset = syn0 + w*layer1_size + d;
-              ++count;
-              meanValue += ((*offset) - meanValue) / count;
-            }
-            *(sh0 + d) = meanValue;
-          }
-        } // if ( dimensions zero offset regularizator update condition )
-
         if (word_count - last_word_count > alpha_chunk)
         {
           word_count_actual += (word_count - last_word_count);
@@ -204,28 +210,8 @@ public:
           alpha = starting_alpha * (1.0 - fraction);
           if ( alpha < starting_alpha * 0.0001 )
             alpha = starting_alpha * 0.0001;
-          // обновление пределов векторного пространства
-          w_space_lims_update(fraction);
-//          // ликвидация смещений нулей в векторном пространстве
-//          if ( thread_idx == 0 )
-//          {
-//            if ( (fraction - fixed_fraction) > zerolize_period )
-//            {
-//              std::lock_guard<std::mutex> syn0_lock(mtx1);
-//              std::unique_lock<std::mutex> cv_lock(mtx2);
-//              cv.wait(cv_lock, [this]{return threads_in_work_counter == 1;});
-//              fixed_fraction = fraction;
-//              mean_to_zero(syn0, layer1_size, w_vocabulary->size());
-//            }
-//          }
-//          else
-//          {
-//            update_threads_in_work_counter(-1);
-//            {
-//              std::lock_guard<std::mutex> syn0_lock(mtx1);
-//            }
-//            update_threads_in_work_counter(+1);
-//          }
+//          // обновление пределов векторного пространства
+//          w_space_lims_update(fraction);
         } // if ('checkpoint')
         // читаем очередной обучающий пример
         auto learning_example = lep->get(thread_idx);
@@ -432,7 +418,7 @@ private:
   // функция, реализующая модель обучения skip-gram
   void skip_gram(const LearningExample& le, float *neu1e )
   {
-    float speedFactor = 1.0 + 1.0 / std::sqrt(w_vocabulary->idx_to_data(le.word).cn);
+    float speedFactor = 1.0 + 1.0 / w_vocabulary->idx_to_data(le.word).cn_sqrt;
     // вычисляем смещение вектора, соответствующего целевому слову
     float *targetVectorPtr = syn0 + le.word * layer1_size;
     // цикл по синтаксическим контекстам
@@ -475,7 +461,8 @@ private:
       } // for all samples
       // Learn weights input -> hidden
       std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
-      std::transform(targetVectorPtr, targetVectorPtr+size_dep, sh0, targetVectorPtr, [this](float a, float b) -> float { return a - alpha*0.001*b;});
+      float zero_shift_factor = alpha*z_reg_d;
+      std::transform(targetVectorPtr, targetVectorPtr+size_dep, sh0, targetVectorPtr, [zero_shift_factor](float a, float b) -> float { return a - zero_shift_factor*b;});
 //      std::transform( targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr,
 //                      [this](float a, float b) -> float
 //                      {
@@ -531,7 +518,8 @@ private:
       } // for all samples
       // Learn weights input -> hidden
       std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
-      std::transform(targetVectorPtr, targetVectorPtr+size_assoc, sh0+size_dep, targetVectorPtr, [this](float a, float b) -> float { return a - alpha*0.5*b;});
+      float zero_shift_factor = alpha*z_reg_a;
+      std::transform(targetVectorPtr, targetVectorPtr+size_assoc, sh0+size_dep, targetVectorPtr, [zero_shift_factor](float a, float b) -> float { return a - zero_shift_factor*b;});
 //      std::transform( targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr,
 //                      [this](float a, float b) -> float
 //                      {
@@ -599,74 +587,29 @@ private:
     return true;
   } // method-end
 private:
-//  // объекты синхронизации
-//  std::mutex mtx1, mtx2;
-//  std::condition_variable cv;
-//  // счетчик работающих потоков (служит для приостановки потоков на время ликвидации смещений в матрице векторных представлений)
-//  size_t threads_in_work_counter = 0;
-//  // доля проанализированных данных (квантированная; служит для фиксации моментов, когда выполняется ликвидация смещений в матрице векторных представлений)
-//  float fixed_fraction = 0;
-//  // периодичность ликвидации смещений в матрице векторных представлений
-//  float zerolize_period = 0.0025;
-  // ограничение векторного пространства (для syn0)
-  float w_space_up_d = 0;
-  float w_space_down_d = 0;
-  float w_space_up_a = 0;
-  float w_space_down_a = 0;
-  // коэффициент, от которого зависит степень и скорость расширения векторного пространства syn0
-  float w_space_lim_factor = 1000.0;
+//  // ограничение векторного пространства (для syn0)
+//  float w_space_up_d = 0;
+//  float w_space_down_d = 0;
+//  float w_space_up_a = 0;
+//  float w_space_down_a = 0;
+//  // коэффициент, от которого зависит степень и скорость расширения векторного пространства syn0
+//  float w_space_lim_factor = 1000.0;
   // хранилище смещений нулей в измерениях векторного пространства syn0
   float *sh0;
+  // коэффициенты значимости регуляризации, нацеленной на ликвидацию смещений нулей
+  float z_reg_d;
+  float z_reg_a;
+  // признак окончания обучения (для остановки потока, отвечающего за вычисление смещений нулей)
+  std::atomic<bool> all_done;
 
-  // функция вычисления ограничителей векторного пространства
-  void w_space_lims_update(float fraction)
-  {
-    w_space_up_d = (0.5 / layer1_size) * (1.0 + fraction * w_space_lim_factor);
-    w_space_down_d = - w_space_up_d;
-    w_space_up_a = w_space_up_d * 0.8;
-    w_space_down_a = - w_space_up_a;
-  } // method-end
-//  // функция ликвидации смещений в матрице векторных представлений
-//  void mean_to_zero(float* embeddings, size_t emb_size, size_t vocab_size)
+//  // функция вычисления ограничителей векторного пространства
+//  void w_space_lims_update(float fraction)
 //  {
-//    // устраняем смещение нулей в измерениях векторного представления
-//    for (uint64_t d = 0; d < emb_size; ++d)
-//    {
-//      // воспользуемся методом Уэлфорда для вычисления среднего (чтобы избежать рисков переполнения при суммировании)
-//      // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
-//      float meanValue = 0;
-//      size_t count = 0;
-//      for (uint64_t w = 0; w < vocab_size; ++w)
-//      {
-//        float* offset = embeddings + w*emb_size + d;
-//        ++count;
-//        meanValue += ((*offset) - meanValue) / count;
-//      }
-//      for (uint64_t w = 0; w < vocab_size; ++w)
-//      {
-//        float* offset = embeddings + w*emb_size + d;
-//        *offset -= meanValue;
-//      }
-//    }
+//    w_space_up_d = (0.5 / layer1_size) * (1.0 + fraction * w_space_lim_factor);
+//    w_space_down_d = - w_space_up_d;
+//    w_space_up_a = w_space_up_d * 0.8;
+//    w_space_down_a = - w_space_up_a;
 //  } // method-end
-//  // вспомогательная функция для обновленая счётчика работающих потоков
-//  inline void update_threads_in_work_counter(int val)
-//  {
-//    {
-//      std::lock_guard<std::mutex> cv_lock(mtx2);
-//      threads_in_work_counter += val;
-//    }
-//    cv.notify_one();
-//  }
-//  // RAII-класс для scope-обновления счетчика работающих потоков
-//  class ThreadsInWorkCounterGuard
-//  {
-//  public:
-//    ThreadsInWorkCounterGuard(Trainer* t) : trainer(t) {  trainer->update_threads_in_work_counter(+1);  }
-//    ~ThreadsInWorkCounterGuard() {  trainer->update_threads_in_work_counter(-1);  }
-//  private:
-//    Trainer* trainer;
-//  };
 }; // class-decl-end
 
 

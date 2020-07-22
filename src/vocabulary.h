@@ -8,6 +8,7 @@
 #include <numeric>
 #include <list>
 #include <iostream>
+#include <cmath>
 
 
 // данные словаря
@@ -17,9 +18,11 @@ struct VocabularyData
   std::string word;
   // абсолютная частота
   uint64_t cn;
+  // квадратный корень из абсолютной частоты (оптимизация)
+  float cn_sqrt;
   // конструктор
   VocabularyData(const std::string& theWord, const uint64_t theFrequency)
-  : word(theWord), cn(theFrequency)
+  : word(theWord), cn(theFrequency), cn_sqrt(std::sqrt(theFrequency))
   {}
 };
 
