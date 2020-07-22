@@ -187,7 +187,7 @@ public:
             size_t assoc_idx = assoc_ctx_vocabulary->word_to_idx(rec[2]);       // lemma column
             if ( assoc_idx != INVALID_IDX )
             {
-              // к ассоциациями применяем сабсэмплинг
+              // применяем сабсэмплинг к ассоциациям
               if (sample_a > 0)
               {
                   auto&& assoc_record = assoc_ctx_vocabulary->idx_to_data(assoc_idx);

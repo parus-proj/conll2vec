@@ -18,11 +18,12 @@ struct VocabularyData
   std::string word;
   // абсолютная частота
   uint64_t cn;
-  // квадратный корень из абсолютной частоты (оптимизация)
-  float cn_sqrt;
+  // предобсчитанный дополнительный коэффициент скорости обучения (оптимизация)
+  // чем слово реже, тем больше делаем шаг в градиентном спуске
+  float speed_factor;
   // конструктор
   VocabularyData(const std::string& theWord, const uint64_t theFrequency)
-  : word(theWord), cn(theFrequency), cn_sqrt(std::sqrt(theFrequency))
+  : word(theWord), cn(theFrequency), speed_factor(1.0 + 1.0 / std::sqrt(theFrequency))
   {}
 };
 

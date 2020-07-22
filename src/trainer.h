@@ -418,7 +418,7 @@ private:
   // функция, реализующая модель обучения skip-gram
   void skip_gram(const LearningExample& le, float *neu1e )
   {
-    float speedFactor = 1.0 + 1.0 / w_vocabulary->idx_to_data(le.word).cn_sqrt;
+    float speedFactor = w_vocabulary->idx_to_data(le.word).speed_factor;
     // вычисляем смещение вектора, соответствующего целевому слову
     float *targetVectorPtr = syn0 + le.word * layer1_size;
     // цикл по синтаксическим контекстам
