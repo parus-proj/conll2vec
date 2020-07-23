@@ -138,6 +138,8 @@ int main(int argc, char **argv)
                                                                                                   cmdLineParams.getAsInt("-col_emb") - 1,
                                                                                                   cmdLineParams.getAsInt("-col_ctx_d") - 1,
                                                                                                   (cmdLineParams.getAsInt("-use_deprel") == 1),
+                                                                                                  cmdLineParams.getAsFloat("-sample_w"),
+                                                                                                  cmdLineParams.getAsFloat("-sample_d"),
                                                                                                   cmdLineParams.getAsFloat("-sample_a")
                                                                                                 );
 
@@ -149,8 +151,7 @@ int main(int argc, char **argv)
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
                      cmdLineParams.getAsInt("-negative"),
-//                     cmdLineParams.getAsFloat("-zerolize"),
-//                     cmdLineParams.getAsFloat("-space_lim"),
+                     cmdLineParams.getAsFloat("-space_lim"),
                      cmdLineParams.getAsFloat("-z_reg_d"),
                      cmdLineParams.getAsFloat("-z_reg_a"),
                      cmdLineParams.getAsInt("-threads") );

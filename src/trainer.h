@@ -41,7 +41,7 @@ public:
            size_t epochs,
            float learning_rate,
            size_t negative_count,
-//           float wspace_lim_value,
+           float wspace_lim_value,
            float zero_regularization_factor_dep,
            float zero_regularization_factor_assoc,
            size_t total_threads_count )
@@ -58,7 +58,7 @@ public:
   , starting_alpha(learning_rate)
   , negative(negative_count)
   , next_random_ns(0)
-//  , w_space_lim_factor(wspace_lim_value)
+  , w_space_lim_factor(wspace_lim_value)
   , z_reg_d(zero_regularization_factor_dep)
   , z_reg_a(zero_regularization_factor_assoc)
   , all_done(false)
@@ -75,8 +75,8 @@ public:
     alpha_chunk = (train_words - 1) / total_threads_count;
     if (alpha_chunk > 10000)
       alpha_chunk = 10000;
-//    // инициализируем ограничители векторного пространства
-//    w_space_lims_update(0);
+    // инициализируем ограничители векторного пространства
+    w_space_lims_update(0);
     // выделение памяти для хранения смещений в измерениях
     sh0 = (float *)calloc(layer1_size, sizeof(float));
     // инициализируем распределения, имитирующие шум (для словарей контекстов)
@@ -210,8 +210,8 @@ public:
           alpha = starting_alpha * (1.0 - fraction);
           if ( alpha < starting_alpha * 0.0001 )
             alpha = starting_alpha * 0.0001;
-//          // обновление пределов векторного пространства
-//          w_space_lims_update(fraction);
+          // обновление пределов векторного пространства
+          w_space_lims_update(fraction);
         } // if ('checkpoint')
         // читаем очередной обучающий пример
         auto learning_example = lep->get(thread_idx);
@@ -460,21 +460,28 @@ private:
           std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all samples
       // Learn weights input -> hidden
-      std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
+//      std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
       float zero_shift_factor = alpha*z_reg_d;
-      std::transform(targetVectorPtr, targetVectorPtr+size_dep, sh0, targetVectorPtr, [zero_shift_factor](float a, float b) -> float { return a - zero_shift_factor*b;});
-//      std::transform( targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr,
-//                      [this](float a, float b) -> float
-//                      {
-//                        float tmp = a + b;
-//                        if (tmp > w_space_up_d)
-//                          return w_space_up_d;
-//                        else if (tmp < w_space_down_d)
-//                          return w_space_down_d;
-//                        else
-//                          return tmp;
-//                      }
-//                    );
+      for (size_t d = 0; d < size_dep; ++d)
+      {
+        float* offset = targetVectorPtr + d;
+        // новое значение состоит из:
+        //   1. старого значения
+        //   2. градиента ошибки
+        //   3. регуляризатора смещения нуля (zero shift)
+        //   4. регуляризатора пределов пространства (space) либо L2 регуляризатора
+        float newValue = (*offset)
+                       + (*(neu1e+d))
+                       - zero_shift_factor*(*(sh0+d))              // ZeroShift regularizator
+                       //- alpha*0.001*(*offset)                     // L2 regularizator
+                       ;
+        if (newValue > w_space_up_d)
+          *offset = w_space_up_d;
+        else if (newValue < w_space_down_d)
+          *offset = w_space_down_d;
+        else
+          *offset = newValue;
+      }
     } // for all dep contexts
     // цикл по ассоциативным контекстам
     targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
@@ -587,13 +594,13 @@ private:
     return true;
   } // method-end
 private:
-//  // ограничение векторного пространства (для syn0)
-//  float w_space_up_d = 0;
-//  float w_space_down_d = 0;
-//  float w_space_up_a = 0;
-//  float w_space_down_a = 0;
-//  // коэффициент, от которого зависит степень и скорость расширения векторного пространства syn0
-//  float w_space_lim_factor = 1000.0;
+  // ограничение векторного пространства (для syn0)
+  float w_space_up_d = 0;
+  float w_space_down_d = 0;
+  float w_space_up_a = 0;
+  float w_space_down_a = 0;
+  // коэффициент, от которого зависит степень и скорость расширения векторного пространства syn0
+  float w_space_lim_factor = 1000.0;
   // хранилище смещений нулей в измерениях векторного пространства syn0
   float *sh0;
   // коэффициенты значимости регуляризации, нацеленной на ликвидацию смещений нулей
@@ -602,14 +609,14 @@ private:
   // признак окончания обучения (для остановки потока, отвечающего за вычисление смещений нулей)
   std::atomic<bool> all_done;
 
-//  // функция вычисления ограничителей векторного пространства
-//  void w_space_lims_update(float fraction)
-//  {
-//    w_space_up_d = (0.5 / layer1_size) * (1.0 + fraction * w_space_lim_factor);
-//    w_space_down_d = - w_space_up_d;
-//    w_space_up_a = w_space_up_d * 0.8;
-//    w_space_down_a = - w_space_up_a;
-//  } // method-end
+  // функция вычисления ограничителей векторного пространства
+  void w_space_lims_update(float fraction)
+  {
+    w_space_up_d = (0.5 / layer1_size) * (1.0 + fraction * w_space_lim_factor);
+    w_space_down_d = - w_space_up_d;
+    w_space_up_a = w_space_up_d * 0.8;
+    w_space_down_a = - w_space_up_a;
+  } // method-end
 }; // class-decl-end
 
 
