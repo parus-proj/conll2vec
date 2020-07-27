@@ -30,17 +30,18 @@ public:
         {"-use_deprel",   {"Include DEPREL field in dependency context", "0", std::nullopt}},
         {"-size_d",       {"Size of Dependency part of word vectors", "80", std::nullopt}},
         {"-size_a",       {"Size of Associative part of word vectors", "20", std::nullopt}},
-        {"-negative",     {"Number of negative examples", "3", std::nullopt}},
+        {"-negative",     {"Number of negative examples", "5", std::nullopt}},
         {"-alpha",        {"Set the starting learning rate", "0.025", std::nullopt}},
         {"-iter",         {"Run more training iterations", "3", std::nullopt}},
         {"-sample_w",     {"Words subsampling threshold", "1e-3", std::nullopt}},
         {"-sample_d",     {"Dependency contexts subsampling threshold", "1e-3", std::nullopt}},
-        {"-sample_a",     {"Associative contexts subsampling threshold", "1e-3", std::nullopt}},
+        {"-sample_a",     {"Associative contexts subsampling threshold", "1e-4", std::nullopt}},
         {"-threads",      {"Use <int> threads", "8", std::nullopt}},
         {"-fit_input",    {"<file>.conll to fit (or stdin)", std::nullopt, std::nullopt}},
-        {"-space_lim",    {"Embedding's space limit factor", "1000", std::nullopt}},
+        {"-space_lim_d",  {"Embedding's space limit factor (dependency)", "1000", std::nullopt}},
+        {"-space_lim_a",  {"Embedding's space limit factor (association)", "1000", std::nullopt}},
         {"-z_reg_d",      {"Zero-shifts regularization factor (dependency)", "0.001", std::nullopt}},
-        {"-z_reg_a",      {"Zero-shifts regularization factor (association)", "0.5", std::nullopt}}
+        {"-z_reg_a",      {"Zero-shifts regularization factor (association)", "0.1", std::nullopt}}
     };
   }
 };

@@ -6,6 +6,7 @@
 #include "learning_example_provider.h"
 #include "trainer.h"
 #include "sim_estimator.h"
+#include "selftest_ru.h"
 
 #include <memory>
 #include <string>
@@ -29,8 +30,9 @@ int main(int argc, char **argv)
               << "  -task fit   -- conll file transformation" << std::endl
               << "  -task vocab -- vocabs building" << std::endl
               << "  -task train -- model training" << std::endl
-              << "  -task punct -- add punctuation to model " << std::endl
-              << "  -task sim   -- similarity test" << std::endl;
+              << "  -task punct -- add punctuation to model" << std::endl
+              << "  -task sim   -- similarity test" << std::endl
+              << "  -task selftest_ru -- model self-test for russian" << std::endl;
     return -1;
   }
   auto&& task = cmdLineParams.getAsString("-task");
@@ -151,7 +153,8 @@ int main(int argc, char **argv)
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
                      cmdLineParams.getAsInt("-negative"),
-                     cmdLineParams.getAsFloat("-space_lim"),
+                     cmdLineParams.getAsFloat("-space_lim_d"),
+                     cmdLineParams.getAsFloat("-space_lim_a"),
                      cmdLineParams.getAsFloat("-z_reg_d"),
                      cmdLineParams.getAsFloat("-z_reg_a"),
                      cmdLineParams.getAsInt("-threads") );
@@ -210,6 +213,17 @@ int main(int argc, char **argv)
     sim_estimator.run();
     return 0;
   } // if task == sim
+
+  // если поставлена задача самодиагностики (язык: русский)
+  if (task == "selftest_ru")
+  {
+    std::shared_ptr<SimilarityEstimator> sim_estimator = std::make_shared<SimilarityEstimator>(cmdLineParams.getAsInt("-size_d"), cmdLineParams.getAsInt("-size_a"));
+    if ( !sim_estimator->load_model(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt")) )
+      return -1;
+    SelfTest_ru st(sim_estimator);
+    st.run(false);
+    return 0;
+  } // if task == sefltest_ru
 
   return -1;
 }

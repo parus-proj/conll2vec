@@ -41,7 +41,8 @@ public:
            size_t epochs,
            float learning_rate,
            size_t negative_count,
-           float wspace_lim_value,
+           float wspace_lim_value_dep,
+           float wspace_lim_value_assoc,
            float zero_regularization_factor_dep,
            float zero_regularization_factor_assoc,
            size_t total_threads_count )
@@ -58,7 +59,8 @@ public:
   , starting_alpha(learning_rate)
   , negative(negative_count)
   , next_random_ns(0)
-  , w_space_lim_factor(wspace_lim_value)
+  , w_space_lim_factor_d(wspace_lim_value_dep)
+  , w_space_lim_factor_a(wspace_lim_value_assoc)
   , z_reg_d(zero_regularization_factor_dep)
   , z_reg_a(zero_regularization_factor_assoc)
   , all_done(false)
@@ -524,21 +526,28 @@ private:
           std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all samples
       // Learn weights input -> hidden
-      std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
+      //std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
       float zero_shift_factor = alpha*z_reg_a;
-      std::transform(targetVectorPtr, targetVectorPtr+size_assoc, sh0+size_dep, targetVectorPtr, [zero_shift_factor](float a, float b) -> float { return a - zero_shift_factor*b;});
-//      std::transform( targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr,
-//                      [this](float a, float b) -> float
-//                      {
-//                        float tmp = a + b;
-//                        if (tmp > w_space_up_a)
-//                          return w_space_up_a;
-//                        else if (tmp < w_space_down_a)
-//                          return w_space_down_a;
-//                        else
-//                          return tmp;
-//                      }
-//                    );
+      for (size_t d = 0; d < size_assoc; ++d)
+      {
+        float* offset = targetVectorPtr + d;
+        // новое значение состоит из:
+        //   1. старого значения
+        //   2. градиента ошибки
+        //   3. регуляризатора смещения нуля (zero shift)
+        //   4. регуляризатора пределов пространства (space) либо L2 регуляризатора
+        float newValue = (*offset)
+                       + (*(neu1e+d))
+                       - zero_shift_factor*(*(sh0+size_dep+d))       // ZeroShift regularizator
+                       //- alpha*0.001*(*offset)                     // L2 regularizator
+                       ;
+        if (newValue > w_space_up_a)
+          *offset = w_space_up_a;
+        else if (newValue < w_space_down_a)
+          *offset = w_space_down_a;
+        else
+          *offset = newValue;
+      }
     } // for all assoc contexts
   } // method-end
 private:
@@ -600,7 +609,8 @@ private:
   float w_space_up_a = 0;
   float w_space_down_a = 0;
   // коэффициент, от которого зависит степень и скорость расширения векторного пространства syn0
-  float w_space_lim_factor = 1000.0;
+  float w_space_lim_factor_d = 1000.0;
+  float w_space_lim_factor_a = 1000.0;
   // хранилище смещений нулей в измерениях векторного пространства syn0
   float *sh0;
   // коэффициенты значимости регуляризации, нацеленной на ликвидацию смещений нулей
@@ -612,9 +622,10 @@ private:
   // функция вычисления ограничителей векторного пространства
   void w_space_lims_update(float fraction)
   {
-    w_space_up_d = (0.5 / layer1_size) * (1.0 + fraction * w_space_lim_factor);
+    float initial_space_limit = (0.5 / layer1_size);  // согласно процедуре инициализации весов init_net()
+    w_space_up_d = initial_space_limit * (1.0 + fraction * w_space_lim_factor_d);
     w_space_down_d = - w_space_up_d;
-    w_space_up_a = w_space_up_d * 0.8;
+    w_space_up_a = initial_space_limit * (1.0 + fraction * w_space_lim_factor_a);
     w_space_down_a = - w_space_up_a;
   } // method-end
 }; // class-decl-end

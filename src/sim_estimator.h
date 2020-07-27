@@ -8,6 +8,7 @@
 #include <map>
 #include <cmath>
 #include <numeric>
+#include <optional>
 #include <iostream>
 #ifdef _MSC_VER
   #include <io.h>
@@ -16,6 +17,14 @@
 
 class SimilarityEstimator
 {
+public:
+  // измерения для сравнения
+  enum CmpDims
+  {
+    cdAll,
+    cdDepOnly,
+    cdAssocOnly
+  };
 public:
   SimilarityEstimator(size_t dep_part, size_t assoc_part)
   : dep_size(dep_part)
@@ -112,6 +121,18 @@ public:
       }
     } // infinite loop
   } // method-end
+  // получение расстояния для заданной пары слов
+  std::optional<float> get_sim(CmpDims dims, const std::string& word1, const std::string& word2)
+  {
+    auto widx1 = get_word_idx(word1);
+    auto widx2 = get_word_idx(word2);
+    if (widx1 == words_count || widx2 == words_count)
+      return std::nullopt;
+    cmp_dims = dims;
+    float* w1Offset = embeddings + widx1*emb_size;
+    float* w2Offset = embeddings + widx2*emb_size;
+    return cosine_measure(w1Offset, w2Offset);
+  }
 private:
   size_t dep_size;
   size_t assoc_size;
@@ -123,12 +144,7 @@ private:
   size_t words_count;
   size_t emb_size;
   // измерения для сравнения
-  enum CmpDims
-  {
-    cdAll,
-    cdDepOnly,
-    cdAssocOnly
-  } cmp_dims;
+  CmpDims cmp_dims;
   // режим сравнения
   enum CmpMode
   {
