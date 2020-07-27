@@ -374,6 +374,7 @@ private:
   {
     std::cout << "RUSSE 2015 evaluation" << std::endl;
     //test_russe2015_dbg();
+    test_russe2015_hj();
     test_russe2015_rt();
     test_russe2015_ae();
     test_russe2015_ae2();
@@ -381,7 +382,7 @@ private:
 
   struct SimUsimPredict
   {
-    size_t sim;
+    float sim;
     float usim;
     size_t predict;
   };
@@ -404,7 +405,7 @@ private:
       if (record.size() != correct_fields_cnt) // invalid record
         continue;
       if (with_data)
-        test_data[ record[0] ][ record[1] ].sim = std::stoi(record[2]);
+        test_data[ record[0] ][ record[1] ].sim = std::stof(record[2]);
       else
         test_data[ record[0] ][ record[1] ];
     }
@@ -429,7 +430,7 @@ private:
           p2.second.usim = 0.0;
         }
       }
-    std::cout << "    not found: " << not_found << " of " << (found+not_found) << ",      used: " << found << std::endl;
+    std::cout << "    not found: " << not_found << " of " << (found+not_found) << " (~" << (not_found*100/(found+not_found)) << "%),      used: " << found << std::endl;
   }
 
   void calc_predict(std::map<std::string, std::map<std::string, SimUsimPredict>>& test_data) const
@@ -451,7 +452,7 @@ private:
 
   float average_precision_light(const std::map<std::string, std::map<std::string, SimUsimPredict>>& test_data) const
   {
-    std::multiset< std::pair<float, size_t>, std::greater<std::pair<float, size_t>>> sorter;
+    std::multiset< std::pair<float, float>, std::greater<std::pair<float, float>>> sorter;
     size_t positive_true = 0;
     for (auto& p1 : test_data)
       for (auto& p2 : p1.second)
@@ -477,7 +478,7 @@ private:
 
   float average_precision_sklearn_bin(const std::map<std::string, std::map<std::string, SimUsimPredict>>& test_data) const
   {
-    std::multiset< std::pair<float, size_t>, std::greater<std::pair<float, size_t>>> sorter;
+    std::multiset< std::pair<float, float>, std::greater<std::pair<float, float>>> sorter;
     size_t positive_true = 0;
     for (auto& p1 : test_data)
       for (auto& p2 : p1.second)
@@ -514,7 +515,7 @@ private:
     // использовалась в scikit-learn до версии 0.19.X и в частности в рамках RUSSE-2015
     // современная реализация функции average_precision_score в scikit-learn является прямоугольной аппроксимацией AUC
     // о различиях см. https://datascience.stackexchange.com/questions/52130/about-sklearn-metrics-average-precision-score-documentation
-    std::multiset< std::pair<float, size_t>, std::greater<std::pair<float, size_t>>> sorter;
+    std::multiset< std::pair<float, float>, std::greater<std::pair<float, float>>> sorter;
     size_t positive_true = 0;
     for (auto& p1 : test_data)
       for (auto& p2 : p1.second)
@@ -556,15 +557,115 @@ private:
     return (float)succ / (float)total;
   }
 
+  float pearsons_rank_correlation_coefficient(const std::map<std::string, std::map<std::string, SimUsimPredict>>& test_data) const
+  {
+    // вычислим мат.ожидания для каждого ряда данных
+    float avg_sim = 0, avg_usim = 0, total = 0;
+    for (auto& p1 : test_data)
+      for (auto& p2 : p1.second)
+      {
+        total += 1;
+        avg_sim += p2.second.sim;
+        avg_usim += p2.second.usim;
+      }
+    avg_sim /= total;
+    avg_usim /= total;
+    // вычислим ковариацию
+    float covariance = 0;
+    for (auto& p1 : test_data)
+      for (auto& p2 : p1.second)
+        covariance += (p2.second.sim - avg_sim) * (p2.second.usim - avg_usim);
+    covariance /= total;
+    // вычислим стандартные отклонения
+    float sd1 = 0, sd2 = 0;
+    for (auto& p1 : test_data)
+      for (auto& p2 : p1.second)
+      {
+        sd1 += (p2.second.sim - avg_sim) * (p2.second.sim - avg_sim);
+        sd2 += (p2.second.usim - avg_usim) * (p2.second.usim - avg_usim);
+      }
+    sd1 = std::sqrt(sd1/total);       // оценка стандартного отклонения на основании смещённой оценки дисперсии, см. https://ru.wikipedia.org/wiki/Среднеквадратическое_отклонение
+    sd2 = std::sqrt(sd2/total);
+    return covariance / (sd1 * sd2);
+  }
+
+  float spearmans_rank_correlation_coefficient(const std::map<std::string, std::map<std::string, SimUsimPredict>>& test_data) const
+  {
+    std::map<std::string, std::map<std::string, SimUsimPredict>> test_data_ranks;
+
+    std::multimap<float, std::pair<std::string, std::string>, std::greater<float>> sorter1, sorter2;
+    for (auto& p1 : test_data)
+      for (auto& p2 : p1.second)
+      {
+        sorter1.insert( std::make_pair(p2.second.sim, std::make_pair(p1.first, p2.first)) );
+        sorter2.insert( std::make_pair(p2.second.usim, std::make_pair(p1.first, p2.first)) );
+      }
+    // вычисляем дробные ранги (см. https://en.wikipedia.org/wiki/Ranking#Fractional_ranking_.28.221_2.5_2.5_4.22_ranking.29)
+    {
+      int rank = 0;
+      auto sIt = sorter1.begin();
+      while ( sIt != sorter1.end() )
+      {
+        ++rank;
+        auto range = sorter1.equal_range(sIt->first);
+        size_t cnt = std::distance(range.first, range.second);
+        int rank_sum = 0;
+        for (size_t idx = 0; idx < cnt; ++idx)
+          rank_sum += (rank+idx);
+        float fractional_rank = (float)rank_sum / cnt;
+        while (range.first != range.second)
+        {
+          test_data_ranks[range.first->second.first][range.first->second.second].sim = fractional_rank;
+          ++range.first;
+        }
+        rank += (cnt-1);
+        sIt = range.second;
+      }
+    }
+    {
+      int rank = 0;
+      auto sIt = sorter2.begin();
+      while ( sIt != sorter2.end() )
+      {
+        ++rank;
+        auto range = sorter2.equal_range(sIt->first);
+        size_t cnt = std::distance(range.first, range.second);
+        int rank_sum = 0;
+        for (size_t idx = 0; idx < cnt; ++idx)
+          rank_sum += (rank+idx);
+        float fractional_rank = (float)rank_sum / cnt;
+        while (range.first != range.second)
+        {
+          test_data_ranks[range.first->second.first][range.first->second.second].usim = fractional_rank;
+          ++range.first;
+        }
+        rank += (cnt-1);
+        sIt = range.second;
+      }
+    }
+    // вычисление коэф.ранговой кореляции Спирмена (см. https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient)
+    return pearsons_rank_correlation_coefficient(test_data_ranks);
+  }
+
   void test_russe2015_dbg() const
   {
     auto test_data = read_test_file("russe2015data/test.csv", false);
-    calc_usim(SimilarityEstimator::cdAssocOnly, test_data);
+    calc_usim(SimilarityEstimator::cdAll, test_data);
     std::ofstream ofs("russe2015data/test_it.csv");
     ofs << "word1,word2,sim" << std::endl;
     for (auto& p1 : test_data)
       for (auto& p2 : p1.second)
         ofs << p1.first << "," << p2.first << "," << p2.second.usim << std::endl;
+  }
+
+  void test_russe2015_hj() const
+  {
+    std::cout << "  HJ" << std::endl;
+    auto test_data = read_test_file("russe2015data/hj-test.csv");
+    calc_usim(SimilarityEstimator::cdAll, test_data);
+    std::cout << "    Use all vector:" << std::endl;
+    std::cout << "      Spearman's correlation with human judgements: = " << spearmans_rank_correlation_coefficient(test_data) << std::endl;
+    //std::cout << "      Pearson's correlation with human judgements: = " << pearsons_rank_correlation_coefficient(test_data) << std::endl;
   }
 
   void test_russe2015_rt() const
