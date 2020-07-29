@@ -38,6 +38,7 @@ public:
         {"-sample_a",     {"Associative contexts subsampling threshold", "1e-4", std::nullopt}},
         {"-threads",      {"Use <int> threads", "8", std::nullopt}},
         {"-fit_input",    {"<file>.conll to fit (or stdin)", std::nullopt, std::nullopt}},
+        {"-speed_factor", {"Use speed-factor", "1", std::nullopt}},
         {"-space_lim_d",  {"Embedding's space limit factor (dependency)", "1000", std::nullopt}},
         {"-space_lim_a",  {"Embedding's space limit factor (association)", "1000", std::nullopt}},
         {"-z_reg_d",      {"Zero-shifts regularization factor (dependency)", "0.001", std::nullopt}},

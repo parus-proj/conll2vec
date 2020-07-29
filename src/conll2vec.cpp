@@ -153,6 +153,7 @@ int main(int argc, char **argv)
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
                      cmdLineParams.getAsInt("-negative"),
+                     (cmdLineParams.getAsInt("-speed_factor") == 1),
                      cmdLineParams.getAsFloat("-space_lim_d"),
                      cmdLineParams.getAsFloat("-space_lim_a"),
                      cmdLineParams.getAsFloat("-z_reg_d"),

@@ -11,6 +11,7 @@
 #include <iostream>
 #include <fstream>
 #include <regex>
+#include <optional>
 
 // процедура оценки качества модели для русского языка (быстрая самодиагностика)
 class SelfTest_ru
@@ -80,12 +81,17 @@ private:
         {"в", "китаец"},
         {"в", "сообщить"},
         {"в", "быстро"},
+        {"в", "измениться"},
+        {"в", "секретно"},
+        {"у", "быть"},
+        {"из", "общеизвестно"},
         {"он", "бежать"},
         {"он", "президент"},
         {"они", "быстро"},
         {"они", "купить"},
         {"они", "мочь"},
         {"они", "американец"},
+        {"я", "виснуть"},
         {"математика", "быстро"},
         {"математика", "во-первых"},
         {"математика", "кофе"},
@@ -95,6 +101,21 @@ private:
         {"бежать", "только"},
         {"бежать", "автомобиль"},
         {"молоко", "митинг"},
+        {"увлекшийся", "молоко"},
+        {"кумыс", "разбежаться"},
+        {"раджа", "собираться"},
+        {"чашка", "кипятить"},
+        {"темно-красный", "кипятить"},
+        {"украшенный", "тепловоз"},
+        {"забытый", "книга"},
+        {"атакованный", "возле"},
+        {"дотащиться", "около"},
+        {"проснуться", "вельможа"},
+        {"пруд", "вдохнуть"},
+        {"пулемет", "лодочный"},
+        {"вовремя", "рак-отшельник"},
+        {"камыш", "виртуоз"},
+        {"промокнуть", "престижно"},
         {"сообщить", "лошадь"},
         {"сообщить", "море"}
     };
@@ -159,7 +180,7 @@ private:
         {"автомобиль", "рыцарь"},
         {"императорский", "океан"},
         {"атомный", "курица"},
-        {"записка", "служить"},
+        {"записка", "льдина"},
         {"рыба", "кольцо"},
         {"хирург", "истребитель"},
         {"джип", "крокодил"},
@@ -412,13 +433,38 @@ private:
     return test_data;
   }
 
+  std::optional<float> calc_sim_strong(SimilarityEstimator::CmpDims dims, const std::string& w1, const std::string& w2) const
+  {
+    return sim_meter->get_sim(dims, w1, w2);
+  }
+
+  std::optional<float> calc_sim_with_pn(SimilarityEstimator::CmpDims dims, const std::string& w1, const std::string& w2) const
+  {
+    const float MINSIM = -1000000;
+    std::optional<float> best;
+    auto sim1 = sim_meter->get_sim(dims, w1, w2);
+    if ( sim1 && sim1.value() > best.value_or(MINSIM))
+      best = sim1;
+    auto sim2 = sim_meter->get_sim(dims, w1+"_PN", w2);
+    if ( sim2 && sim2.value() > best.value_or(MINSIM))
+      best = sim2;
+    auto sim3 = sim_meter->get_sim(dims, w1, w2+"_PN");
+    if ( sim3 && sim3.value() > best.value_or(MINSIM))
+      best = sim3;
+    auto sim4 = sim_meter->get_sim(dims, w1+"_PN", w2+"_PN");
+    if ( sim4 && sim4.value() > best.value_or(MINSIM))
+      best = sim4;
+    return best;
+  }
+
   void calc_usim(SimilarityEstimator::CmpDims dims, std::map<std::string, std::map<std::string, SimUsimPredict>>& test_data) const
   {
     size_t not_found = 0, found = 0;
     for (auto& p1 : test_data)
       for (auto& p2 : p1.second)
       {
-        auto sim = sim_meter->get_sim(dims, p1.first, p2.first);
+        auto sim = calc_sim_strong(dims, p1.first, p2.first);
+        //auto sim = calc_sim_with_pn(dims, p1.first, p2.first);
         if (sim)
         {
           ++found;
@@ -666,6 +712,12 @@ private:
     std::cout << "    Use all vector:" << std::endl;
     std::cout << "      Spearman's correlation with human judgements: = " << spearmans_rank_correlation_coefficient(test_data) << std::endl;
     //std::cout << "      Pearson's correlation with human judgements: = " << pearsons_rank_correlation_coefficient(test_data) << std::endl;
+    calc_usim(SimilarityEstimator::cdDepOnly, test_data);
+    std::cout << "    Use dependency part of vector only:" << std::endl;
+    std::cout << "      Spearman's correlation with human judgements: = " << spearmans_rank_correlation_coefficient(test_data) << std::endl;
+    calc_usim(SimilarityEstimator::cdAssocOnly, test_data);
+    std::cout << "    Use associative part of vector only:" << std::endl;
+    std::cout << "      Spearman's correlation with human judgements: = " << spearmans_rank_correlation_coefficient(test_data) << std::endl;
   }
 
   void test_russe2015_rt() const

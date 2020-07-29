@@ -41,6 +41,7 @@ public:
            size_t epochs,
            float learning_rate,
            size_t negative_count,
+           bool speed_factor_flag,
            float wspace_lim_value_dep,
            float wspace_lim_value_assoc,
            float zero_regularization_factor_dep,
@@ -59,6 +60,7 @@ public:
   , starting_alpha(learning_rate)
   , negative(negative_count)
   , next_random_ns(0)
+  , use_speed_factor(speed_factor_flag)
   , w_space_lim_factor_d(wspace_lim_value_dep)
   , w_space_lim_factor_a(wspace_lim_value_assoc)
   , z_reg_d(zero_regularization_factor_dep)
@@ -420,7 +422,7 @@ private:
   // функция, реализующая модель обучения skip-gram
   void skip_gram(const LearningExample& le, float *neu1e )
   {
-    float speedFactor = w_vocabulary->idx_to_data(le.word).speed_factor;
+    float speedFactor = (use_speed_factor ? w_vocabulary->idx_to_data(le.word).speed_factor : 1.0);
     // вычисляем смещение вектора, соответствующего целевому слову
     float *targetVectorPtr = syn0 + le.word * layer1_size;
     // цикл по синтаксическим контекстам
@@ -603,6 +605,8 @@ private:
     return true;
   } // method-end
 private:
+  // применять ли эвристику на основе speed factor
+  bool use_speed_factor = true;
   // ограничение векторного пространства (для syn0)
   float w_space_up_d = 0;
   float w_space_down_d = 0;
