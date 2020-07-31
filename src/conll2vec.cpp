@@ -7,6 +7,7 @@
 #include "trainer.h"
 #include "sim_estimator.h"
 #include "selftest_ru.h"
+#include "unpnizer.h"
 
 #include <memory>
 #include <string>
@@ -27,12 +28,13 @@ int main(int argc, char **argv)
   {
     std::cerr << "Task parameter is not defined." << std::endl;
     std::cerr << "Alternatives:" << std::endl
-              << "  -task fit   -- conll file transformation" << std::endl
-              << "  -task vocab -- vocabs building" << std::endl
-              << "  -task train -- model training" << std::endl
-              << "  -task punct -- add punctuation to model" << std::endl
-              << "  -task sim   -- similarity test" << std::endl
-              << "  -task selftest_ru -- model self-test for russian" << std::endl;
+              << "  -task fit         -- conll file transformation" << std::endl
+              << "  -task vocab       -- vocabs building" << std::endl
+              << "  -task train       -- model training" << std::endl
+              << "  -task punct       -- add punctuation to model" << std::endl
+              << "  -task sim         -- similarity test" << std::endl
+              << "  -task selftest_ru -- model self-test for russian" << std::endl
+              << "  -task unPNize     -- merge common & proper names models" << std::endl;
     return -1;
   }
   auto&& task = cmdLineParams.getAsString("-task");
@@ -225,6 +227,19 @@ int main(int argc, char **argv)
     st.run(false);
     return 0;
   } // if task == sefltest_ru
+
+  // если поставлена задача сведения моделей для нарицательных и собственных имен
+  if (task == "unPNize")
+  {
+    std::shared_ptr< OriginalWord2VecVocabulary > v_main, v_proper;
+    v_main = std::make_shared<OriginalWord2VecVocabulary>();
+    if ( !v_main->load( cmdLineParams.getAsString("-vocab_m") ) )
+      return -1;
+    v_proper = std::make_shared<OriginalWord2VecVocabulary>();
+    if ( !v_proper->load( cmdLineParams.getAsString("-vocab_p") ) )
+      return -1;
+    Unpnizer::run(v_main, v_proper, cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt"));
+  }
 
   return -1;
 }
