@@ -35,7 +35,7 @@ public:
         {"-iter",         {"Run more training iterations", "3", std::nullopt}},
         {"-sample_w",     {"Words subsampling threshold", "1e-3", std::nullopt}},
         {"-sample_d",     {"Dependency contexts subsampling threshold", "1e-3", std::nullopt}},
-        {"-sample_a",     {"Associative contexts subsampling threshold", "1e-4", std::nullopt}},
+        {"-sample_a",     {"Associative contexts subsampling threshold", "1e-5", std::nullopt}},
         {"-threads",      {"Use <int> threads", "8", std::nullopt}},
         {"-fit_input",    {"<file>.conll to fit (or stdin)", std::nullopt, std::nullopt}},
         {"-speed_factor", {"Use speed-factor", "1", std::nullopt}},

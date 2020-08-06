@@ -2,6 +2,7 @@
 #define LEARNING_EXAMPLE_PROVIDER_H_
 
 #include "conll_reader.h"
+#include "original_word2vec_vocabulary.h"
 
 #include <memory>
 #include <vector>

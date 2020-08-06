@@ -59,7 +59,6 @@ public:
   , alpha(learning_rate)
   , starting_alpha(learning_rate)
   , negative(negative_count)
-  , next_random_ns(0)
   , use_speed_factor(speed_factor_flag)
   , w_space_lim_factor_d(wspace_lim_value_dep)
   , w_space_lim_factor_a(wspace_lim_value_assoc)
@@ -389,7 +388,7 @@ private:
   const size_t table_size = 1e8; // 100 млн.
   int *table_dep = nullptr,
       *table_assoc = nullptr;
-  unsigned long long next_random_ns;
+  unsigned long long next_random_ns = 0;
 
   inline void update_random_ns()
   {
@@ -420,7 +419,7 @@ private:
     }
   } // method-end
   // функция, реализующая модель обучения skip-gram
-  void skip_gram(const LearningExample& le, float *neu1e )
+  void skip_gram(const LearningExample& le, float *neu1e)
   {
     float speedFactor = (use_speed_factor ? w_vocabulary->idx_to_data(le.word).speed_factor : 1.0);
     // вычисляем смещение вектора, соответствующего целевому слову
@@ -452,6 +451,7 @@ private:
         // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
         float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_dep, ctxVectorPtr, 0.0);
         // вычислим градиент умноженный на коэффициент скорости обучения
+        if ( std::isnan(f) ) continue;
         if      (f > MAX_EXP)  g = (label - 1) * alpha;
         else if (f < -MAX_EXP) g = (label - 0) * alpha;
         else                   g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
@@ -465,7 +465,7 @@ private:
       } // for all samples
       // Learn weights input -> hidden
 //      std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
-      float zero_shift_factor = alpha*z_reg_d;
+      float zero_shift_factor = alpha * z_reg_d;
       for (size_t d = 0; d < size_dep; ++d)
       {
         float* offset = targetVectorPtr + d;
@@ -476,8 +476,8 @@ private:
         //   4. регуляризатора пределов пространства (space) либо L2 регуляризатора
         float newValue = (*offset)
                        + (*(neu1e+d))
-                       - zero_shift_factor*(*(sh0+d))              // ZeroShift regularizator
-                       //- alpha*0.001*(*offset)                     // L2 regularizator
+                       - zero_shift_factor * (*(sh0+d))            // ZeroShift regularizator
+                       //- alpha*0.01*(*offset)                      // L2 regularizator
                        ;
         if (newValue > w_space_up_d)
           *offset = w_space_up_d;
@@ -490,6 +490,7 @@ private:
     // цикл по ассоциативным контекстам
     targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
     neu1e += size_dep;
+    float *sh0a = sh0 + size_dep;
     for (auto&& ctx_idx : le.assoc_context)
     {
       // зануляем текущие значения ошибок (это частная производная ошибки E по выходу скрытого слоя h)
@@ -516,6 +517,7 @@ private:
         // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
         float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, 0.0);
         // вычислим градиент умноженный на коэффициент скорости обучения
+        if ( std::isnan(f) ) continue;
         if      (f > MAX_EXP)  g = (label - 1) * alpha;
         else if (f < -MAX_EXP) g = (label - 0) * alpha;
         else                   g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
@@ -529,7 +531,7 @@ private:
       } // for all samples
       // Learn weights input -> hidden
       //std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
-      float zero_shift_factor = alpha*z_reg_a;
+      float zero_shift_factor = alpha * z_reg_a;
       for (size_t d = 0; d < size_assoc; ++d)
       {
         float* offset = targetVectorPtr + d;
@@ -540,8 +542,8 @@ private:
         //   4. регуляризатора пределов пространства (space) либо L2 регуляризатора
         float newValue = (*offset)
                        + (*(neu1e+d))
-                       - zero_shift_factor*(*(sh0+size_dep+d))       // ZeroShift regularizator
-                       //- alpha*0.001*(*offset)                     // L2 regularizator
+                       - zero_shift_factor * (*(sh0a+d))             // ZeroShift regularizator
+                       //- alpha*0.01*(*offset)                        // L2 regularizator
                        ;
         if (newValue > w_space_up_a)
           *offset = w_space_up_a;
