@@ -133,6 +133,14 @@ private:
       if ( token[column] == "_" ) // символ отсутствия значения в conll
         continue;
       auto& word = token[column];
+
+      // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах лемматизации
+      const std::set<std::string> puncts = { ".", ",", "!", "?", ":", ";", "…", "...", "--", "—", "–", "‒",
+                                             "'", "ʼ", "ˮ", "\"", "«", "»", "“", "”", "„", "‟", "‘", "’", "‚", "‛",
+                                             "(", ")", "[", "]", "{", "}", "⟨", "⟩" };
+      if ( puncts.find(word) != puncts.end() )
+        continue;
+
       auto it = vocab->find( word );
       if (it == vocab->end())
         (*vocab)[word] = 1;
@@ -151,6 +159,14 @@ private:
       if ( token[column] == "_" ) // символ отсутствия значения в conll
         continue;
       auto& word = token[column];
+
+      // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах лемматизации
+      const std::set<std::string> puncts = { ".", ",", "!", "?", ":", ";", "…", "...", "--", "—", "–", "‒",
+                                             "'", "ʼ", "ˮ", "\"", "«", "»", "“", "”", "„", "‟", "‘", "’", "‚", "‛",
+                                             "(", ")", "[", "]", "{", "}", "⟨", "⟩" };
+      if ( puncts.find(word) != puncts.end() )
+        continue;
+
       auto it = vocab->find( word );
       if (it == vocab->end())
         (*vocab)[word] = 1;
