@@ -111,11 +111,16 @@ private:
     process_analitic(data);
     // обработка конструкций с пассивным залогом
     process_passive(data);
+    // теоретически, манипуляции со связями (например, с предлогами) могут затереть метку PUNC у списочных знаков препинания
+    // запустим принудительную расстановку отношения PUNC повторно
+    process_punc(data);
   } // method-end
   // исправление типа синтаксической связи у знаков пунктуации
   void process_punc(u32SentenceMatrix& data)
   {
-    std::set<std::u32string> puncts = { U".", U",", U"!", U"?", U":", U";", U"…", U"...", U"--", U"'", U"«", U"»", U"(", U")", U"[", U"]", U"{", U"}" };
+    std::set<std::u32string> puncts = { U".", U",", U"!", U"?", U":", U";", U"…", U"...", U"--", U"—", U"–", U"‒",
+                                        U"'", U"ʼ", U"ˮ", U"\"", U"«", U"»", U"“", U"”", U"„", U"‟", U"‘", U"’", U"‚", U"‛",
+                                        U"(", U")", U"[", U"]", U"{", U"}", U"⟨", U"⟩" };
     for (auto& t : data)
     {
       if ( puncts.find(t[1]) != puncts.end() )

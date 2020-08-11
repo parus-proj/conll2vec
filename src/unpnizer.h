@@ -85,9 +85,9 @@ public:
           auto pn_word_cn = properVocabulary->idx_to_data( properVocabulary->word_to_idx(StrConv::To_UTF8(pair_word)) ).cn; // в словаре хранятся без суффиксов
           auto pair_word_cn = mainVocabulary->idx_to_data( mainVocabulary->word_to_idx(StrConv::To_UTF8(pair_word)) ).cn;
           // сценарий редукции к наиболее частотному
-          select_most_frequent(vocab, vidx, pair_word_idx, pn_word_offset, pair_word_offset, pn_word_cn, pair_word_cn);
+          //select_most_frequent(vocab, vidx, pair_word_idx, pn_word_offset, pair_word_offset, pn_word_cn, pair_word_cn);
           // сценарий редукции взвешенным средним вектором
-          // todo: исследовать
+          select_by_ratio(vocab, vidx, pair_word_idx, pn_word_offset, pair_word_offset, emb_size, pn_word_cn, pair_word_cn);
         }
       }
     }
@@ -135,6 +135,16 @@ private:
     {
       vocab[pn_word_idx].clear();
     }
+  } // method-end
+
+  static void select_by_ratio( std::vector<std::u32string>& vocab, size_t pn_word_idx, size_t pair_word_idx,
+                               float* pn_word_offset, float* pair_word_offset, size_t emb_size,
+                               uint64_t pn_word_cn, uint64_t pair_word_cn)
+  {
+    float pn_fraction = (float)pn_word_cn / (float)(pn_word_cn + pair_word_cn);
+    vocab[pn_word_idx].clear();
+    for (size_t i = 0; i < emb_size; ++i)
+      pair_word_offset[i] = pn_fraction * pn_word_offset[i] + (1.0 - pn_fraction) * pair_word_offset[i];
   } // method-end
 
 };
