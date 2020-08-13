@@ -83,6 +83,7 @@ public:
 
     // сохраняем словари в файлах
     std::cout << "Save main vocabulary..." << std::endl;
+    erase_main_stopwords(vocab_main); // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах морфологического анализа
     save_vocab(vocab_main, limit_m, voc_m_fn);
     std::cout << "Save proper names vocabulary..." << std::endl;
     save_vocab(vocab_proper, limit_p, voc_p_fn);
@@ -113,6 +114,29 @@ private:
         stoplist.insert(line);
     }
     std::cout << "  stopwords reduce" << std::endl;
+    auto it = vocab->begin();
+    while (it != vocab->end())    //TODO: в C++20 заменить на std::erase_if (https://en.cppreference.com/w/cpp/container/map/erase_if)
+    {
+      if (stoplist.find(it->first) == stoplist.end())
+        ++it;
+      else
+        it = vocab->erase(it);
+    }
+  }
+  // проверка, является ли токен стоп-словом для основного словаря (служит для исправления ошибок в разметке собственных имен)
+  void erase_main_stopwords(VocabMappingPtr vocab)
+  {
+    static bool isListLoaded = false;
+    std::set<std::string> stoplist;
+    if (!isListLoaded)
+    {
+      isListLoaded = true;
+      std::ifstream ifs("stopwords.common_nouns");
+      std::string line;
+      while ( std::getline(ifs, line).good() )
+        stoplist.insert(line);
+    }
+    std::cout << "  stopwords reduce (main)" << std::endl;
     auto it = vocab->begin();
     while (it != vocab->end())    //TODO: в C++20 заменить на std::erase_if (https://en.cppreference.com/w/cpp/container/map/erase_if)
     {
