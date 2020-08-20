@@ -133,6 +133,14 @@ public:
     float* w2Offset = embeddings + widx2*emb_size;
     return cosine_measure(w1Offset, w2Offset);
   }
+  // предоставление доступа к векторному пространству
+  void raw(size_t& wordsCnt, size_t& embSize, float*& vectors, std::vector<std::string>& words)
+  {
+    wordsCnt = words_count;
+    embSize = emb_size;
+    vectors = embeddings;
+    words = vocab;
+  }
 private:
   size_t dep_size;
   size_t assoc_size;

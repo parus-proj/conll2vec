@@ -9,6 +9,7 @@
 #include <vector>
 #include <fstream>
 #include <iostream>
+#include <cmath>
 
 // Средство для слияния основного словаря со словарем собственных имен:
 // - удаляются суффиксы _PN;
@@ -145,6 +146,13 @@ private:
     vocab[pn_word_idx].clear();
     for (size_t i = 0; i < emb_size; ++i)
       pair_word_offset[i] = pn_fraction * pn_word_offset[i] + (1.0 - pn_fraction) * pair_word_offset[i];
+
+    for (size_t i = 0; i < emb_size; ++i)
+      if ( !std::isnormal(pair_word_offset[i]) )
+      {
+        std::cerr << StrConv::To_UTF8(vocab[pair_word_idx]) << " -- " << pn_fraction << ", " << pn_word_cn << ", " << pair_word_cn << std::endl;
+        break;
+      }
   } // method-end
 
 };

@@ -12,6 +12,7 @@
 #include <fstream>
 #include <regex>
 #include <optional>
+#include <cmath>
 
 // процедура оценки качества модели для русского языка (быстрая самодиагностика)
 class SelfTest_ru
@@ -23,6 +24,8 @@ public:
   }
   void run(bool verbose = false)
   {
+    test_floats(verbose);
+    std::cout << std::endl;
     test_nonsim_dep(verbose);
     std::cout << std::endl;
     test_nonsim_assoc(verbose);
@@ -42,6 +45,41 @@ public:
 private:
   // указатель на объект для оценки семантической близости
   std::shared_ptr<SimilarityEstimator> sim_meter;
+
+  // тест категориально несвязанных (среднее расстояние между ними должно быть <=0 )
+  void test_floats(bool verbose = false)
+  {
+    std::cout << "Run float checker" << std::endl;
+    size_t vocab_size = 0, emb_size = 0;
+    float* embeddings = nullptr;
+    std::vector<std::string> vocab;
+    sim_meter->raw(vocab_size, emb_size, embeddings, vocab);
+    auto float_class_func = [](float x)
+        {
+            switch (std::fpclassify(x))
+            {
+                case FP_INFINITE:  return "Inf";
+                case FP_NAN:       return "NaN";
+                case FP_NORMAL:    return "normal";
+                case FP_SUBNORMAL: return "subnormal";
+                case FP_ZERO:      return "zero";
+                default:           return "unknown";
+            }
+        };
+    bool all_right = true;
+    for (size_t w = 0; w < vocab_size; ++w)
+      for (size_t d = 0; d < emb_size; ++d)
+      {
+        if ( !std::isnormal(*(embeddings+w*emb_size+d)) )
+        {
+          std::cout << "  " << vocab[w] << " has abnormal value. -- " << float_class_func(*(embeddings+w*emb_size+d)) << std::endl;
+          all_right = false;
+          break;
+        }
+      }
+    if (all_right)
+      std::cout << "  All float values are normal." << std::endl;
+  }
 
   // тест категориально несвязанных (среднее расстояние между ними должно быть <=0 )
   void test_nonsim_dep(bool verbose = false)
