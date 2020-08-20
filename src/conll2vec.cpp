@@ -8,6 +8,7 @@
 #include "sim_estimator.h"
 #include "selftest_ru.h"
 #include "unpnizer.h"
+#include "add_punct.h"
 
 #include <memory>
 #include <string>
@@ -207,6 +208,12 @@ int main(int argc, char **argv)
     return 0;
   } // if task == train
 
+  // если поставлена задача добавления в модель знаков пунктуации
+  if (task == "punct")
+  {
+    AddPunct::run(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt"));
+  } // if task == punct
+
   // если поставлена задача оценки близости значений (в интерактивном режиме)
   if (task == "sim")
   {
@@ -239,7 +246,7 @@ int main(int argc, char **argv)
     if ( !v_proper->load( cmdLineParams.getAsString("-vocab_p") ) )
       return -1;
     Unpnizer::run(v_main, v_proper, cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt"));
-  }
+  } // if task == unPNize
 
   return -1;
 }

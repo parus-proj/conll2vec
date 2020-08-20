@@ -57,12 +57,108 @@ public:
     ifs.close();
 
     // 2. Добавляем в модель знаки пунктуации
-    const size_t puncts_count = 2;
+    const std::set<std::string> puncts = { ".", ",", "!", "?", ":", ";", "…", "...", "--", "—", "–", "‒",
+                                           "'", "ʼ", "ˮ", "\"", "«", "»", "“", "”", "„", "‟", "‘", "’", "‚", "‛",
+                                           "(", ")", "[", "]", "{", "}", "⟨", "⟩" };
+    for (auto p : puncts)
+    {
+      // проверяем наличие вектора для знака препинания в модели (если есть, то затрём его)
+      size_t vec_idx = get_word_idx(vocab, p);
+      if (vec_idx != vocab.size())
+        vocab[vec_idx].clear();
+    }
     std::vector<std::string> new_vocab;
-    float *new_embeddings = (float *) malloc( puncts_count * emb_size * sizeof(float) );
+    float *new_embeddings = (float *) malloc( puncts.size() * emb_size * sizeof(float) );
 
-    add_as_neighbour(vocab, ".", "во-вторых", embeddings, emb_size, new_vocab, new_embeddings);
-    add_as_neighbour(vocab, ",", "и", embeddings, emb_size, new_vocab, new_embeddings);
+    float *support_embedding = (float *) malloc(emb_size*sizeof(float));
+    calc_support_embedding(words_count, emb_size, embeddings, support_embedding);
+    float *dot_se = (float *) malloc(emb_size*sizeof(float));
+    float *dash_se = (float *) malloc(emb_size*sizeof(float));
+    float *quote_se = (float *) malloc(emb_size*sizeof(float));
+    float *lquote_se = (float *) malloc(emb_size*sizeof(float));
+    float *rquote_se = (float *) malloc(emb_size*sizeof(float));
+    float *bracket_se = (float *) malloc(emb_size*sizeof(float));
+    float *lbracket_se = (float *) malloc(emb_size*sizeof(float));
+    float *rbracket_se = (float *) malloc(emb_size*sizeof(float));
+    make_embedding_as_neighbour(emb_size, support_embedding, dot_se, 7);
+    make_embedding_as_neighbour(emb_size, support_embedding, dash_se, 7);
+    make_embedding_as_neighbour(emb_size, support_embedding, quote_se, 7);
+    make_embedding_as_neighbour(emb_size, support_embedding, bracket_se, 7);
+    make_embedding_as_neighbour(emb_size, quote_se, lquote_se, 3);
+    make_embedding_as_neighbour(emb_size, quote_se, rquote_se, 3);
+    make_embedding_as_neighbour(emb_size, bracket_se, lbracket_se, 3);
+    make_embedding_as_neighbour(emb_size, bracket_se, rbracket_se, 3);
+
+    make_embedding_as_neighbour(emb_size, dot_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back(".");
+    make_embedding_as_neighbour(emb_size, dot_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("!");
+    make_embedding_as_neighbour(emb_size, dot_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("?");
+    make_embedding_as_neighbour(emb_size, dot_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back(";");
+    make_embedding_as_neighbour(emb_size, dot_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("…");
+    make_embedding_as_neighbour(emb_size, dot_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("...");
+    make_embedding_as_neighbour(emb_size, dot_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back(",");
+    make_embedding_as_neighbour(emb_size, dash_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back(":");
+    make_embedding_as_neighbour(emb_size, dash_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("--");
+    make_embedding_as_neighbour(emb_size, dash_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("—");
+    make_embedding_as_neighbour(emb_size, dash_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("–");
+    make_embedding_as_neighbour(emb_size, dash_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("‒");
+    make_embedding_as_neighbour(emb_size, quote_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("'");
+    make_embedding_as_neighbour(emb_size, quote_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("ʼ");
+    make_embedding_as_neighbour(emb_size, quote_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("ˮ");
+    make_embedding_as_neighbour(emb_size, quote_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("\"");
+    make_embedding_as_neighbour(emb_size, lquote_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("«");
+    make_embedding_as_neighbour(emb_size, rquote_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("»");
+    make_embedding_as_neighbour(emb_size, lquote_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("“");
+    make_embedding_as_neighbour(emb_size, rquote_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("”");
+    make_embedding_as_neighbour(emb_size, lquote_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("„");
+    make_embedding_as_neighbour(emb_size, rquote_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("‟");
+    make_embedding_as_neighbour(emb_size, lquote_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("‘");
+    make_embedding_as_neighbour(emb_size, rquote_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("’");
+    make_embedding_as_neighbour(emb_size, lquote_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("‚");
+    make_embedding_as_neighbour(emb_size, rquote_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("‛");
+    make_embedding_as_neighbour(emb_size, lbracket_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("(");
+    make_embedding_as_neighbour(emb_size, rbracket_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back(")");
+    make_embedding_as_neighbour(emb_size, lbracket_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("[");
+    make_embedding_as_neighbour(emb_size, rbracket_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("]");
+    make_embedding_as_neighbour(emb_size, lbracket_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("{");
+    make_embedding_as_neighbour(emb_size, rbracket_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("}");
+    make_embedding_as_neighbour(emb_size, lbracket_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("⟨");
+    make_embedding_as_neighbour(emb_size, rbracket_se, new_embeddings + emb_size * new_vocab.size()); new_vocab.push_back("⟩");
+
+
+//    add_as_neighbour(vocab, ".", "во-вторых", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "!", "во-вторых", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "?", "во-вторых", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, ";", "во-вторых", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "…", "во-вторых", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "...", "во-вторых", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, ",", "и", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, ":", "например", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "--", "например", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "—", "например", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "–", "например", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "‒", "например", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "'", "цитировать", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "ʼ", "цитировать", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "ˮ", "цитировать", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "\"", "цитировать", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "«", "цитировать", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "»", "цитировать", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "“", "цитировать", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "”", "цитировать", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "„", "цитировать", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "‟", "цитировать", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "‘", "цитировать", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "’", "цитировать", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "‚", "цитировать", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "‛", "цитировать", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "(", "например", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, ")", "например", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "[", "например", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "]", "например", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "{", "например", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "}", "например", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "⟨", "например", embeddings, emb_size, new_vocab, new_embeddings);
+//    add_as_neighbour(vocab, "⟩", "например", embeddings, emb_size, new_vocab, new_embeddings);
 
     // 3. Сохраняем модель, расширенную знаками пунктуации
     size_t old_vocab_size = std::count_if(vocab.begin(), vocab.end(), [](const std::string& item) {return !item.empty();});
@@ -112,13 +208,9 @@ private:
                                 float* embeddings, size_t emb_size,
                                 std::vector<std::string>& new_vocab, float* new_embeddings )
   {
-    // проверяем наличие вектора для знака препинания в модели (если есть, то затрём его)
-    size_t vec_idx = get_word_idx(vocab, punct);
-    if (vec_idx != vocab.size())
-      vocab[vec_idx].clear();
     // находим опорную точку, рядом с которой разместим знак препинания
     size_t mnt_idx = get_word_idx(vocab, mount_point);
-    if (vec_idx == vocab.size())
+    if (mnt_idx == vocab.size())
     {
       std::cerr << "Mount-point not found:   punct=" << punct << "   mnt=" << mount_point << std::endl;
       return;
@@ -133,6 +225,31 @@ private:
       *(new_offset + d) = *mnt_dim + random_sign() * (*mnt_dim / 100);
     }
     new_vocab.push_back(punct);
+  } // method-end
+
+  static void calc_support_embedding( size_t words_count, size_t emb_size, float* embeddings, float* support_embedding )
+  {
+    for (size_t d = 0; d < emb_size; ++d)
+    {
+      float rbound = -1e10;
+      for (size_t w = 0; w < words_count; ++w)
+      {
+        float *offs = embeddings + w*emb_size + d;
+        if ( *offs > rbound )
+          rbound = *offs;
+      }
+      *(support_embedding + d) = rbound + 2.0;
+    }
+  } // method-end
+
+  static void make_embedding_as_neighbour( size_t emb_size, float* base_embedding, float* new_embedding, float distance_factor = 1.0 )
+  {
+    auto random_sign = []() -> float { return ((float)(rand() % 2) - 0.5)/0.5; };
+    for (size_t d = 0; d < emb_size; ++d)
+    {
+      float *offs = base_embedding + d;
+      *(new_embedding + d) = *offs + random_sign() * (*offs / 100 * distance_factor);
+    }
   } // method-end
 
 }; // class-decl-end
