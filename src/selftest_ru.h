@@ -46,7 +46,7 @@ private:
   // указатель на объект для оценки семантической близости
   std::shared_ptr<SimilarityEstimator> sim_meter;
 
-  // тест категориально несвязанных (среднее расстояние между ними должно быть <=0 )
+  // тест корректности значений в векторах (валидация вещественных чисел)
   void test_floats(bool verbose = false)
   {
     std::cout << "Run float checker" << std::endl;
