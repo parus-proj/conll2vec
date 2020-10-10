@@ -450,8 +450,8 @@ private:
         // в skip-gram выход скрытого слоя в точности соответствует вектору целевого слова
         // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
         float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_dep, ctxVectorPtr, 0.0);
-        // вычислим градиент умноженный на коэффициент скорости обучения
         if ( std::isnan(f) ) continue;
+        // вычислим градиент умноженный на коэффициент скорости обучения
         if      (f > MAX_EXP)  g = (label - 1) * alpha;
         else if (f < -MAX_EXP) g = (label - 0) * alpha;
         else                   g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
@@ -516,8 +516,8 @@ private:
         // в skip-gram выход скрытого слоя в точности соответствует вектору целевого слова
         // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
         float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, 0.0);
-        // вычислим градиент умноженный на коэффициент скорости обучения
         if ( std::isnan(f) ) continue;
+        // вычислим градиент умноженный на коэффициент скорости обучения
         if      (f > MAX_EXP)  g = (label - 1) * alpha;
         else if (f < -MAX_EXP) g = (label - 0) * alpha;
         else                   g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
