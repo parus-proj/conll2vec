@@ -4,6 +4,7 @@
 #include <string>
 #include <locale>
 #include <codecvt>
+#include "unicode/uchar.h"
 
 
 class StrConv
@@ -31,6 +32,18 @@ public:
         static std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> conv;
         return conv.from_bytes(s);
       #endif
+  }
+  // конвертация строки в нижний регистр
+  static std::u32string toLower(const std::u32string& str)
+  {
+    size_t len = str.length();
+    std::u32string result = str;
+    for (size_t idx = 0; idx < len; ++idx)
+    {
+      if (u_isUUppercase(result[idx]))
+        result[idx] = u_tolower(result[idx]);  //TODO: лучше использовать u_strToLower (т.к. она учитывает соседние литеры), но это еще одна конверсия строки... подумать
+    }
+    return result;
   }
 };
 

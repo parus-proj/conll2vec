@@ -2,6 +2,7 @@
 #define VOCABS_BUILDER_H_
 
 #include "conll_reader.h"
+#include "str_conv.h"
 
 #include <memory>
 #include <string>
@@ -18,13 +19,14 @@ private:
   typedef std::vector< std::vector<std::string> > SentenceMatrix;
   typedef std::unordered_map<std::string, uint64_t> VocabMapping;
   typedef std::shared_ptr<VocabMapping> VocabMappingPtr;
+  typedef std::unordered_map<std::string, std::map<std::string, size_t>> Token2LemmasMap;
+  typedef std::shared_ptr<Token2LemmasMap> Token2LemmasMapPtr;
 public:
   // построение всех словарей
-  bool build_vocabs(const std::string& conll_fn, const std::string& voc_m_fn, const std::string& voc_p_fn,
+  bool build_vocabs(const std::string& conll_fn, const std::string& voc_m_fn, const std::string& voc_p_fn, const std::string& voc_t_fn,
                     const std::string& voc_d_fn, const std::string& voc_a_fn,
-                    size_t limit_m, size_t limit_p, size_t limit_d, size_t limit_a,
-                    size_t embeddings_vocabulary_column, size_t ctx_vocabulary_column_d,
-                    bool use_deprel)
+                    size_t limit_m, size_t limit_p, size_t limit_t, size_t limit_d, size_t limit_a,
+                    size_t ctx_vocabulary_column_d, bool use_deprel)
   {
     // открываем файл с тренировочными данными
     FILE *conll_file = fopen(conll_fn.c_str(), "rb");
@@ -35,8 +37,10 @@ public:
     }
 
     // создаем контейенеры для словарей
-    VocabMappingPtr vocab_main = std::make_shared<VocabMapping>();
-    VocabMappingPtr vocab_proper = std::make_shared<VocabMapping>();
+    VocabMappingPtr vocab_lemma_main = std::make_shared<VocabMapping>();
+    VocabMappingPtr vocab_lemma_proper = std::make_shared<VocabMapping>();
+    VocabMappingPtr vocab_token = std::make_shared<VocabMapping>();
+    Token2LemmasMapPtr token2lemmas_map = std::make_shared<Token2LemmasMap>();
     VocabMappingPtr vocab_dep = std::make_shared<VocabMapping>();
     VocabMappingPtr vocab_assoc = std::make_shared<VocabMapping>();
 
@@ -68,8 +72,9 @@ public:
       }
       if (sentence_matrix.size() == 0)
         continue;
-      process_sentence_main(vocab_main, sentence_matrix, embeddings_vocabulary_column);
-      process_sentence_proper(vocab_proper, sentence_matrix, embeddings_vocabulary_column);
+      process_sentence_lemmas_main(vocab_lemma_main, sentence_matrix);
+      process_sentence_lemmas_proper(vocab_lemma_proper, sentence_matrix);
+      process_sentence_tokens(vocab_token, token2lemmas_map, sentence_matrix);
       process_sentence_dep_ctx(vocab_dep, sentence_matrix, ctx_vocabulary_column_d, use_deprel);
       process_sentence_assoc_ctx(vocab_assoc, sentence_matrix, 2); // всегда строим по леммам (нормальным формам)
     }
@@ -82,11 +87,13 @@ public:
     std::cout << std::endl;
 
     // сохраняем словари в файлах
-    std::cout << "Save main vocabulary..." << std::endl;
-    erase_main_stopwords(vocab_main); // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах морфологического анализа
-    save_vocab(vocab_main, limit_m, voc_m_fn);
-    std::cout << "Save proper names vocabulary..." << std::endl;
-    save_vocab(vocab_proper, limit_p, voc_p_fn);
+    std::cout << "Save lemmas main vocabulary..." << std::endl;
+    erase_main_stopwords(vocab_lemma_main); // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах морфологического анализа
+    save_vocab(vocab_lemma_main, limit_m, voc_m_fn);
+    std::cout << "Save lemmas proper-names vocabulary..." << std::endl;
+    save_vocab(vocab_lemma_proper, limit_p, voc_p_fn);
+    std::cout << "Save tokens vocabulary..." << std::endl;
+    save_vocab(vocab_token, limit_t, voc_t_fn, token2lemmas_map);
     std::cout << "Save dependency contexts vocabulary..." << std::endl;
     save_vocab(vocab_dep, limit_d, voc_d_fn);
     std::cout << "Save associative contexts vocabulary..." << std::endl;
@@ -146,7 +153,7 @@ private:
         it = vocab->erase(it);
     }
   }
-  void process_sentence_main(VocabMappingPtr vocab, const SentenceMatrix& sentence, size_t column)
+  void process_sentence_lemmas_main(VocabMappingPtr vocab, const SentenceMatrix& sentence)
   {
     for ( auto& token : sentence )
     {
@@ -154,15 +161,12 @@ private:
         continue;
       if ( isProperName(token[5]) )
         continue;
-      if ( token[column] == "_" ) // символ отсутствия значения в conll
+      if ( token[2] == "_" ) // символ отсутствия значения в conll
         continue;
-      auto& word = token[column];
+      auto& word = token[2];
 
       // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах лемматизации
-      const std::set<std::string> puncts = { ".", ",", "!", "?", ":", ";", "…", "...", "--", "—", "–", "‒",
-                                             "'", "ʼ", "ˮ", "\"", "«", "»", "“", "”", "„", "‟", "‘", "’", "‚", "‛",
-                                             "(", ")", "[", "]", "{", "}", "⟨", "⟩" };
-      if ( puncts.find(word) != puncts.end() )
+      if ( is_punct__patch(word) )
         continue;
 
       auto it = vocab->find( word );
@@ -172,7 +176,7 @@ private:
         ++it->second;
     }
   } // method-end
-  void process_sentence_proper(VocabMappingPtr vocab, const SentenceMatrix& sentence, size_t column)
+  void process_sentence_lemmas_proper(VocabMappingPtr vocab, const SentenceMatrix& sentence)
   {
     for (auto& token : sentence)
     {
@@ -180,15 +184,12 @@ private:
         continue;
       if ( !isProperName(token[5]) )
         continue;
-      if ( token[column] == "_" ) // символ отсутствия значения в conll
+      if ( token[2] == "_" ) // символ отсутствия значения в conll
         continue;
-      auto& word = token[column];
+      auto& word = token[2];
 
       // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах лемматизации
-      const std::set<std::string> puncts = { ".", ",", "!", "?", ":", ";", "…", "...", "--", "—", "–", "‒",
-                                             "'", "ʼ", "ˮ", "\"", "«", "»", "“", "”", "„", "‟", "‘", "’", "‚", "‛",
-                                             "(", ")", "[", "]", "{", "}", "⟨", "⟩" };
-      if ( puncts.find(word) != puncts.end() )
+      if ( is_punct__patch(word) )
         continue;
 
       auto it = vocab->find( word );
@@ -196,6 +197,33 @@ private:
         (*vocab)[word] = 1;
       else
         ++it->second;
+    }
+  } // method-end
+  void process_sentence_tokens(VocabMappingPtr vocab, Token2LemmasMapPtr token2lemmas_map, const SentenceMatrix& sentence)
+  {
+    for ( auto& token : sentence )
+    {
+      if (token[7] == "PUNC")  // знаки препинания в словарь не включаем (они обрабатываются особо)
+        continue;
+      if ( token[1] == "_" || token[2] == "_" )   // символ отсутствия значения в conll
+        continue;
+      auto word = StrConv::To_UTF8( StrConv::toLower( StrConv::To_UTF32( token[1] ) ) );
+
+      // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах лемматизации
+      if ( is_punct__patch(token[2]) )
+        continue;
+
+      auto it = vocab->find( word );
+      if (it == vocab->end())
+        (*vocab)[word] = 1;
+      else
+        ++it->second;
+
+      auto itt = (*token2lemmas_map)[word].find( token[2] );
+      if ( itt == (*token2lemmas_map)[word].end() )
+        (*token2lemmas_map)[word][token[2]] = 1;
+      else
+        ++itt->second;
     }
   } // method-end
   void process_sentence_dep_ctx(VocabMappingPtr vocab, const SentenceMatrix& sentence, size_t column, bool use_deprel)
@@ -216,6 +244,12 @@ private:
         }
         if ( parent_token_no == 0 )
           continue;
+        auto& parent = sentence[ parent_token_no - 1 ];
+
+        // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах лемматизации
+        if ( is_punct__patch(token[column]) || is_punct__patch(parent[column]) )
+          continue;
+
         // рассматриваем контекст с точки зрения родителя в синтаксической связи
         auto ctx__from_head_viewpoint = token[column] + "<" + token[7];
         auto it_h = vocab->find( ctx__from_head_viewpoint );
@@ -224,7 +258,6 @@ private:
         else
           ++it_h->second;
         // рассматриваем контекст с точки зрения потомка в синтаксической связи
-        auto& parent = sentence[ parent_token_no - 1 ];
         auto ctx__from_child_viewpoint = parent[column] + ">" + token[7];
         auto it_c = vocab->find( ctx__from_child_viewpoint );
         if (it_c == vocab->end())
@@ -239,6 +272,11 @@ private:
         if ( token[column] == "_" ) // символ отсутствия значения в conll
           continue;
         auto& word = token[column];
+
+        // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах лемматизации
+        if ( is_punct__patch(word) )
+          continue;
+
         auto it = vocab->find( word );
         if (it == vocab->end())
           (*vocab)[word] = 1;
@@ -256,6 +294,11 @@ private:
       if ( token[column] == "_" ) // символ отсутствия значения в conll
         continue;
       auto& word = token[column];
+
+      // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах лемматизации
+      if ( is_punct__patch(word) )
+        continue;
+
       auto it = vocab->find( word );
       if (it == vocab->end())
         (*vocab)[word] = 1;
@@ -263,8 +306,18 @@ private:
         ++it->second;
     }
   } // method-end
+  bool is_punct__patch(const std::string& word)
+  {
+    const std::set<std::string> puncts = { ".", ",", "!", "?", ":", ";", "…", "...", "--", "—", "–", "‒",
+                                           "'", "ʼ", "ˮ", "\"", "«", "»", "“", "”", "„", "‟", "‘", "’", "‚", "‛",
+                                           "(", ")", "[", "]", "{", "}", "⟨", "⟩" };
+    if ( puncts.find(word) != puncts.end() )
+      return true;
+    else
+      return false;
+  }
   // редукция и сохранение словаря в файл
-  void save_vocab(VocabMappingPtr vocab, size_t min_count, const std::string& file_name)
+  void save_vocab(VocabMappingPtr vocab, size_t min_count, const std::string& file_name, Token2LemmasMapPtr t2l = nullptr)
   {
     // удаляем редкие слова (ниже порога отсечения)
     std::cout << "  min-count reduce" << std::endl;
@@ -286,6 +339,21 @@ private:
     for (auto& record : revVocab)
       fprintf(fo, "%s %lu\n", record.second.c_str(), record.first);
     fclose(fo);
+    // сохраняем мэппинг из токенов в леммы (если в функцию передана соответствующая структура)
+    // сохранение происходит с учётом отсечения по частотному порогу и переупорядочения (как в самом словаре токенов)
+    if (t2l)
+    {
+      std::ofstream t2l_fs("token_lemmas.map");
+      for (auto& record : revVocab)
+      {
+        auto it = t2l->find(record.second);
+        if (it == t2l->end()) continue;
+        t2l_fs << record.second;
+        for (auto& lemma : it->second)
+          t2l_fs << " " << lemma.first << " " << lemma.second;
+        t2l_fs << "\n";
+      }
+    }
   } // method-end
 };
 

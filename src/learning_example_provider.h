@@ -55,14 +55,13 @@ public:
   LearningExampleProvider(const std::string& trainFilename, size_t threadsCount,
                           std::shared_ptr< OriginalWord2VecVocabulary> wordsVocabulary,
                           std::shared_ptr< OriginalWord2VecVocabulary> depCtxVocabulary, std::shared_ptr< OriginalWord2VecVocabulary> assocCtxVocabulary,
-                          size_t embColumn, size_t depColumn, bool useDeprel,
+                          size_t depColumn, bool useDeprel,
                           float wordsSubsample, float depSubsample, float assocSubsample)
   : threads_count(threadsCount)
   , train_filename(trainFilename)
   , words_vocabulary(wordsVocabulary)
   , dep_ctx_vocabulary(depCtxVocabulary)
   , assoc_ctx_vocabulary(assocCtxVocabulary)
-  , emb_column(embColumn)
   , dep_column(depColumn)
   , use_deprel(useDeprel)
   , sample_w(wordsSubsample)
@@ -228,7 +227,7 @@ public:
         // конвертируем в структуру для итерирования (фильтрация несловарных)
         for (size_t i = 0; i < sm_size; ++i)
         {
-          auto word_idx = words_vocabulary->word_to_idx(sentence_matrix[i][emb_column]);
+          auto word_idx = words_vocabulary->word_to_idx(sentence_matrix[i][2]);
           if ( word_idx != INVALID_IDX )
           {
             ++t_environment.words_count;
@@ -287,8 +286,7 @@ private:
   std::shared_ptr< OriginalWord2VecVocabulary> words_vocabulary;
   std::shared_ptr< OriginalWord2VecVocabulary> dep_ctx_vocabulary;
   std::shared_ptr< OriginalWord2VecVocabulary> assoc_ctx_vocabulary;
-  // номера колонок в conll, откуда считывать данные
-  size_t emb_column;
+  // номер колоноки в conll, откуда считывать слово для синтаксического контекста
   size_t dep_column;
   // следует ли задействовать тип и направление синтаксической связи в определении синтаксического контекста
   bool use_deprel;

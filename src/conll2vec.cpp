@@ -9,6 +9,7 @@
 #include "selftest_ru.h"
 #include "unpnizer.h"
 #include "add_punct.h"
+#include "add_toks.h"
 
 #include <memory>
 #include <string>
@@ -35,7 +36,8 @@ int main(int argc, char **argv)
               << "  -task punct       -- add punctuation to model" << std::endl
               << "  -task sim         -- similarity test" << std::endl
               << "  -task selftest_ru -- model self-test for russian" << std::endl
-              << "  -task unPNize     -- merge common & proper names models" << std::endl;
+              << "  -task unPNize     -- merge common & proper names models" << std::endl
+              << "  -task toks        -- add tokens to model" << std::endl;
     return -1;
   }
   auto&& task = cmdLineParams.getAsString("-task");
@@ -53,12 +55,11 @@ int main(int argc, char **argv)
   {
     VocabsBuilder vb;
     bool succ = vb.build_vocabs( cmdLineParams.getAsString("-train"),
-                                 cmdLineParams.getAsString("-vocab_m"), cmdLineParams.getAsString("-vocab_p"),
+                                 cmdLineParams.getAsString("-vocab_m"), cmdLineParams.getAsString("-vocab_p"), cmdLineParams.getAsString("-vocab_t"),
                                  cmdLineParams.getAsString("-vocab_d"), cmdLineParams.getAsString("-vocab_a"),
-                                 cmdLineParams.getAsInt("-min-count_m"), cmdLineParams.getAsInt("-min-count_p"),
+                                 cmdLineParams.getAsInt("-min-count_m"), cmdLineParams.getAsInt("-min-count_p"), cmdLineParams.getAsInt("-min-count_t"),
                                  cmdLineParams.getAsInt("-min-count_d"), cmdLineParams.getAsInt("-min-count_a"),
-                                 cmdLineParams.getAsInt("-col_emb") - 1, cmdLineParams.getAsInt("-col_ctx_d") - 1,
-                                 (cmdLineParams.getAsInt("-use_deprel") == 1)
+                                 cmdLineParams.getAsInt("-col_ctx_d") - 1, (cmdLineParams.getAsInt("-use_deprel") == 1)
                                );
     return ( succ ? 0 : -1 );
   }
@@ -140,7 +141,6 @@ int main(int argc, char **argv)
                                                                                                   cmdLineParams.getAsInt("-threads"),
                                                                                                   (needLoadMainVocab ? v_main : v_proper ),
                                                                                                   v_dep_ctx, v_assoc_ctx,
-                                                                                                  cmdLineParams.getAsInt("-col_emb") - 1,
                                                                                                   cmdLineParams.getAsInt("-col_ctx_d") - 1,
                                                                                                   (cmdLineParams.getAsInt("-use_deprel") == 1),
                                                                                                   cmdLineParams.getAsFloat("-sample_w"),
@@ -247,6 +247,12 @@ int main(int argc, char **argv)
       return -1;
     Unpnizer::run(v_main, v_proper, cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt"));
   } // if task == unPNize
+
+  // если поставлена задача добавления токенов в модель
+  if (task == "toks")
+  {
+    AddToks::run(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt"));
+  } // if task == toks
 
   return -1;
 }
