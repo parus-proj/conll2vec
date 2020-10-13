@@ -75,6 +75,7 @@ public:
         for (size_t d = 0; d < emb_size; ++d)
           *(neOffset+d) += *(offset+d) * weight;
       }
+      make_embedding_as_neighbour(emb_size, neOffset, neOffset); // немного смещаем получившийся вектор, чтобы все вектора были уникальны
       neOffset += emb_size;
     }
 
@@ -183,53 +184,15 @@ private:
     return widx;
   } // method-end
 
-//  static void add_as_neighbour( std::vector<std::string>& vocab, const std::string& punct, const std::string& mount_point,
-//                                float* embeddings, size_t emb_size,
-//                                std::vector<std::string>& new_vocab, float* new_embeddings )
-//  {
-//    // находим опорную точку, рядом с которой разместим знак препинания
-//    size_t mnt_idx = get_word_idx(vocab, mount_point);
-//    if (mnt_idx == vocab.size())
-//    {
-//      std::cerr << "Mount-point not found:   punct=" << punct << "   mnt=" << mount_point << std::endl;
-//      return;
-//    }
-//    // порождаем словарную запись и вектор для знака препинания
-//    float *mnt_offset = embeddings + mnt_idx * emb_size;
-//    float *new_offset = new_embeddings + new_vocab.size() * emb_size;
-//    auto random_sign = []() -> float { return ((float)(rand() % 2) - 0.5)/0.5; };
-//    for (size_t d = 0; d < emb_size; ++d)
-//    {
-//      float *mnt_dim = mnt_offset + d;
-//      *(new_offset + d) = *mnt_dim + random_sign() * (*mnt_dim / 100);
-//    }
-//    new_vocab.push_back(punct);
-//  } // method-end
-//
-//  static void calc_support_embedding( size_t words_count, size_t emb_size, float* embeddings, float* support_embedding )
-//  {
-//    for (size_t d = 0; d < emb_size; ++d)
-//    {
-//      float rbound = -1e10;
-//      for (size_t w = 0; w < words_count; ++w)
-//      {
-//        float *offs = embeddings + w*emb_size + d;
-//        if ( *offs > rbound )
-//          rbound = *offs;
-//      }
-//      *(support_embedding + d) = rbound + 2.0;
-//    }
-//  } // method-end
-//
-//  static void make_embedding_as_neighbour( size_t emb_size, float* base_embedding, float* new_embedding, float distance_factor = 1.0 )
-//  {
-//    auto random_sign = []() -> float { return ((float)(rand() % 2) - 0.5)/0.5; };
-//    for (size_t d = 0; d < emb_size; ++d)
-//    {
-//      float *offs = base_embedding + d;
-//      *(new_embedding + d) = *offs + random_sign() * (*offs / 100 * distance_factor);
-//    }
-//  } // method-end
+  static void make_embedding_as_neighbour( size_t emb_size, float* base_embedding, float* new_embedding, float distance_factor = 1.0 )
+  {
+    auto random_sign = []() -> float { return ((float)(rand() % 2) - 0.5)/0.5; };
+    for (size_t d = 0; d < emb_size; ++d)
+    {
+      float *offs = base_embedding + d;
+      *(new_embedding + d) = *offs + random_sign() * (*offs / 100 * distance_factor);
+    }
+  } // method-end
 
 }; // class-decl-end
 
