@@ -97,7 +97,7 @@ public:
     return true;
   } // method-end
   // поиск слова в словаре
-  size_t get_word_idx(const std::string& word)
+  size_t get_word_idx(const std::string& word) const
   {
     size_t widx = 0;
     for ( ; widx < vocab.size(); ++widx )

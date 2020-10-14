@@ -10,6 +10,7 @@
 #include "unpnizer.h"
 #include "add_punct.h"
 #include "add_toks.h"
+#include "vectors_model.h"
 
 #include <memory>
 #include <string>
@@ -142,6 +143,7 @@ int main(int argc, char **argv)
                                                                                                   cmdLineParams.getAsInt("-threads"),
                                                                                                   (needLoadMainVocab ? v_main : v_proper ),
                                                                                                   v_dep_ctx, v_assoc_ctx,
+                                                                                                  2,
                                                                                                   cmdLineParams.getAsInt("-col_ctx_d") - 1,
                                                                                                   (cmdLineParams.getAsInt("-use_deprel") == 1),
                                                                                                   cmdLineParams.getAsFloat("-sample_w"),
@@ -213,6 +215,7 @@ int main(int argc, char **argv)
   if (task == "punct")
   {
     AddPunct::run(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt"));
+    return 0;
   } // if task == punct
 
   // если поставлена задача оценки близости значений (в интерактивном режиме)
@@ -247,17 +250,128 @@ int main(int argc, char **argv)
     if ( !v_proper->load( cmdLineParams.getAsString("-vocab_p") ) )
       return -1;
     Unpnizer::run(v_main, v_proper, cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt"));
+    return 0;
   } // if task == unPNize
 
   // если поставлена задача добавления токенов в модель
   if (task == "toks")
   {
     AddToks::run(cmdLineParams.getAsString("-model"), cmdLineParams.getAsString("-vocab_tm"), (cmdLineParams.getAsString("-model_fmt") == "txt"));
+    return 0;
   } // if task == toks
 
+  // если поставлена задача доучивания модели токенов
   if (task == "toks_train")
   {
+    if ( !cmdLineParams.isDefined("-train") )
+    {
+      std::cerr << "Trainset is not defined." << std::endl;
+      return -1;
+    }
+    if ( !cmdLineParams.isDefined("-model") )
+    {
+      std::cerr << "-model parameter must be defined." << std::endl;
+      return -1;
+    }
+    if ( !cmdLineParams.isDefined("-vocab_t") )
+    {
+      std::cerr << "-vocab_t parameter must be defined." << std::endl;
+      return -1;
+    }
+    if ( !cmdLineParams.isDefined("-restore") )
+    {
+      std::cerr << "-restore parameter must be defined." << std::endl;
+      return -1;
+    }
+    if ( !cmdLineParams.isDefined("-vocab_d") && cmdLineParams.getAsInt("-size_d") > 0 ) // устанавливая -size_d 0, можно строить только ассоциативную модель
+    {
+      std::cerr << "-vocab_d parameter must be defined." << std::endl;
+      return -1;
+    }
+    if ( !cmdLineParams.isDefined("-vocab_a") && cmdLineParams.getAsInt("-size_a") > 0 ) // устанавливая -size_a 0, можно строить только синтаксическую модель
+    {
+      std::cerr << "-vocab_a parameter must be defined." << std::endl;
+      return -1;
+    }
 
+    SimpleProfiler global_profiler;
+
+    // загрузка словарей
+    bool needLoadDepCtxVocab = (cmdLineParams.getAsInt("-size_d") > 0);
+    bool needLoadAssocCtxVocab = (cmdLineParams.getAsInt("-size_a") > 0);
+    std::shared_ptr< OriginalWord2VecVocabulary > v_toks, v_dep_ctx, v_assoc_ctx;
+    v_toks = std::make_shared<OriginalWord2VecVocabulary>();
+    if ( !v_toks->load( cmdLineParams.getAsString("-vocab_t") ) )
+      return -1;
+    if (needLoadDepCtxVocab)
+    {
+      v_dep_ctx = std::make_shared<OriginalWord2VecVocabulary>();
+      if ( !v_dep_ctx->load( cmdLineParams.getAsString("-vocab_d") ) )
+        return -1;
+    }
+    if (needLoadAssocCtxVocab)
+    {
+      v_assoc_ctx = std::make_shared<OriginalWord2VecVocabulary>();
+      if ( !v_assoc_ctx->load( cmdLineParams.getAsString("-vocab_a") ) )
+        return -1;
+    }
+
+    // загрузка векторной модели
+    VectorsModel vm;
+    if ( !vm.load(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt")) )
+      return -1;
+
+    // создание поставщика обучающих примеров
+    // к моменту создания "поставщика обучающих примеров" словарь должен быть загружен (в частности, используется cn_sum())
+    std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams.getAsString("-train"),
+                                                                                                  cmdLineParams.getAsInt("-threads"),
+                                                                                                  v_toks, v_dep_ctx, v_assoc_ctx,
+                                                                                                  1,
+                                                                                                  cmdLineParams.getAsInt("-col_ctx_d") - 1,
+                                                                                                  (cmdLineParams.getAsInt("-use_deprel") == 1),
+                                                                                                  cmdLineParams.getAsFloat("-sample_w"),
+                                                                                                  cmdLineParams.getAsFloat("-sample_d"),
+                                                                                                  cmdLineParams.getAsFloat("-sample_a")
+                                                                                                );
+
+    // создаем объект, организующий обучение
+    Trainer trainer( lep, v_toks, false,
+                     v_dep_ctx, v_assoc_ctx,
+                     cmdLineParams.getAsInt("-size_d"),
+                     cmdLineParams.getAsInt("-size_a"),
+                     cmdLineParams.getAsInt("-iter"),
+                     cmdLineParams.getAsFloat("-alpha"),
+                     cmdLineParams.getAsInt("-negative"),
+                     (cmdLineParams.getAsInt("-speed_factor") == 1),
+                     cmdLineParams.getAsFloat("-space_lim_d"),
+                     cmdLineParams.getAsFloat("-space_lim_a"),
+                     cmdLineParams.getAsFloat("-z_reg_d"),
+                     cmdLineParams.getAsFloat("-z_reg_a"),
+                     cmdLineParams.getAsInt("-threads") );
+
+    // инициализация нейросети
+    trainer.create_net();
+    trainer.init_net();  // начальная инициализация левой матрицы случайными значениями
+    trainer.restore( cmdLineParams.getAsString("-restore"), false, true );
+    trainer.restore_left_matrix(vm);  // // перенос векторых представлений из загруженной модели в левую матрицу
+
+    // запускаем поток, обеспечивающий вычисление параметров регуляризации
+    std::thread regularization_thread(&Trainer::regularization_entry_point, &trainer);
+    // запускаем потоки, осуществляющие обучение
+    size_t threads_count = cmdLineParams.getAsInt("-threads");
+    std::vector<std::thread> threads_vec;
+    threads_vec.reserve(threads_count);
+    for (size_t i = 0; i < threads_count; ++i)
+      threads_vec.emplace_back(&Trainer::train_entry_point, &trainer, i);
+    // ждем завершения обучения
+    for (size_t i = 0; i < threads_count; ++i)
+      threads_vec[i].join();
+    trainer.all_done_signal();
+    regularization_thread.join();
+
+    // сохраняем вычисленные вектора в файл
+    trainer.saveEmbeddings( cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt") );
+    return 0;
   } // if task == toks_train
 
   return -1;

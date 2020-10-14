@@ -4,6 +4,7 @@
 #include "learning_example_provider.h"
 #include "vocabulary.h"
 #include "original_word2vec_vocabulary.h"
+#include "vectors_model.h"
 
 #include <memory>
 #include <string>
@@ -357,6 +358,29 @@ public:
         return false;
     }
     start_learning_tp = std::chrono::steady_clock::now();
+    return true;
+  } // method-end
+  // функция восстановления левой весовой матрицы из векторной модели
+  bool restore_left_matrix(const VectorsModel& vm)
+  {
+    if (layer1_size != vm.emb_size)
+    {
+      std::cerr << "restore_left_matrix: dimensions discrepancy" << std::endl;
+      return false;
+    }
+    for (size_t w = 0; w < w_vocabulary->size(); ++w)
+    {
+      auto& voc_rec = w_vocabulary->idx_to_data(w);
+      size_t vm_idx = vm.get_word_idx( voc_rec.word );
+      if (vm_idx == vm.words_count) // вектора неизвестных слов остаются случайно-инициализированными
+      {
+        //std::cerr << "warning: vector representation random init: " << voc_rec.word << std::endl;
+        continue;
+      }
+      float* hereOffset  = syn0 + w * layer1_size;
+      float* thereOffset = vm.embeddings + vm_idx * vm.emb_size;
+      std::copy(thereOffset, thereOffset + vm.emb_size, hereOffset);
+    }
     return true;
   } // method-end
 
