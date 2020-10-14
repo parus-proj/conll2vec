@@ -2,7 +2,6 @@
 #define VOCABS_BUILDER_H_
 
 #include "conll_reader.h"
-#include "str_conv.h"
 
 #include <memory>
 #include <string>
@@ -204,7 +203,7 @@ private:
         continue;
       if ( token[1] == "_" || token[2] == "_" )   // символ отсутствия значения в conll
         continue;
-      auto word = StrConv::To_UTF8( StrConv::toLower( StrConv::To_UTF32( token[1] ) ) );
+      auto word = token[1];
 
       auto it = vocab->find( word );
       if (it == vocab->end())
