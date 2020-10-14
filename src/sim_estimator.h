@@ -2,6 +2,7 @@
 #define SIM_ESTIMATOR_H_
 
 #include "str_conv.h"
+#include "vectors_model.h"
 
 #include <string>
 #include <vector>
@@ -29,63 +30,13 @@ public:
   SimilarityEstimator(size_t dep_part, size_t assoc_part)
   : dep_size(dep_part)
   , assoc_size(assoc_part)
-  , embeddings(nullptr)
-  , words_count(0)
-  , emb_size(0)
   , cmp_dims(cdAll)
   , cmp_mode(cmWord)
   {
   }
   bool load_model(const std::string& model_fn, bool useTxtFmt = false)
   {
-    // открываем файл модели
-    std::ifstream ifs(model_fn.c_str(), std::ios::binary);
-    if ( !ifs.good() )
-    {
-      std::cerr << "Model file not found" << std::endl;
-      return false;
-    }
-    std::string buf;
-    // считыавем размер матрицы
-    ifs >> words_count;
-    ifs >> emb_size;
-    std::getline(ifs,buf); // считываем конец строки
-    // выделяем память для эмбеддингов
-    embeddings = (float *) malloc( words_count * emb_size * sizeof(float) );
-    if (embeddings == NULL)
-    {
-      std::cerr << "Cannot allocate memory: " << (words_count * emb_size * sizeof(float) / 1048576) << " MB" << std::endl;
-      std::cerr << "    Words: " << words_count << std::endl;
-      std::cerr << "    Embedding size: " << emb_size << std::endl;
-      return false;
-    }
-    // загрузка словаря и векторов
-    vocab.reserve(words_count);
-    for (uint64_t w = 0; w < words_count; ++w)
-    {
-      std::getline(ifs, buf, ' '); // читаем слово (до пробела)
-      vocab.push_back(buf);
-      // читаем вектор
-      float* eOffset = embeddings + w*emb_size;
-      if ( !useTxtFmt )
-        ifs.read( reinterpret_cast<char*>( eOffset ), sizeof(float)*emb_size );
-      else
-      {
-        for (size_t j = 0; j < emb_size; ++j)
-          ifs >> eOffset[j];
-      }
-      // нормируем вектор (все компоненты в диапазон [-1; +1]
-      float len = std::sqrt( std::inner_product(eOffset, eOffset+emb_size, eOffset, 0.0) );
-      if (len == 0)
-      {
-        std::cerr << "Embedding normalization error: Division by zero" << std::endl;
-        free(embeddings);
-        return false;
-      }
-      std::transform(eOffset, eOffset+emb_size, eOffset, [len](float a) -> float {return a/len;});
-      std::getline(ifs,buf); // считываем конец строки
-    }
-    return true;
+    return vm.load(model_fn, useTxtFmt, true);
   } // method-end
   void run()
   {
@@ -124,33 +75,28 @@ public:
   // получение расстояния для заданной пары слов
   std::optional<float> get_sim(CmpDims dims, const std::string& word1, const std::string& word2)
   {
-    auto widx1 = get_word_idx(word1);
-    auto widx2 = get_word_idx(word2);
-    if (widx1 == words_count || widx2 == words_count)
+    auto widx1 = vm.get_word_idx(word1);
+    auto widx2 = vm.get_word_idx(word2);
+    if (widx1 == vm.words_count || widx2 == vm.words_count)
       return std::nullopt;
     cmp_dims = dims;
-    float* w1Offset = embeddings + widx1*emb_size;
-    float* w2Offset = embeddings + widx2*emb_size;
+    float* w1Offset = vm.embeddings + widx1*vm.emb_size;
+    float* w2Offset = vm.embeddings + widx2*vm.emb_size;
     return cosine_measure(w1Offset, w2Offset);
   }
   // предоставление доступа к векторному пространству
   void raw(size_t& wordsCnt, size_t& embSize, float*& vectors, std::vector<std::string>& words)
   {
-    wordsCnt = words_count;
-    embSize = emb_size;
-    vectors = embeddings;
-    words = vocab;
+    wordsCnt = vm.words_count;
+    embSize = vm.emb_size;
+    vectors = vm.embeddings;
+    words = vm.vocab;
   }
 private:
   size_t dep_size;
   size_t assoc_size;
-  // контейнер для словаря модели
-  std::vector<std::string> vocab;
-  // хранилище для векторов
-  float *embeddings;
-  // параметры модели
-  size_t words_count;
-  size_t emb_size;
+  // контейнер векторной модели
+  VectorsModel vm;
   // измерения для сравнения
   CmpDims cmp_dims;
   // режим сравнения
@@ -160,28 +106,19 @@ private:
     cmPair      // оценка сходства между парой слов
   } cmp_mode;
 
-  size_t get_word_idx(const std::string& word)
-  {
-    size_t widx = 0;
-    for ( ; widx < vocab.size(); ++widx )
-      if (vocab[widx] == word)
-        break;
-    return widx;
-  } // method-end
-
   float cosine_measure(float* w1_Offset, float* w2_Offset)
   {
     float result = 0;
     switch ( cmp_dims )
     {
-    case cdAll       : result = std::inner_product(w1_Offset, w1_Offset+emb_size, w2_Offset, 0.0); break;
+    case cdAll       : result = std::inner_product(w1_Offset, w1_Offset+vm.emb_size, w2_Offset, 0.0); break;
     case cdDepOnly   : result = std::inner_product(w1_Offset, w1_Offset+dep_size, w2_Offset, 0.0);
                        result /= std::sqrt( std::inner_product(w1_Offset, w1_Offset+dep_size, w1_Offset, 0.0) );
                        result /= std::sqrt( std::inner_product(w2_Offset, w2_Offset+dep_size, w2_Offset, 0.0) );
                        break;
-    case cdAssocOnly : result = std::inner_product(w1_Offset+dep_size, w1_Offset+emb_size, w2_Offset+dep_size, 0.0);
-                       result /= std::sqrt( std::inner_product(w1_Offset+dep_size, w1_Offset+emb_size, w1_Offset+dep_size, 0.0) );
-                       result /= std::sqrt( std::inner_product(w2_Offset+dep_size, w2_Offset+emb_size, w2_Offset+dep_size, 0.0) );
+    case cdAssocOnly : result = std::inner_product(w1_Offset+dep_size, w1_Offset+vm.emb_size, w2_Offset+dep_size, 0.0);
+                       result /= std::sqrt( std::inner_product(w1_Offset+dep_size, w1_Offset+vm.emb_size, w1_Offset+dep_size, 0.0) );
+                       result /= std::sqrt( std::inner_product(w2_Offset+dep_size, w2_Offset+vm.emb_size, w2_Offset+dep_size, 0.0) );
                        break;
     }
     return result;
@@ -190,29 +127,29 @@ private:
   void word_mode_helper(const std::string& word)
   {
     // ищем слово в словаре (проверим, что оно есть и получим индекс)
-    size_t widx = get_word_idx(word);
-    if (widx == words_count)
+    size_t widx = vm.get_word_idx(word);
+    if (widx == vm.words_count)
     {
       str_to_console( "  out of vocabulary word...\n" );
       return;
     }
     // ищем n ближайших к указанному слову
-    float* wiOffset = embeddings + widx*emb_size;
+    float* wiOffset = vm.embeddings + widx*vm.emb_size;
     std::multimap<float, std::string, std::greater<float>> best;
-    for (size_t i = 0; i < words_count; ++i)
+    for (size_t i = 0; i < vm.words_count; ++i)
     {
       if (i == widx) continue;
-      float* iOffset = embeddings + i*emb_size;
+      float* iOffset = vm.embeddings + i*vm.emb_size;
       float sim = cosine_measure(iOffset, wiOffset);
       if (best.size() < 40)
-        best.insert( std::make_pair(sim, vocab[i]) );
+        best.insert( std::make_pair(sim, vm.vocab[i]) );
       else
       {
         auto minIt = std::prev( best.end() );
         if (sim > minIt->first)
         {
           best.erase(minIt);
-          best.insert( std::make_pair(sim, vocab[i]) );
+          best.insert( std::make_pair(sim, vm.vocab[i]) );
         }
       }
     }
@@ -234,21 +171,21 @@ private:
     str_to_console( "Enter second word: " );
     word2 = str_from_console();
     // ищем слова в словаре
-    size_t widx1 = get_word_idx(word1);
-    if (widx1 == words_count)
+    size_t widx1 = vm.get_word_idx(word1);
+    if (widx1 == vm.words_count)
     {
       str_to_console( "  first word is out of vocabulary...\n" );
       return;
     }
-    size_t widx2 = get_word_idx(word2);
-    if (widx2 == words_count)
+    size_t widx2 = vm.get_word_idx(word2);
+    if (widx2 == vm.words_count)
     {
       str_to_console( "  second word is out of vocabulary...\n" );
       return;
     }
     // оцениваем и выводим меру близости
-    float* w1Offset = embeddings + widx1*emb_size;
-    float* w2Offset = embeddings + widx2*emb_size;
+    float* w1Offset = vm.embeddings + widx1*vm.emb_size;
+    float* w2Offset = vm.embeddings + widx2*vm.emb_size;
     float sim = cosine_measure(w1Offset, w2Offset);
     str_to_console( "cosine similarity = " + std::to_string(sim) + "\n" );
   }

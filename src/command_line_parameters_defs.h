@@ -17,7 +17,7 @@ public:
         {"-vocab_m",      {"Lemmas main vocabulary <file>", std::nullopt, std::nullopt}},
         {"-vocab_p",      {"Lemmas proper names vocabulary <file>", std::nullopt, std::nullopt}},
         {"-vocab_t",      {"Tokens vocabulary <file>", std::nullopt, std::nullopt}},
-//        {"-vocab_tm",     {"Tokens to lemmas mapping <file>", "token_lemmas.map", std::nullopt}},
+        {"-vocab_tm",     {"Tokens to lemmas mapping <file>", "token_lemmas.map", std::nullopt}},
 //        {"-vocab_e",      {"Expressions vocabulary <file>", std::nullopt, std::nullopt}},
         {"-vocab_d",      {"Dependency contexts vocabulary <file>", std::nullopt, std::nullopt}},
         {"-vocab_a",      {"Associative contexts vocabulary <file>", std::nullopt, std::nullopt}},

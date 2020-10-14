@@ -24,7 +24,7 @@ private:
 public:
   // построение всех словарей
   bool build_vocabs(const std::string& conll_fn, const std::string& voc_m_fn, const std::string& voc_p_fn, const std::string& voc_t_fn,
-                    const std::string& voc_d_fn, const std::string& voc_a_fn,
+                    const std::string& voc_tm_fn, const std::string& voc_d_fn, const std::string& voc_a_fn,
                     size_t limit_m, size_t limit_p, size_t limit_t, size_t limit_d, size_t limit_a,
                     size_t ctx_vocabulary_column_d, bool use_deprel)
   {
@@ -93,7 +93,7 @@ public:
     std::cout << "Save lemmas proper-names vocabulary..." << std::endl;
     save_vocab(vocab_lemma_proper, limit_p, voc_p_fn);
     std::cout << "Save tokens vocabulary..." << std::endl;
-    save_vocab(vocab_token, limit_t, voc_t_fn, token2lemmas_map);
+    save_vocab(vocab_token, limit_t, voc_t_fn, token2lemmas_map, voc_tm_fn);
     std::cout << "Save dependency contexts vocabulary..." << std::endl;
     save_vocab(vocab_dep, limit_d, voc_d_fn);
     std::cout << "Save associative contexts vocabulary..." << std::endl;
@@ -317,7 +317,7 @@ private:
       return false;
   }
   // редукция и сохранение словаря в файл
-  void save_vocab(VocabMappingPtr vocab, size_t min_count, const std::string& file_name, Token2LemmasMapPtr t2l = nullptr)
+  void save_vocab(VocabMappingPtr vocab, size_t min_count, const std::string& file_name, Token2LemmasMapPtr t2l = nullptr, const std::string& tlm_fn = std::string())
   {
     // удаляем редкие слова (ниже порога отсечения)
     std::cout << "  min-count reduce" << std::endl;
@@ -343,7 +343,7 @@ private:
     // сохранение происходит с учётом отсечения по частотному порогу и переупорядочения (как в самом словаре токенов)
     if (t2l)
     {
-      std::ofstream t2l_fs("token_lemmas.map");
+      std::ofstream t2l_fs( tlm_fn.c_str() );
       for (auto& record : revVocab)
       {
         auto it = t2l->find(record.second);

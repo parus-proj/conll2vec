@@ -37,7 +37,8 @@ int main(int argc, char **argv)
               << "  -task sim         -- similarity test" << std::endl
               << "  -task selftest_ru -- model self-test for russian" << std::endl
               << "  -task unPNize     -- merge common & proper names models" << std::endl
-              << "  -task toks        -- add tokens to model" << std::endl;
+              << "  -task toks        -- add tokens to model" << std::endl
+              << "  -task toks_train  -- train tokens model" << std::endl;
     return -1;
   }
   auto&& task = cmdLineParams.getAsString("-task");
@@ -56,7 +57,7 @@ int main(int argc, char **argv)
     VocabsBuilder vb;
     bool succ = vb.build_vocabs( cmdLineParams.getAsString("-train"),
                                  cmdLineParams.getAsString("-vocab_m"), cmdLineParams.getAsString("-vocab_p"), cmdLineParams.getAsString("-vocab_t"),
-                                 cmdLineParams.getAsString("-vocab_d"), cmdLineParams.getAsString("-vocab_a"),
+                                 cmdLineParams.getAsString("-vocab_tm"), cmdLineParams.getAsString("-vocab_d"), cmdLineParams.getAsString("-vocab_a"),
                                  cmdLineParams.getAsInt("-min-count_m"), cmdLineParams.getAsInt("-min-count_p"), cmdLineParams.getAsInt("-min-count_t"),
                                  cmdLineParams.getAsInt("-min-count_d"), cmdLineParams.getAsInt("-min-count_a"),
                                  cmdLineParams.getAsInt("-col_ctx_d") - 1, (cmdLineParams.getAsInt("-use_deprel") == 1)
@@ -251,8 +252,13 @@ int main(int argc, char **argv)
   // если поставлена задача добавления токенов в модель
   if (task == "toks")
   {
-    AddToks::run(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt"));
+    AddToks::run(cmdLineParams.getAsString("-model"), cmdLineParams.getAsString("-vocab_tm"), (cmdLineParams.getAsString("-model_fmt") == "txt"));
   } // if task == toks
+
+  if (task == "toks_train")
+  {
+
+  } // if task == toks_train
 
   return -1;
 }
