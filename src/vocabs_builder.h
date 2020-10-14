@@ -72,6 +72,7 @@ public:
       }
       if (sentence_matrix.size() == 0)
         continue;
+      apply_patches(sentence_matrix); // todo: УБРАТЬ!  временный дополнительный корректор для борьбы с "грязными данными" в результатах лемматизации
       process_sentence_lemmas_main(vocab_lemma_main, sentence_matrix);
       process_sentence_lemmas_proper(vocab_lemma_proper, sentence_matrix);
       process_sentence_tokens(vocab_token, token2lemmas_map, sentence_matrix);
@@ -153,6 +154,12 @@ private:
         it = vocab->erase(it);
     }
   }
+  void apply_patches(SentenceMatrix& sentence)
+  {
+    for ( auto& token : sentence )
+      if ( is_punct__patch(token[2]) )
+        token[7] = "PUNC";
+  }
   void process_sentence_lemmas_main(VocabMappingPtr vocab, const SentenceMatrix& sentence)
   {
     for ( auto& token : sentence )
@@ -164,11 +171,6 @@ private:
       if ( token[2] == "_" ) // символ отсутствия значения в conll
         continue;
       auto& word = token[2];
-
-      // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах лемматизации
-      if ( is_punct__patch(word) )
-        continue;
-
       auto it = vocab->find( word );
       if (it == vocab->end())
         (*vocab)[word] = 1;
@@ -187,11 +189,6 @@ private:
       if ( token[2] == "_" ) // символ отсутствия значения в conll
         continue;
       auto& word = token[2];
-
-      // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах лемматизации
-      if ( is_punct__patch(word) )
-        continue;
-
       auto it = vocab->find( word );
       if (it == vocab->end())
         (*vocab)[word] = 1;
@@ -208,10 +205,6 @@ private:
       if ( token[1] == "_" || token[2] == "_" )   // символ отсутствия значения в conll
         continue;
       auto word = StrConv::To_UTF8( StrConv::toLower( StrConv::To_UTF32( token[1] ) ) );
-
-      // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах лемматизации
-      if ( is_punct__patch(token[2]) )
-        continue;
 
       auto it = vocab->find( word );
       if (it == vocab->end())
@@ -245,9 +238,9 @@ private:
         if ( parent_token_no == 0 )
           continue;
         auto& parent = sentence[ parent_token_no - 1 ];
-
-        // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах лемматизации
-        if ( is_punct__patch(token[column]) || is_punct__patch(parent[column]) )
+        if ( parent[7] == "PUNC" ) // "контексты -- знаки препинания" нам не интересны
+          continue;                // note: не посчитаем контекст вниз, но его и не нужно, т.к. это контекст знака пунктуации
+        if ( parent[column] == "_" ) // символ отсутствия значения в conll
           continue;
 
         // рассматриваем контекст с точки зрения родителя в синтаксической связи
@@ -272,11 +265,6 @@ private:
         if ( token[column] == "_" ) // символ отсутствия значения в conll
           continue;
         auto& word = token[column];
-
-        // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах лемматизации
-        if ( is_punct__patch(word) )
-          continue;
-
         auto it = vocab->find( word );
         if (it == vocab->end())
           (*vocab)[word] = 1;
@@ -294,11 +282,6 @@ private:
       if ( token[column] == "_" ) // символ отсутствия значения в conll
         continue;
       auto& word = token[column];
-
-      // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах лемматизации
-      if ( is_punct__patch(word) )
-        continue;
-
       auto it = vocab->find( word );
       if (it == vocab->end())
         (*vocab)[word] = 1;
