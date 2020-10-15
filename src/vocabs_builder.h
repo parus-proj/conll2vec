@@ -35,7 +35,7 @@ public:
       return false;
     }
 
-    // создаем контейенеры для словарей
+    // создаем контейнеры для словарей
     VocabMappingPtr vocab_lemma_main = std::make_shared<VocabMapping>();
     VocabMappingPtr vocab_lemma_proper = std::make_shared<VocabMapping>();
     VocabMappingPtr vocab_token = std::make_shared<VocabMapping>();
