@@ -284,9 +284,9 @@ private:
   // количество слов в обучающем множестве, вошедших в словарь ассоциативных контекстов (приблизительно, т.к. могло быть подрезание по порогу частоты при построении словаря)
   uint64_t train_words_assoc = 0;
   // словари
-  std::shared_ptr< OriginalWord2VecVocabulary> words_vocabulary;
-  std::shared_ptr< OriginalWord2VecVocabulary> dep_ctx_vocabulary;
-  std::shared_ptr< OriginalWord2VecVocabulary> assoc_ctx_vocabulary;
+  std::shared_ptr< OriginalWord2VecVocabulary > words_vocabulary;
+  std::shared_ptr< OriginalWord2VecVocabulary > dep_ctx_vocabulary;
+  std::shared_ptr< OriginalWord2VecVocabulary > assoc_ctx_vocabulary;
   // номера колонок в conll, откуда считывать данные
   size_t emb_column;
   size_t dep_column;
