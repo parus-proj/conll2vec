@@ -159,11 +159,6 @@ int main(int argc, char **argv)
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
                      cmdLineParams.getAsInt("-negative"),
-                     (cmdLineParams.getAsInt("-speed_factor") == 1),
-                     cmdLineParams.getAsFloat("-space_lim_d"),
-                     cmdLineParams.getAsFloat("-space_lim_a"),
-                     cmdLineParams.getAsFloat("-z_reg_d"),
-                     cmdLineParams.getAsFloat("-z_reg_a"),
                      cmdLineParams.getAsInt("-threads") );
 
     // инициализация нейросети
@@ -179,8 +174,6 @@ int main(int argc, char **argv)
       trainer.restore( cmdLineParams.getAsString("-restore"), false, true );
     }
 
-    // запускаем поток, обеспечивающий вычисление параметров регуляризации
-    std::thread regularization_thread(&Trainer::regularization_entry_point, &trainer);
     // запускаем потоки, осуществляющие обучение
     size_t threads_count = cmdLineParams.getAsInt("-threads");
     std::vector<std::thread> threads_vec;
@@ -190,8 +183,6 @@ int main(int argc, char **argv)
     // ждем завершения обучения
     for (size_t i = 0; i < threads_count; ++i)
       threads_vec[i].join();
-    trainer.all_done_signal();
-    regularization_thread.join();
 
     // сохраняем вычисленные вектора в файл
     if (needLoadMainVocab)
@@ -342,11 +333,6 @@ int main(int argc, char **argv)
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
                      cmdLineParams.getAsInt("-negative"),
-                     (cmdLineParams.getAsInt("-speed_factor") == 1),
-                     cmdLineParams.getAsFloat("-space_lim_d"),
-                     cmdLineParams.getAsFloat("-space_lim_a"),
-                     cmdLineParams.getAsFloat("-z_reg_d"),
-                     cmdLineParams.getAsFloat("-z_reg_a"),
                      cmdLineParams.getAsInt("-threads") );
 
     // инициализация нейросети
@@ -355,8 +341,6 @@ int main(int argc, char **argv)
     trainer.restore( cmdLineParams.getAsString("-restore"), false, true );
     trainer.restore_left_matrix(vm);  // // перенос векторых представлений из загруженной модели в левую матрицу
 
-    // запускаем поток, обеспечивающий вычисление параметров регуляризации
-    std::thread regularization_thread(&Trainer::regularization_entry_point, &trainer);
     // запускаем потоки, осуществляющие обучение
     size_t threads_count = cmdLineParams.getAsInt("-threads");
     std::vector<std::thread> threads_vec;
@@ -366,8 +350,6 @@ int main(int argc, char **argv)
     // ждем завершения обучения
     for (size_t i = 0; i < threads_count; ++i)
       threads_vec[i].join();
-    trainer.all_done_signal();
-    regularization_thread.join();
 
     // сохраняем вычисленные вектора в файл
     trainer.saveEmbeddings( cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt") );

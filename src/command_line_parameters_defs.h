@@ -39,12 +39,7 @@ public:
         {"-sample_d",     {"Dependency contexts subsampling threshold", "1e-3", std::nullopt}},
         {"-sample_a",     {"Associative contexts subsampling threshold", "1e-5", std::nullopt}},
         {"-threads",      {"Use <int> threads", "8", std::nullopt}},
-        {"-fit_input",    {"<file>.conll to fit (or stdin)", std::nullopt, std::nullopt}},
-        {"-speed_factor", {"Use speed-factor", "0", std::nullopt}},
-        {"-space_lim_d",  {"Embedding's space limit factor (dependency)", "1e+30", std::nullopt}},
-        {"-space_lim_a",  {"Embedding's space limit factor (association)", "1e+30", std::nullopt}},
-        {"-z_reg_d",      {"Zero-shifts regularization factor (dependency)", "0", std::nullopt}},
-        {"-z_reg_a",      {"Zero-shifts regularization factor (association)", "0", std::nullopt}}
+        {"-fit_input",    {"<file>.conll to fit (or stdin)", std::nullopt, std::nullopt}}
     };
   }
 };

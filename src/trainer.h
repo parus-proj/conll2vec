@@ -11,8 +11,6 @@
 #include <chrono>
 #include <iostream>
 #include <fstream>
-//#include <cmath>
-#include <atomic>
 
 #ifdef _MSC_VER
   #define posix_memalign(p, a, s) (((*(p)) = _aligned_malloc((s), (a))), *(p) ? 0 : errno)
@@ -42,11 +40,6 @@ public:
            size_t epochs,
            float learning_rate,
            size_t negative_count,
-           bool speed_factor_flag,
-           float wspace_lim_value_dep,
-           float wspace_lim_value_assoc,
-           float zero_regularization_factor_dep,
-           float zero_regularization_factor_assoc,
            size_t total_threads_count )
   : lep(learning_example_provider)
   , w_vocabulary(words_vocabulary)
@@ -60,12 +53,6 @@ public:
   , alpha(learning_rate)
   , starting_alpha(learning_rate)
   , negative(negative_count)
-  , use_speed_factor(speed_factor_flag)
-  , w_space_lim_factor_d(wspace_lim_value_dep)
-  , w_space_lim_factor_a(wspace_lim_value_assoc)
-  , z_reg_d(zero_regularization_factor_dep)
-  , z_reg_a(zero_regularization_factor_assoc)
-  , all_done(false)
   {
     // предварительный табличный расчет для логистической функции
     expTable = (float *)malloc((EXP_TABLE_SIZE + 1) * sizeof(float));
@@ -75,14 +62,10 @@ public:
     }
     // запомним количество обучающих примеров
     train_words = w_vocabulary->cn_sum();
-    // настроим периодичность обновления "коэффициента скорости обучения" и ограничителей векторного пространства
+    // настроим периодичность обновления "коэффициента скорости обучения"
     alpha_chunk = (train_words - 1) / total_threads_count;
     if (alpha_chunk > 10000)
       alpha_chunk = 10000;
-    // инициализируем ограничители векторного пространства
-    w_space_lims_update(0);
-    // выделение памяти для хранения смещений в измерениях
-    sh0 = (float *)calloc(layer1_size, sizeof(float));
     // инициализируем распределения, имитирующие шум (для словарей контекстов)
     if ( dep_ctx_vocabulary )
       InitUnigramTable(table_dep, dep_ctx_vocabulary);
@@ -93,7 +76,6 @@ public:
   virtual ~Trainer()
   {
     free(expTable);
-    free(sh0);
     if (syn0)
       free_aligned(syn0);
     if (syn1_dep)
@@ -153,32 +135,6 @@ public:
 
     start_learning_tp = std::chrono::steady_clock::now();
   } // method-end
-  // процедура регуляризации (точка входа для потока вычисления параметров регуляризации)
-  void regularization_entry_point()
-  {
-    size_t wv_size = w_vocabulary->size();
-    while ( !all_done )
-    {
-      for (size_t d = 0; d < layer1_size; ++d)
-      {
-        // воспользуемся методом Уэлфорда для вычисления среднего (чтобы избежать рисков переполнения при суммировании)
-        // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
-        float meanValue = 0;
-        float* offset = syn0 + d;
-        for (size_t w = 1; w <= wv_size; ++w)
-        {
-          meanValue += ((*offset) - meanValue) / w;
-          offset += layer1_size;
-        }
-        *(sh0 + d) = meanValue;
-      }
-    }
-  } // method-end: regularization_entry_point
-  // сигнал завершения для потока вычисления параметров регуляризации
-  void all_done_signal()
-  {
-    all_done.exchange(true);
-  }
   // обобщенная процедура обучения (точка входа для потоков)
   void train_entry_point( size_t thread_idx )
   {
@@ -196,7 +152,6 @@ public:
       {
         // вывод прогресс-сообщений
         // и корректировка коэффициента скорости обучения (alpha)
-        // и эвристики, ограничивающие векторное пространство
         if (word_count - last_word_count > alpha_chunk)
         {
           word_count_actual += (word_count - last_word_count);
@@ -214,8 +169,6 @@ public:
           alpha = starting_alpha * (1.0 - fraction);
           if ( alpha < starting_alpha * 0.0001 )
             alpha = starting_alpha * 0.0001;
-          // обновление пределов векторного пространства
-          w_space_lims_update(fraction);
         } // if ('checkpoint')
         // читаем очередной обучающий пример
         auto learning_example = lep->get(thread_idx);
@@ -445,7 +398,6 @@ private:
   // функция, реализующая модель обучения skip-gram
   void skip_gram(const LearningExample& le, float *neu1e)
   {
-    float speedFactor = (use_speed_factor ? w_vocabulary->idx_to_data(le.word).speed_factor : 1.0);
     // вычисляем смещение вектора, соответствующего целевому слову
     float *targetVectorPtr = syn0 + le.word * layer1_size;
     // цикл по синтаксическим контекстам
@@ -479,42 +431,18 @@ private:
         if      (f > MAX_EXP)  g = (label - 1) * alpha;
         else if (f < -MAX_EXP) g = (label - 0) * alpha;
         else                   g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
-        float sg = g * speedFactor;
         // Propagate errors output -> hidden
-        //std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
-        std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [sg](float a, float b) -> float {return a + sg*b;});
+        std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
         // Learn weights hidden -> output
         if ( !proper_names )
           std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all samples
       // Learn weights input -> hidden
-//      std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
-      float zero_shift_factor = alpha * z_reg_d;
-      for (size_t d = 0; d < size_dep; ++d)
-      {
-        float* offset = targetVectorPtr + d;
-        // новое значение состоит из:
-        //   1. старого значения
-        //   2. градиента ошибки
-        //   3. регуляризатора смещения нуля (zero shift)
-        //   4. регуляризатора пределов пространства (space) либо L2 регуляризатора
-        float newValue = (*offset)
-                       + (*(neu1e+d))
-                       - zero_shift_factor * (*(sh0+d))            // ZeroShift regularizator
-                       //- alpha*0.01*(*offset)                      // L2 regularizator
-                       ;
-        if (newValue > w_space_up_d)
-          *offset = w_space_up_d;
-        else if (newValue < w_space_down_d)
-          *offset = w_space_down_d;
-        else
-          *offset = newValue;
-      }
+      std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
     } // for all dep contexts
     // цикл по ассоциативным контекстам
     targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
     neu1e += size_dep;
-    float *sh0a = sh0 + size_dep;
     for (auto&& ctx_idx : le.assoc_context)
     {
       // зануляем текущие значения ошибок (это частная производная ошибки E по выходу скрытого слоя h)
@@ -545,43 +473,20 @@ private:
         if      (f > MAX_EXP)  g = (label - 1) * alpha;
         else if (f < -MAX_EXP) g = (label - 0) * alpha;
         else                   g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
-        float sg = g * speedFactor;
         // Propagate errors output -> hidden
-        //std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
-        std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [sg](float a, float b) -> float {return a + sg*b;});
+        std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
         // Learn weights hidden -> output
         if ( !proper_names )
           std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all samples
       // Learn weights input -> hidden
-      //std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
-      float zero_shift_factor = alpha * z_reg_a;
-      for (size_t d = 0; d < size_assoc; ++d)
-      {
-        float* offset = targetVectorPtr + d;
-        // новое значение состоит из:
-        //   1. старого значения
-        //   2. градиента ошибки
-        //   3. регуляризатора смещения нуля (zero shift)
-        //   4. регуляризатора пределов пространства (space) либо L2 регуляризатора
-        float newValue = (*offset)
-                       + (*(neu1e+d))
-                       - zero_shift_factor * (*(sh0a+d))             // ZeroShift regularizator
-                       //- alpha*0.01*(*offset)                        // L2 regularizator
-                       ;
-        if (newValue > w_space_up_a)
-          *offset = w_space_up_a;
-        else if (newValue < w_space_down_a)
-          *offset = w_space_down_a;
-        else
-          *offset = newValue;
-      }
+      std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
     } // for all assoc contexts
   } // method-end
 private:
   uint64_t train_words = 0;
   uint64_t word_count_actual = 0;
-  // периодичность, с которой корректируется "коэф.скорости обучения" и ограничители векторного пространства
+  // периодичность, с которой корректируется "коэф.скорости обучения"
   long long alpha_chunk = 0;
   std::chrono::steady_clock::time_point start_learning_tp;
 
@@ -629,34 +534,6 @@ private:
       std::getline(ifs,buf); // считываем конец строки
     }
     return true;
-  } // method-end
-private:
-  // применять ли эвристику на основе speed factor
-  bool use_speed_factor = true;
-  // ограничение векторного пространства (для syn0)
-  float w_space_up_d = 0;
-  float w_space_down_d = 0;
-  float w_space_up_a = 0;
-  float w_space_down_a = 0;
-  // коэффициент, от которого зависит степень и скорость расширения векторного пространства syn0
-  float w_space_lim_factor_d = 1000.0;
-  float w_space_lim_factor_a = 1000.0;
-  // хранилище смещений нулей в измерениях векторного пространства syn0
-  float *sh0;
-  // коэффициенты значимости регуляризации, нацеленной на ликвидацию смещений нулей
-  float z_reg_d;
-  float z_reg_a;
-  // признак окончания обучения (для остановки потока, отвечающего за вычисление смещений нулей)
-  std::atomic<bool> all_done;
-
-  // функция вычисления ограничителей векторного пространства
-  void w_space_lims_update(float fraction)
-  {
-    float initial_space_limit = (0.5 / layer1_size);  // согласно процедуре инициализации весов init_net()
-    w_space_up_d = initial_space_limit * (1.0 + fraction * w_space_lim_factor_d);
-    w_space_down_d = - w_space_up_d;
-    w_space_up_a = initial_space_limit * (1.0 + fraction * w_space_lim_factor_a);
-    w_space_down_a = - w_space_up_a;
   } // method-end
 }; // class-decl-end
 
