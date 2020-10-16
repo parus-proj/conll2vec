@@ -58,7 +58,7 @@ int main(int argc, char **argv)
     VocabsBuilder vb;
     bool succ = vb.build_vocabs( cmdLineParams.getAsString("-train"),
                                  cmdLineParams.getAsString("-vocab_m"), cmdLineParams.getAsString("-vocab_p"), cmdLineParams.getAsString("-vocab_t"),
-                                 cmdLineParams.getAsString("-vocab_tm"), cmdLineParams.getAsString("-vocab_d"), cmdLineParams.getAsString("-vocab_a"),
+                                 cmdLineParams.getAsString("-tl_map"), cmdLineParams.getAsString("-vocab_d"), cmdLineParams.getAsString("-vocab_a"),
                                  cmdLineParams.getAsInt("-min-count_m"), cmdLineParams.getAsInt("-min-count_p"), cmdLineParams.getAsInt("-min-count_t"),
                                  cmdLineParams.getAsInt("-min-count_d"), cmdLineParams.getAsInt("-min-count_a"),
                                  cmdLineParams.getAsInt("-col_ctx_d") - 1, (cmdLineParams.getAsInt("-use_deprel") == 1)
@@ -256,7 +256,7 @@ int main(int argc, char **argv)
   // если поставлена задача добавления токенов в модель
   if (task == "toks")
   {
-    AddToks::run(cmdLineParams.getAsString("-model"), cmdLineParams.getAsString("-vocab_tm"), (cmdLineParams.getAsString("-model_fmt") == "txt"));
+    AddToks::run(cmdLineParams.getAsString("-model"), cmdLineParams.getAsString("-tl_map"), (cmdLineParams.getAsString("-model_fmt") == "txt"));
     return 0;
   } // if task == toks
 
