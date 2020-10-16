@@ -1,12 +1,12 @@
-SIZE_DEP=80
-SIZE_ASSOC=20
+SIZE_DEP=75
+SIZE_ASSOC=25
 TRAIN_FN=parus_first_10m_lines.conll
-COL_EMB=3
 COL_CTX_D=3
 USE_DEPREL=1
 MODEL_FN=vectors.bin
 VOC_M=main.vocab
 VOC_P=proper.vocab
+VOC_T=tokens.vocab
 VOC_D=ctx_dep.vocab
 VOC_A=ctx_assoc.vocab
 THREADS=8
@@ -21,15 +21,23 @@ gzip --decompress --stdout ./data/parus_first_10m_lines.conll.zip | ./conll2vec 
 
 echo ""
 echo "BUILDING VOCABULARIES"
-./conll2vec -task vocab -train $TRAIN_FN -col_emb $COL_EMB -col_ctx_d $COL_CTX_D -vocab_m $VOC_M -vocab_p $VOC_P -vocab_d $VOC_D -vocab_a $VOC_A -min-count_m 70 -min-count_p 100 -min-count_d 20 -min-count_a 20 -use_deprel $USE_DEPREL
+./conll2vec -task vocab -train $TRAIN_FN \
+            -vocab_m $VOC_M -vocab_p $VOC_P -vocab_t $VOC_T -vocab_d $VOC_D -vocab_a $VOC_A -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL \
+            -min-count_m 70 -min-count_p 100 -min-count_t 50 -min-count_d 20 -min-count_a 20
 
 echo ""
 echo "TRAINING EMBEDDINGS -- MAIN"
-./conll2vec -task train -train $TRAIN_FN -col_emb $COL_EMB -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL -vocab_m $VOC_M -backup backup.data -vocab_d $VOC_D -vocab_a $VOC_A -model $MODEL_FN -size_d $SIZE_DEP -size_a $SIZE_ASSOC -negative 7 -sample_a 1e-4 -zerolize 0.25 -space_lim 1000 -iter 10 -threads $THREADS
+./conll2vec -task train -train $TRAIN_FN \
+            -vocab_m $VOC_M -backup backup.data -vocab_d $VOC_D -vocab_a $VOC_A -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL -model $MODEL_FN \
+            -sample_w 1e-4 -sample_d 1e-4 -sample_a 1e-6 \
+            -size_d $SIZE_DEP -size_a $SIZE_ASSOC -negative 10 -iter 10 -threads $THREADS
 
 echo ""
 echo "TRAINING EMBEDDINGS -- PROPER"
-./conll2vec -task train -train $TRAIN_FN -col_emb $COL_EMB -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL -vocab_p $VOC_P -restore backup.data -vocab_d $VOC_D -vocab_a $VOC_A -model $MODEL_FN -size_d $SIZE_DEP -size_a $SIZE_ASSOC -negative 5 -sample_a 1e-4 -zerolize 111 -space_lim 1000 -iter 5 -threads $THREADS
+./conll2vec -task train -train $TRAIN_FN \
+            -vocab_p $VOC_P -restore backup.data -vocab_d $VOC_D -vocab_a $VOC_A -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL -model $MODEL_FN \
+            -sample_w 1e-2 -sample_d 1e-2 -sample_a 1e-4 \
+            -size_d $SIZE_DEP -size_a $SIZE_ASSOC -negative 10 -iter 10 -threads $THREADS
 
 echo ""
 echo "RUN SIMILARITY METER"
