@@ -46,6 +46,15 @@ private:
   // указатель на объект для оценки семантической близости
   std::shared_ptr<SimilarityEstimator> sim_meter;
 
+  // протоколирование в файл
+  void log(const std::string& msg) const
+  {
+    static std::shared_ptr<std::ofstream> log_ofs;
+    if (!log_ofs)
+      log_ofs = std::make_shared<std::ofstream>("self-test.log");
+    (*log_ofs) << msg << std::endl;
+  }
+
   // тест корректности значений в векторах (валидация вещественных чисел)
   void test_floats(bool verbose = false)
   {
@@ -512,6 +521,9 @@ private:
         {
           ++not_found;
           p2.second.usim = 0.0;
+          #ifdef DBGIT_NF
+            log(p1.first + "," + p2.first);
+          #endif
         }
       }
     std::cout << "    not found: " << not_found << " of " << (found+not_found) << " (~" << (not_found*100/(found+not_found)) << "%),      used: " << found << std::endl;
