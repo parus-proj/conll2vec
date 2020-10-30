@@ -438,7 +438,20 @@ private:
           std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all samples
       // Learn weights input -> hidden
-      std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
+      //std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
+      std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr,
+                     [](float a, float b) -> float
+                     {
+                       if ( a*b < 0 ) return a + b; // разнознаковые
+                       const float TH = 0.5;
+                       float abs_a = fabs(a);
+                       if (abs_a <= TH)
+                         return a + b;
+                       else
+                         return a + b / (abs_a+TH);
+                     }
+                    );
+
     } // for all dep contexts
     // цикл по ассоциативным контекстам
     targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
@@ -480,7 +493,20 @@ private:
           std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all samples
       // Learn weights input -> hidden
-      std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
+      //std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
+      std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr,
+                     [](float a, float b) -> float
+                     {
+                       if ( a*b < 0 ) return a + b; // разнознаковые
+                       const float TH = 0.5;
+                       float abs_a = fabs(a);
+                       if (abs_a <= TH)
+                         return a + b;
+                       else
+                         return a + b / (abs_a+TH);
+                     }
+                    );
+
     } // for all assoc contexts
   } // method-end
 private:
