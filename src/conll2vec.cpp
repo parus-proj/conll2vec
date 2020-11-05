@@ -212,7 +212,7 @@ int main(int argc, char **argv)
   // если поставлена задача оценки близости значений (в интерактивном режиме)
   if (task == "sim")
   {
-    SimilarityEstimator sim_estimator(cmdLineParams.getAsInt("-size_d"), cmdLineParams.getAsInt("-size_a"));
+    SimilarityEstimator sim_estimator(cmdLineParams.getAsInt("-size_d"), cmdLineParams.getAsInt("-size_a"), cmdLineParams.getAsFloat("-a_ratio"));
     if ( !sim_estimator.load_model(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt")) )
       return -1;
     sim_estimator.run();
@@ -222,7 +222,7 @@ int main(int argc, char **argv)
   // если поставлена задача самодиагностики (язык: русский)
   if (task == "selftest_ru")
   {
-    std::shared_ptr<SimilarityEstimator> sim_estimator = std::make_shared<SimilarityEstimator>(cmdLineParams.getAsInt("-size_d"), cmdLineParams.getAsInt("-size_a"));
+    std::shared_ptr<SimilarityEstimator> sim_estimator = std::make_shared<SimilarityEstimator>(cmdLineParams.getAsInt("-size_d"), cmdLineParams.getAsInt("-size_a"), cmdLineParams.getAsFloat("-a_ratio"));
     if ( !sim_estimator->load_model(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt")) )
       return -1;
     SelfTest_ru st(sim_estimator);

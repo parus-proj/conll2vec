@@ -27,9 +27,10 @@ public:
     cdAssocOnly
   };
 public:
-  SimilarityEstimator(size_t dep_part, size_t assoc_part)
+  SimilarityEstimator(size_t dep_part, size_t assoc_part, float assoc_ratio)
   : dep_size(dep_part)
   , assoc_size(assoc_part)
+  , a_ratio_sqr(assoc_ratio*assoc_ratio)
   , cmp_dims(cdAll)
   , cmp_mode(cmWord)
   {
@@ -95,6 +96,8 @@ public:
 private:
   size_t dep_size;
   size_t assoc_size;
+  // вклад ассоциативной части вектора в оценку близости (относительно категориальной части)
+  float a_ratio_sqr;
   // контейнер векторной модели
   VectorsModel vm;
   // измерения для сравнения
@@ -111,7 +114,27 @@ private:
     float result = 0;
     switch ( cmp_dims )
     {
-    case cdAll       : result = std::inner_product(w1_Offset, w1_Offset+vm.emb_size, w2_Offset, 0.0); break;
+    case cdAll       : //result = std::inner_product(w1_Offset, w1_Offset+vm.emb_size, w2_Offset, 0.0); break;
+                       {
+                         float l1 = 0, l2 = 0;
+                         for (size_t i = 0; i < vm.emb_size; ++i)
+                         {
+                           if (i < dep_size)
+                           {
+                             result += w1_Offset[i]*w2_Offset[i];
+                             l1 += w1_Offset[i]*w1_Offset[i];
+                             l2 += w2_Offset[i]*w2_Offset[i];
+                           }
+                           else
+                           {
+                             result += w1_Offset[i]*w2_Offset[i] * a_ratio_sqr;
+                             l1 += w1_Offset[i]*w1_Offset[i] * a_ratio_sqr;
+                             l2 += w2_Offset[i]*w2_Offset[i] * a_ratio_sqr;
+                           }
+                         }
+                         result = result / std::sqrt(l1) / std::sqrt(l2);
+                       }
+                       break;
     case cdDepOnly   : result = std::inner_product(w1_Offset, w1_Offset+dep_size, w2_Offset, 0.0);
                        result /= std::sqrt( std::inner_product(w1_Offset, w1_Offset+dep_size, w1_Offset, 0.0) );
                        result /= std::sqrt( std::inner_product(w2_Offset, w2_Offset+dep_size, w2_Offset, 0.0) );

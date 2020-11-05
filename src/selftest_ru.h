@@ -9,10 +9,12 @@
 #include <map>
 #include <set>
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <regex>
 #include <optional>
 #include <cmath>
+#include <iterator>
 
 // процедура оценки качества модели для русского языка (быстрая самодиагностика)
 class SelfTest_ru
@@ -35,8 +37,8 @@ public:
     test_sim_assoc(verbose);
 //    std::cout << std::endl;
 //    test_sim_all(verbose);
-//    std::cout << std::endl;
-//    dimensions_analyse(verbose);
+    std::cout << std::endl;
+    dimensions_analyse(verbose);
     std::cout << std::endl;
     test_russe2015();
     std::cout << std::endl;
@@ -87,7 +89,7 @@ private:
         }
       }
     if (all_right)
-      std::cout << "  All float values are normal." << std::endl;
+      std::cout << "  All floating point values are correct." << std::endl;
   }
 
   // тест категориально несвязанных (среднее расстояние между ними должно быть <=0 )
@@ -436,6 +438,111 @@ private:
     avg_sim /= cnt;
     std::cout << "  AVG = " << avg_sim << "  (the more, the better)" << std::endl;
     std::cout << "  MIN = " << min_sim << " -- " << min_pair << std::endl;
+  } // method-end
+
+  // стат.данные по измерениям
+  void dimensions_analyse(bool verbose=false) const
+  {
+    // получаем доступ к векторному пространству
+    size_t vocab_size = 0, emb_size = 0;
+    float* embeddings = nullptr;
+    std::vector<std::string> vocab;
+    sim_meter->raw(vocab_size, emb_size, embeddings, vocab);
+    // выводим данные о минимальных и максимальных значениях в пространстве
+    const size_t MM_CNT = 5;
+    std::map<float, std::pair<std::string,size_t>, std::greater<float>> minValues;
+    std::map<float, std::pair<std::string,size_t>> maxValues;
+    for (size_t w = 0; w < vocab_size; ++w)
+      for (size_t d = 0; d < emb_size; ++d)
+      {
+        float val = embeddings[w*emb_size+d];
+        if (minValues.empty() || val < minValues.begin()->first)
+        {
+          minValues[val] = std::make_pair(vocab[w],d);
+          if (minValues.size() > MM_CNT)
+            minValues.erase(minValues.begin());
+        }
+        if (maxValues.empty() || val > maxValues.begin()->first)
+        {
+          maxValues[val] = std::make_pair(vocab[w],d);
+          if (maxValues.size() > MM_CNT)
+            maxValues.erase(maxValues.begin());
+        }
+      }
+    std::cout << "Run dimensions statistic" << std::endl;
+    std::cout << "  min-max format: value (word/dimension)" << std::endl;
+    std::cout << "    min:";
+    for (auto& r : minValues)
+      std::cout << "  " << r.first << " (" << r.second.first << "/" << r.second.second << ")";
+    std::cout << std::endl;
+    std::cout << "    max:";
+    for (auto& r : maxValues)
+      std::cout << "  " << r.first << " (" << r.second.first << "/" << r.second.second << ")";
+    std::cout << std::endl;
+    // выводим данные о смещениях нуля в измерениях
+    const size_t ZSH_CNT = 5;
+    std::map<float, size_t> maxShifts;
+    for (size_t d = 0; d < emb_size; ++d)
+    {
+      float sum = 0.0;
+      for (size_t w = 0; w < vocab_size; ++w)
+        sum += embeddings[w*emb_size+d];
+      sum /= vocab_size;
+      sum = fabs(sum);
+      if (maxShifts.empty() || sum > maxShifts.begin()->first)
+      {
+        maxShifts[sum] = d;
+        if (maxShifts.size() > ZSH_CNT)
+          maxShifts.erase(maxShifts.begin());
+      }
+    }
+    std::cout << "  max zero-shifted dimensions:";
+    for (auto& r : maxShifts)
+      std::cout << "  " << r.first << " (" << r.second << ")";
+    std::cout << std::endl;
+    // выводим гистограмму худшего измерения
+    std::map<float, size_t> bar;
+    const size_t resolution = 100;
+    const float step = 1.0 / resolution;
+    for (size_t i = 0; i < (2*resolution); ++i)
+      bar[-1.0 + i*step] = 0;
+    size_t target_dimension = maxShifts.rbegin()->second;
+    for (size_t w = 0; w < vocab_size; ++w)
+    {
+      float val = embeddings[w*emb_size+target_dimension];
+      auto it = std::lower_bound(bar.begin(), bar.end(), val, [](const std::pair<float, size_t> item, float bound) {return item.first < bound;});
+      if (it != bar.end())
+        it->second++;
+    }
+    auto shrinkLeftFunc = [](size_t cntLim, std::map<float, size_t>& bar)
+                          {
+                            auto lIt = bar.begin();
+                            while (lIt != bar.end() && lIt->second < cntLim)
+                              ++lIt;
+                            bar.erase(bar.begin(), lIt);
+                          };
+    auto shrinkRightFunc = [](size_t cntLim, std::map<float, size_t>& bar)
+                           {
+                             size_t zCnt = 0;
+                             auto rIt = bar.rbegin();
+                             while (rIt != bar.rend() && rIt->second < cntLim)
+                             {
+                               ++zCnt;
+                               ++rIt;
+                             }
+                             auto rIt2 = bar.begin();
+                             std::advance(rIt2, bar.size()-zCnt);
+                             bar.erase(rIt2, bar.end());
+                           };
+    shrinkLeftFunc(1, bar);
+    shrinkRightFunc(1, bar);
+    std::cout << "  " << target_dimension << " dimension bar-chart" << std::endl;
+    std::cout << std::setprecision(3);
+    for (auto it = bar.begin(), itEnd = bar.end(); it != itEnd; ++it)
+      std::cout << "    " << std::setw(5) << it->first << "\t" << it->second << std::endl;
+    std::cout << std::setprecision(6);
+    // TODO: посчитать попарную корреляцию измерений (измерения-дубликаты)
+    // если два измерения почти одинаково упорядочивают слова, то одно из них избыточно (можно сжать модель или доучить измерение)
   } // method-end
 
   void test_russe2015() const

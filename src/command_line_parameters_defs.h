@@ -39,7 +39,8 @@ public:
         {"-sample_d",     {"Dependency contexts subsampling threshold", "1e-3", std::nullopt}},
         {"-sample_a",     {"Associative contexts subsampling threshold", "1e-5", std::nullopt}},
         {"-threads",      {"Use <int> threads", "8", std::nullopt}},
-        {"-fit_input",    {"<file>.conll to fit (or stdin)", std::nullopt, std::nullopt}}
+        {"-fit_input",    {"<file>.conll to fit (or stdin)", std::nullopt, std::nullopt}},
+        {"-a_ratio" ,     {"Associations contribution to similarity", "1.0", std::nullopt}}
     };
   }
 };
