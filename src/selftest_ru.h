@@ -20,8 +20,9 @@
 class SelfTest_ru
 {
 public:
-  SelfTest_ru( std::shared_ptr<SimilarityEstimator> sim_estimator)
+  SelfTest_ru( std::shared_ptr<SimilarityEstimator> sim_estimator, bool replace_yo_in_russe)
   : sim_meter(sim_estimator)
+  , russe_replace_yo(replace_yo_in_russe)
   {
   }
   void run(bool verbose = false)
@@ -47,6 +48,8 @@ public:
 private:
   // указатель на объект для оценки семантической близости
   std::shared_ptr<SimilarityEstimator> sim_meter;
+  // нужно ли замещать букву "ё" в тестах RUSSE
+  bool russe_replace_yo;
 
   // протоколирование в файл
   void log(const std::string& msg) const
@@ -572,6 +575,8 @@ private:
     std::getline(ifs, line); // read header
     while ( std::getline(ifs, line).good() )
     {
+      if (russe_replace_yo)
+        line = std::regex_replace(line, std::regex("ё"), "е");
       const std::regex space_re(",");
       std::vector<std::string> record {
           std::sregex_token_iterator(line.cbegin(), line.cend(), space_re, -1),

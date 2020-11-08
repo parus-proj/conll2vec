@@ -225,7 +225,7 @@ int main(int argc, char **argv)
     std::shared_ptr<SimilarityEstimator> sim_estimator = std::make_shared<SimilarityEstimator>(cmdLineParams.getAsInt("-size_d"), cmdLineParams.getAsInt("-size_a"), cmdLineParams.getAsFloat("-a_ratio"));
     if ( !sim_estimator->load_model(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt")) )
       return -1;
-    SelfTest_ru st(sim_estimator);
+    SelfTest_ru st(sim_estimator, (cmdLineParams.getAsInt("-st_yo")==1));
     st.run(false);
     return 0;
   } // if task == sefltest_ru
