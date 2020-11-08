@@ -43,6 +43,7 @@ public:
            size_t total_threads_count )
   : lep(learning_example_provider)
   , w_vocabulary(words_vocabulary)
+  , w_vocabulary_size(words_vocabulary->size())
   , proper_names(trainProperNames)
   , dep_ctx_vocabulary(dep_contexts_vocabulary)
   , assoc_ctx_vocabulary(assoc_contexts_vocabulary)
@@ -70,7 +71,10 @@ public:
     if ( dep_ctx_vocabulary )
       InitUnigramTable(table_dep, dep_ctx_vocabulary);
     if ( assoc_ctx_vocabulary )
-      InitUnigramTable(table_assoc, assoc_ctx_vocabulary);
+//      InitUnigramTable(table_assoc, assoc_ctx_vocabulary);
+// FOR-RESEARCH-begin
+      InitUnigramTable(table_assoc, w_vocabulary);
+// FOR-RESEARCH-end
   }
   // деструктор
   virtual ~Trainer()
@@ -114,12 +118,21 @@ public:
   {
     unsigned long long next_random = 1;
     size_t w_vocab_size = w_vocabulary->size();
+//    for (size_t a = 0; a < w_vocab_size; ++a)
+//      for (size_t b = 0; b < layer1_size; ++b)
+//      {
+//        next_random = next_random * (unsigned long long)25214903917 + 11;
+//        syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (float)65536) - 0.5) / layer1_size;
+//      }
     for (size_t a = 0; a < w_vocab_size; ++a)
+    {
+      float denominator = std::sqrt(w_vocabulary->idx_to_data(a).cn);
       for (size_t b = 0; b < layer1_size; ++b)
       {
         next_random = next_random * (unsigned long long)25214903917 + 11;
-        syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (float)65536) - 0.5) / layer1_size;
+        syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (float)65536) - 0.5) / denominator; // более частотные ближе к нулю
       }
+    }
 
     if ( dep_ctx_vocabulary )
     {
@@ -138,6 +151,8 @@ public:
   // обобщенная процедура обучения (точка входа для потоков)
   void train_entry_point( size_t thread_idx )
   {
+//    if ( thread_idx == 0 )
+//      ctrl_log_prepare();
     next_random_ns = thread_idx;
     // выделение памяти для хранения величины ошибки
     float *neu1e = (float *)calloc(layer1_size, sizeof(float));
@@ -161,9 +176,10 @@ public:
           {
             std::chrono::steady_clock::time_point current_learning_tp = std::chrono::steady_clock::now();
             std::chrono::duration< double, std::ratio<1> > learning_seconds = current_learning_tp - start_learning_tp;
-            printf( "%cAlpha: %f  Progress: %.2f%%  Words/sec: %.2fk  ", 13, alpha,
+            printf( "\rAlpha: %f  Progress: %.2f%%  Words/sec: %.2fk   ", alpha,
                     fraction * 100,
                     word_count_actual / (learning_seconds.count() * 1000) );
+//            printf( "Ctrl: %.5f        \n", ctrl_log_calc_not_sim() );
             fflush(stdout);
           }
           alpha = starting_alpha * (1.0 - fraction);
@@ -340,6 +356,7 @@ public:
 private:
   std::shared_ptr< LearningExampleProvider > lep;
   std::shared_ptr< CustomVocabulary > w_vocabulary;
+  size_t w_vocabulary_size;
   bool proper_names;  // признак того, что выполняется обучение векторных представлений для собственных имен
   std::shared_ptr< CustomVocabulary > dep_ctx_vocabulary;
   std::shared_ptr< CustomVocabulary > assoc_ctx_vocabulary;
@@ -395,6 +412,21 @@ private:
         i = vocabulary->size() - 1;
     }
   } // method-end
+//  void InitUniformTable(int*& table, std::shared_ptr< CustomVocabulary > vocabulary)
+//  {
+//    table = (int *)malloc(table_size * sizeof(int));
+//    size_t i = 0;
+//    double d1 = 1.0 / vocabulary->size();
+//    for (size_t a = 0; a < table_size; ++a)
+//    {
+//      table[a] = i;
+//      if (a / (double)table_size > d1)
+//      {
+//        i++;
+//        d1 += 1.0 / vocabulary->size();
+//      }
+//    }
+//  } // method-end
   // функция, реализующая модель обучения skip-gram
   void skip_gram(const LearningExample& le, float *neu1e)
   {
@@ -432,7 +464,13 @@ private:
         else if (f < -MAX_EXP) g = (label - 0) * alpha;
         else                   g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
         // Propagate errors output -> hidden
-        std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
+        if (d==0)
+          std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
+        else
+        {
+          float g_norm = g/negative;
+          std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g_norm](float a, float b) -> float {return a + g_norm*b;});
+        }
         // Learn weights hidden -> output
         if ( !proper_names )
           std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
@@ -451,15 +489,74 @@ private:
                          return a + b / (abs_a+TH);
                      }
                     );
-
     } // for all dep contexts
+
+//    // цикл по ассоциативным контекстам
+//    targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
+//    neu1e += size_dep;
+//    for (auto&& ctx_idx : le.assoc_context)
+//    {
+//      // зануляем текущие значения ошибок (это частная производная ошибки E по выходу скрытого слоя h)
+//      std::fill(neu1e, neu1e+size_assoc, 0.0);
+//      size_t selected_ctx;
+//      int label;     // знаковое целое (!)
+//      float g = 0;
+//      for (size_t d = 0; d <= negative; ++d)
+//      {
+//        if (d == 0) // на первой итерации рассматриваем положительный пример (контекст)
+//        {
+//          selected_ctx = ctx_idx;
+//          label = 1;
+//        }
+//        else // на остальных итерациях рассматриваем отрицательные примеры (случайные контексты из noise distribution)
+//        {
+//          update_random_ns();
+//          selected_ctx = table_assoc[(next_random_ns >> 16) % table_size];
+//          label = 0;
+//        }
+//        // вычисляем смещение вектора, соответствующего очередному положительному/отрицательному примеру
+//        float *ctxVectorPtr = syn1_assoc + selected_ctx * size_assoc;
+//        // в skip-gram выход скрытого слоя в точности соответствует вектору целевого слова
+//        // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
+//        float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, 0.0);
+//        if ( std::isnan(f) ) continue;
+//        // вычислим градиент умноженный на коэффициент скорости обучения
+//        if      (f > MAX_EXP)  g = (label - 1) * alpha;
+//        else if (f < -MAX_EXP) g = (label - 0) * alpha;
+//        else                   g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
+//        // Propagate errors output -> hidden
+//        if (d==0)
+//         std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
+//        else
+//        {
+//          float g_norm = g/negative;
+//          std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g_norm](float a, float b) -> float {return a + g_norm*b;});
+//        }
+//        // Learn weights hidden -> output
+//        if ( !proper_names )
+//          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+//      } // for all samples
+//      // Learn weights input -> hidden
+//      //std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
+//      std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr,
+//                     [](float a, float b) -> float
+//                     {
+//                       if ( a*b < 0 ) return a + b; // разнознаковые
+//                       const float TH = 0.5;
+//                       float abs_a = fabs(a);
+//                       if (abs_a <= TH)
+//                         return a + b;
+//                       else
+//                         return a + b / (abs_a+TH);
+//                     }
+//                    );
+//    } // for all assoc contexts
+
+// FOR-RESEARCH-begin   -- скорость обучения выше, показатели чуть хуже... (оценка предварительная)
     // цикл по ассоциативным контекстам
     targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
-    neu1e += size_dep;
     for (auto&& ctx_idx : le.assoc_context)
     {
-      // зануляем текущие значения ошибок (это частная производная ошибки E по выходу скрытого слоя h)
-      std::fill(neu1e, neu1e+size_assoc, 0.0);
       size_t selected_ctx;
       int label;     // знаковое целое (!)
       float g = 0;
@@ -473,11 +570,12 @@ private:
         else // на остальных итерациях рассматриваем отрицательные примеры (случайные контексты из noise distribution)
         {
           update_random_ns();
-          selected_ctx = table_assoc[(next_random_ns >> 16) % table_size];
+          //selected_ctx = table_assoc[(next_random_ns >> 16) % table_size]; // unigram distribution
+          selected_ctx = (next_random_ns >> 16) % w_vocabulary_size; // uniform distribution
           label = 0;
         }
         // вычисляем смещение вектора, соответствующего очередному положительному/отрицательному примеру
-        float *ctxVectorPtr = syn1_assoc + selected_ctx * size_assoc;
+        float *ctxVectorPtr = syn0 + selected_ctx * layer1_size + size_dep;
         // в skip-gram выход скрытого слоя в точности соответствует вектору целевого слова
         // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
         float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, 0.0);
@@ -486,28 +584,12 @@ private:
         if      (f > MAX_EXP)  g = (label - 1) * alpha;
         else if (f < -MAX_EXP) g = (label - 0) * alpha;
         else                   g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
-        // Propagate errors output -> hidden
-        std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
-        // Learn weights hidden -> output
-        if ( !proper_names )
-          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+        // Learn weights
+        std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all samples
-      // Learn weights input -> hidden
-      //std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
-      std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr,
-                     [](float a, float b) -> float
-                     {
-                       if ( a*b < 0 ) return a + b; // разнознаковые
-                       const float TH = 0.5;
-                       float abs_a = fabs(a);
-                       if (abs_a <= TH)
-                         return a + b;
-                       else
-                         return a + b / (abs_a+TH);
-                     }
-                    );
-
     } // for all assoc contexts
+// FOR-RESEARCH-end
+
   } // method-end
 private:
   uint64_t train_words = 0;
@@ -561,6 +643,51 @@ private:
     }
     return true;
   } // method-end
+
+//private:
+//  // множество несвязанных слов (для отладочной индикации средней меры сходства между ними в ходе обучения)
+//  std::vector<std::pair<size_t, size_t>> dbg_not_sim;
+//  void ctrl_log_prepare()
+//  {
+//    const std::vector<std::pair<std::string, std::string>> dbg_not_sim_strs = {
+//        {"синий", "кофе"},
+//        {"синий", "сообщать"},
+//        {"синий", "быстро"},
+//        {"синий", "восемь"},
+//        {"кофе", "сообщать"},
+//        {"кофе", "высоко"},
+//        {"кофе", "восемь"},
+//        {"сообщать", "высоко"},
+//        {"сообщать", "восемь"},
+//        {"быстро", "восемь"}
+//      };
+//    for (auto& p : dbg_not_sim_strs)
+//    {
+//      size_t i1 = w_vocabulary->word_to_idx(p.first);
+//      size_t i2 = w_vocabulary->word_to_idx(p.second);
+//      if (i1 == std::numeric_limits<size_t>::max() || i2 == std::numeric_limits<size_t>::max()) // неизвестные слова
+//        continue;
+//      dbg_not_sim.push_back( std::make_pair(i1, i2) );
+//    }
+//  } // method-end
+//  float ctrl_log_calc_not_sim()
+//  {
+//    float result = 0;
+//    size_t cnt = 0;
+//    for (auto& p : dbg_not_sim)
+//    {
+//      float* o1 = syn0 + p.first * layer1_size;
+//      float* o2 = syn0 + p.second * layer1_size;
+//      float ip = std::inner_product(o1, o1+layer1_size, o2, 0.0);
+//      float len1 = std::sqrt( std::inner_product(o1, o1+layer1_size, o1, 0.0) );
+//      float len2 = std::sqrt( std::inner_product(o2, o2+layer1_size, o2, 0.0) );
+//      if ( !std::isnormal(len1) || !std::isnormal(len2) || !std::isnormal(ip) )
+//        continue;
+//      result += ip / len1 / len2;
+//      ++cnt;
+//    }
+//    return result/cnt;
+//  } // method-end
 }; // class-decl-end
 
 
