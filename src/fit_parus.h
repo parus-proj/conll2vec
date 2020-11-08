@@ -226,8 +226,10 @@ private:
         auto& prepos_token = data[ prepos_token_no - 1  ];
         t[6] = prepos_token[6];
         t[7] = prepos_token[7];
-        prepos_token[6] = U"0";
-        prepos_token[7] = U"_";
+        // prepos_token[6] =  U"0";
+        // prepos_token[7] =  U"_";
+        prepos_token[6] =  t[0];
+        prepos_token[7] =  U"ud_prepos";
       }
     }
   } // method-end
