@@ -136,7 +136,7 @@ private:
         if ( *offs > rbound )
           rbound = *offs;
       }
-      *(support_embedding + d) = rbound + 2.0;
+      *(support_embedding + d) = rbound + 0.01; // добавляем немного, чтобы не растянуть пространство
     }
   } // method-end
 
