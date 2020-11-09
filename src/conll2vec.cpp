@@ -10,6 +10,7 @@
 #include "unpnizer.h"
 #include "add_punct.h"
 #include "add_toks.h"
+#include "balance.h"
 #include "vectors_model.h"
 
 #include <memory>
@@ -39,7 +40,8 @@ int main(int argc, char **argv)
               << "  -task selftest_ru -- model self-test for russian" << std::endl
               << "  -task unPNize     -- merge common & proper names models" << std::endl
               << "  -task toks        -- add tokens to model" << std::endl
-              << "  -task toks_train  -- train tokens model" << std::endl;
+              << "  -task toks_train  -- train tokens model" << std::endl
+              << "  -task balance     -- balance model dep/assoc ratio" << std::endl;
     return -1;
   }
   auto&& task = cmdLineParams.getAsString("-task");
@@ -355,6 +357,14 @@ int main(int argc, char **argv)
     trainer.saveEmbeddings( cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt") );
     return 0;
   } // if task == toks_train
+
+  // если поставлена задача балансировки модели (изменения весового соотношения dep и assoc частей)
+  if (task == "balance")
+  {
+    Balancer::run(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt"),
+                  cmdLineParams.getAsInt("-size_d"), cmdLineParams.getAsFloat("-a_ratio"));
+    return 0;
+  } // if task == balance
 
   return -1;
 }
