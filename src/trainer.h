@@ -71,10 +71,7 @@ public:
     if ( dep_ctx_vocabulary )
       InitUnigramTable(table_dep, dep_ctx_vocabulary);
     if ( assoc_ctx_vocabulary )
-//      InitUnigramTable(table_assoc, assoc_ctx_vocabulary);
-// FOR-RESEARCH-begin
-      InitUnigramTable(table_assoc, w_vocabulary);
-// FOR-RESEARCH-end
+      InitUnigramTable(table_assoc, assoc_ctx_vocabulary);
   }
   // деструктор
   virtual ~Trainer()
@@ -431,6 +428,9 @@ private:
   void skip_gram( const LearningExample& le, float *neu1e )
   {
     float norm_factor = negative - fraction*(negative-1);
+    size_t selected_ctx;   // хранилище для индекса контекста
+    int label;             // метка класса; знаковое целое (!)
+    float g = 0;           // хранилище для величины ошибки
     // вычисляем смещение вектора, соответствующего целевому слову
     float *targetVectorPtr = syn0 + le.word * layer1_size;
     // цикл по синтаксическим контекстам
@@ -438,9 +438,6 @@ private:
     {
       // зануляем текущие значения ошибок (это частная производная ошибки E по выходу скрытого слоя h)
       std::fill(neu1e, neu1e+size_dep, 0.0);
-      size_t selected_ctx;
-      int label;     // знаковое целое (!)
-      float g = 0;
       for (size_t d = 0; d <= negative; ++d)
       {
         if (d == 0) // на первой итерации рассматриваем положительный пример (контекст)
@@ -460,9 +457,10 @@ private:
         // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
         float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_dep, ctxVectorPtr, 0.0);
         if ( std::isnan(f) ) continue;
-        // вычислим градиент умноженный на коэффициент скорости обучения
-        g = alpha_error(f, label);
-        // Propagate errors output -> hidden
+        f = sigmoid(f);
+        // вычислим ошибку, умноженную на коэффициент скорости обучения
+        g = (label - f) * alpha;
+        // обратное распространение ошибки output -> hidden
         if (d==0)
           std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
         else
@@ -470,11 +468,11 @@ private:
           float g_norm = g/norm_factor;
           std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g_norm](float a, float b) -> float {return a + g_norm*b;});
         }
-        // Learn weights hidden -> output
+        // обучение весов hidden -> output
         if ( !proper_names )
           std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all samples
-      // Learn weights input -> hidden
+      // обучение весов input -> hidden
       //std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
       std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr,
                      [](float a, float b) -> float
@@ -490,111 +488,113 @@ private:
                     );
     } // for all dep contexts
 
-//    // цикл по ассоциативным контекстам
-//    targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
-//    neu1e += size_dep;
-//    for (auto&& ctx_idx : le.assoc_context)
-//    {
-//      // зануляем текущие значения ошибок (это частная производная ошибки E по выходу скрытого слоя h)
-//      std::fill(neu1e, neu1e+size_assoc, 0.0);
-//      size_t selected_ctx;
-//      int label;     // знаковое целое (!)
-//      float g = 0;
-//      for (size_t d = 0; d <= negative; ++d)
-//      {
-//        if (d == 0) // на первой итерации рассматриваем положительный пример (контекст)
-//        {
-//          selected_ctx = ctx_idx;
-//          label = 1;
-//        }
-//        else // на остальных итерациях рассматриваем отрицательные примеры (случайные контексты из noise distribution)
-//        {
-//          update_random_ns();
-//          selected_ctx = table_assoc[(next_random_ns >> 16) % table_size];
-//          label = 0;
-//        }
-//        // вычисляем смещение вектора, соответствующего очередному положительному/отрицательному примеру
-//        float *ctxVectorPtr = syn1_assoc + selected_ctx * size_assoc;
-//        // в skip-gram выход скрытого слоя в точности соответствует вектору целевого слова
-//        // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
-//        float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, 0.0);
-//        if ( std::isnan(f) ) continue;
-//        // вычислим градиент умноженный на коэффициент скорости обучения
-//        if      (f > MAX_EXP)  g = (label - 1) * alpha;
-//        else if (f < -MAX_EXP) g = (label - 0) * alpha;
-//        else                   g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
-//        // Propagate errors output -> hidden
-//        if (d==0)
-//         std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
-//        else
-//        {
-//          float g_norm = g/negative;
-//          std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g_norm](float a, float b) -> float {return a + g_norm*b;});
-//        }
-//        // Learn weights hidden -> output
-//        if ( !proper_names )
-//          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
-//      } // for all samples
-//      // Learn weights input -> hidden
-//      //std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
-//      std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr,
-//                     [](float a, float b) -> float
-//                     {
-//                       if ( a*b < 0 ) return a + b; // разнознаковые
-//                       const float TH = 0.5;
-//                       float abs_a = fabs(a);
-//                       if (abs_a <= TH)
-//                         return a + b;
-//                       else
-//                         return a + b / (abs_a+TH);
-//                     }
-//                    );
-//    } // for all assoc contexts
-
-// FOR-RESEARCH-begin   -- скорость обучения выше, показатели чуть хуже... (оценка предварительная)
     // цикл по ассоциативным контекстам
     targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
-    for (auto&& ctx_idx : le.assoc_context)
-    {
-      size_t selected_ctx;
-      int label;     // знаковое целое (!)
-      float g = 0;
-      for (size_t d = 0; d <= negative; ++d)
-      {
-        if (d == 0) // на первой итерации рассматриваем положительный пример (контекст)
-        {
-          selected_ctx = ctx_idx;
-          label = 1;
-        }
-        else // на остальных итерациях рассматриваем отрицательные примеры (случайные контексты из noise distribution)
-        {
-          update_random_ns();
-          //selected_ctx = table_assoc[(next_random_ns >> 16) % table_size]; // unigram distribution
-          selected_ctx = (next_random_ns >> 16) % w_vocabulary_size; // uniform distribution
-          label = 0;
-        }
-        // вычисляем смещение вектора, соответствующего очередному положительному/отрицательному примеру
-        float *ctxVectorPtr = syn0 + selected_ctx * layer1_size + size_dep;
-        // в skip-gram выход скрытого слоя в точности соответствует вектору целевого слова
-        // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
-        float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, 0.0);
-        if ( std::isnan(f) ) continue;
-        // вычислим градиент умноженный на коэффициент скорости обучения
-        g = alpha_error(f, label);
-        // Learn weights
-        std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
-      } // for all samples
-    } // for all assoc contexts
-// FOR-RESEARCH-end
+    neu1e += size_dep;
 
+    //update_random_ns();
+    bool use_ctx_assoc_upd = proper_names; // || (((next_random_ns >> 16) % 100) == 0);
+
+    if ( !proper_names /*&& fraction < 0.1*/ )
+    {
+      // цикл по широкооконным контекстам
+      for (auto&& ctx_idx : le.sent_context)
+      {
+        for (size_t d = 0; d <= negative; ++d)
+        {
+          if (d == 0) // на первой итерации рассматриваем положительный пример (контекст)
+          {
+            selected_ctx = ctx_idx;
+            label = 1;
+          }
+          else // на остальных итерациях рассматриваем отрицательные примеры (случайные контексты из noise distribution)
+          {
+            update_random_ns();
+            selected_ctx = (next_random_ns >> 16) % w_vocabulary_size; // uniform distribution
+            label = 0;
+          }
+          // вычисляем смещение вектора, соответствующего очередному положительному/отрицательному примеру
+          float *ctxVectorPtr = syn0 + selected_ctx * layer1_size + size_dep;
+          // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
+          float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, 0.0);
+          if ( std::isnan(f) ) continue;
+          f = sigmoid(f);
+          // вычислим ошибку, умноженную на коэффициент скорости обучения
+          g = (label - f) * alpha;
+          // обучение весов (input only)
+          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+        } // for all samples
+      } // for all window contexts
+    }
+//    else
+    {
+      for (auto&& ctx_idx : le.assoc_context)
+      {
+        // зануляем текущие значения ошибок (это частная производная ошибки E по выходу скрытого слоя h)
+        std::fill(neu1e, neu1e+size_assoc, 0.0);
+        for (size_t d = 0; d <= negative; ++d)
+        {
+          if (d == 0) // на первой итерации рассматриваем положительный пример (контекст)
+          {
+            selected_ctx = ctx_idx;
+            label = 1;
+          }
+          else // на остальных итерациях рассматриваем отрицательные примеры (случайные контексты из noise distribution)
+          {
+            update_random_ns();
+            selected_ctx = table_assoc[(next_random_ns >> 16) % table_size];
+            label = 0;
+          }
+          // вычисляем смещение вектора, соответствующего очередному положительному/отрицательному примеру
+          float *ctxVectorPtr = syn1_assoc + selected_ctx * size_assoc;
+          // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
+          float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, 0.0);
+          if ( std::isnan(f) ) continue;
+          f = sigmoid(f);
+          // вычислим ошибку, умноженную на коэффициент скорости обучения
+          g = (label - f) * alpha;
+          // обратное распространение ошибки output -> hidden
+if (use_ctx_assoc_upd)
+{
+          if (d==0)
+           std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
+          else
+          {
+            float g_norm = g/norm_factor;
+            std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g_norm](float a, float b) -> float {return a + g_norm*b;});
+          }
+}
+          // обучение весов hidden -> output
+          if ( !proper_names )
+            std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+        } // for all samples
+        // обучение весов input -> hidden
+        //std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
+if (use_ctx_assoc_upd)
+{
+        std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr,
+                       [](float a, float b) -> float
+                       {
+                         if ( a*b < 0 ) return a + b; // разнознаковые
+                         const float TH = 0.5;
+                         float abs_a = fabs(a);
+                         if (abs_a <= TH)
+                           return a + b;
+                         else
+                           return a + b / (abs_a+TH);
+                       }
+                      );
+}
+      } // for all assoc contexts
+    }
   } // method-end
 
-  // вычисление величины ошибки на выходном слое, умноженной на коэффициент скорости обучения
-  inline float alpha_error(float f, int label) const
+  // вычисление значения сигмоиды
+  inline float sigmoid(float f) const
   {
-    if      (f > MAX_EXP)  return (label - 1) * alpha;
-    else if (f < -MAX_EXP) return (label - 0) * alpha;
-    else                   return (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
+    if      (f > MAX_EXP)  return 1;
+    else if (f < -MAX_EXP) return 0;
+    else                   return expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
   } // method-end
 
 private:

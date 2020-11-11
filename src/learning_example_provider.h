@@ -17,6 +17,7 @@ struct LearningExample
   size_t word;                         // индекс слова
   std::vector<size_t> dep_context;     // индексы синтаксических контекстов
   std::vector<size_t> assoc_context;   // индексы ассоциативных контекстов
+  std::vector<size_t> sent_context;    // индексы слов (в левой матрице), встречающихся в этом же предложении (аналог широкоонного контекста в word2vec)
 };
 
 
@@ -80,10 +81,7 @@ public:
     w_mul_sample_d = train_words_dep * sample_d;
     if ( assoc_ctx_vocabulary )
       train_words_assoc = assoc_ctx_vocabulary->cn_sum();
-//    w_mul_sample_a = train_words_assoc * sample_a;
-// FOR-RESEARCH-begin
-    w_mul_sample_a = train_words * sample_a;
-// FOR-RESEARCH-end
+    w_mul_sample_a = train_words_assoc * sample_a;
     try
     {
       train_file_size = get_file_size(train_filename);
@@ -164,7 +162,8 @@ public:
         // конвертируем conll-таблицу в более удобные структуры
         const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
         std::vector< std::vector<size_t> > deps( sm_size );  // хранилище синатксических контекстов для каждого токена
-        std::set<size_t> associations; // хранилище ассоциативных контекстов для всего предложения
+        std::set<size_t> associations;                       // хранилище ассоциативных контекстов для всего предложения
+        std::set<size_t> window;                             // хранилище широкооконных контекстов
         if ( dep_ctx_vocabulary )
         {
           for (size_t i = 0; i < sm_size; ++i)
@@ -212,37 +211,39 @@ public:
         {
           for (auto& rec : sentence_matrix)
           {
-//            size_t assoc_idx = assoc_ctx_vocabulary->word_to_idx(rec[2]);       // lemma column
-//            if ( assoc_idx != INVALID_IDX )
-//            {
-//              // применяем сабсэмплинг к ассоциациям
-//              if (sample_a > 0)
-//              {
-//                  auto&& assoc_record = assoc_ctx_vocabulary->idx_to_data(assoc_idx);
-//                  float ran = (std::sqrt(assoc_record.cn / (w_mul_sample_a)) + 1) * (w_mul_sample_a) / assoc_record.cn;
-//                  t_environment.update_random();
-//                  if (ran < (t_environment.next_random & 0xFFFF) / (float)65536)
-//                    continue;
-//              }
-//              associations.insert(assoc_idx);
-//            }
-// FOR-RESEARCH-begin
-            auto word_idx = words_vocabulary->word_to_idx(rec[emb_column]);
-            if ( word_idx != INVALID_IDX )
+            size_t assoc_idx = assoc_ctx_vocabulary->word_to_idx(rec[2]);       // lemma column
+            if ( assoc_idx != INVALID_IDX )
             {
+              // применяем сабсэмплинг к ассоциациям
               if (sample_a > 0)
               {
-                auto&& w_record = words_vocabulary->idx_to_data(word_idx);
-                float ran = (std::sqrt(w_record.cn / (w_mul_sample_a)) + 1) * (w_mul_sample_a) / w_record.cn;
-                t_environment.update_random();
-                if (ran < (t_environment.next_random & 0xFFFF) / (float)65536)
-                  continue;
+                  auto&& assoc_record = assoc_ctx_vocabulary->idx_to_data(assoc_idx);
+                  float ran = (std::sqrt(assoc_record.cn / (w_mul_sample_a)) + 1) * (w_mul_sample_a) / assoc_record.cn;
+                  t_environment.update_random();
+                  if (ran < (t_environment.next_random & 0xFFFF) / (float)65536)
+                    continue;
               }
-              associations.insert(word_idx);
+              associations.insert(assoc_idx);
             }
-// FOR-RESEARCH-end
           } // for all words in sentence
         }
+        for (auto& rec : sentence_matrix)
+        {
+          auto word_idx = words_vocabulary->word_to_idx(rec[emb_column]);
+          auto assoc_idx = assoc_ctx_vocabulary->word_to_idx(rec[2]);       // lemma column
+          if ( word_idx != INVALID_IDX && assoc_idx != INVALID_IDX )
+          {
+            if (sample_w > 0) // todo: подумать о собственном коэффициенте сабсэмплинга
+            {
+              auto&& w_record = words_vocabulary->idx_to_data(word_idx);
+              float ran = (std::sqrt(w_record.cn / (w_mul_sample_w)) + 1) * (w_mul_sample_w) / w_record.cn;
+              t_environment.update_random();
+              if (ran < (t_environment.next_random & 0xFFFF) / (float)65536)
+                continue;
+            }
+            window.insert(word_idx);
+          }
+        } // for all words in sentence
         // конвертируем в структуру для итерирования (фильтрация несловарных)
         for (size_t i = 0; i < sm_size; ++i)
         {
@@ -264,6 +265,8 @@ public:
             //std::copy(associations.begin(), associations.end(), std::back_inserter(le.assoc_context));   // текущее слово считаем себе ассоциативным
             std::copy_if( associations.begin(), associations.end(), std::back_inserter(le.assoc_context),
                           [word_idx](const size_t a_idx) {return (a_idx != word_idx);} );                  // текущее слово не считаем себе ассоциативным
+            std::copy_if( window.begin(), window.end(), std::back_inserter(le.sent_context),
+                          [word_idx](const size_t w_idx) {return (w_idx != word_idx);} );                  // текущее слово не считаем своим контекстом
             t_environment.sentence.push_back(le);
           }
         }
