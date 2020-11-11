@@ -171,7 +171,7 @@ public:
         {
           word_count_actual += (word_count - last_word_count);
           last_word_count = word_count;
-          float fraction = word_count_actual / (float)(epoch_count * train_words + 1);
+          fraction = word_count_actual / (float)(epoch_count * train_words + 1);
           //if ( debug_mode != 0 )
           {
             std::chrono::steady_clock::time_point current_learning_tp = std::chrono::steady_clock::now();
@@ -179,7 +179,7 @@ public:
             printf( "\rAlpha: %f  Progress: %.2f%%  Words/sec: %.2fk   ", alpha,
                     fraction * 100,
                     word_count_actual / (learning_seconds.count() * 1000) );
-//            printf( "Ctrl: %.5f        \n", ctrl_log_calc_not_sim() );
+//            printf( "Ctrl: %.5f        ", ctrl_log_calc_not_sim() );
             fflush(stdout);
           }
           alpha = starting_alpha * (1.0 - fraction);
@@ -428,8 +428,9 @@ private:
 //    }
 //  } // method-end
   // функция, реализующая модель обучения skip-gram
-  void skip_gram(const LearningExample& le, float *neu1e)
+  void skip_gram( const LearningExample& le, float *neu1e )
   {
+    float norm_factor = negative - fraction*(negative-1);
     // вычисляем смещение вектора, соответствующего целевому слову
     float *targetVectorPtr = syn0 + le.word * layer1_size;
     // цикл по синтаксическим контекстам
@@ -460,15 +461,13 @@ private:
         float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_dep, ctxVectorPtr, 0.0);
         if ( std::isnan(f) ) continue;
         // вычислим градиент умноженный на коэффициент скорости обучения
-        if      (f > MAX_EXP)  g = (label - 1) * alpha;
-        else if (f < -MAX_EXP) g = (label - 0) * alpha;
-        else                   g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
+        g = alpha_error(f, label);
         // Propagate errors output -> hidden
         if (d==0)
           std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
         else
         {
-          float g_norm = g/negative;
+          float g_norm = g/norm_factor;
           std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g_norm](float a, float b) -> float {return a + g_norm*b;});
         }
         // Learn weights hidden -> output
@@ -581,9 +580,7 @@ private:
         float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, 0.0);
         if ( std::isnan(f) ) continue;
         // вычислим градиент умноженный на коэффициент скорости обучения
-        if      (f > MAX_EXP)  g = (label - 1) * alpha;
-        else if (f < -MAX_EXP) g = (label - 0) * alpha;
-        else                   g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
+        g = alpha_error(f, label);
         // Learn weights
         std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all samples
@@ -591,9 +588,19 @@ private:
 // FOR-RESEARCH-end
 
   } // method-end
+
+  // вычисление величины ошибки на выходном слое, умноженной на коэффициент скорости обучения
+  inline float alpha_error(float f, int label) const
+  {
+    if      (f > MAX_EXP)  return (label - 1) * alpha;
+    else if (f < -MAX_EXP) return (label - 0) * alpha;
+    else                   return (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
+  } // method-end
+
 private:
   uint64_t train_words = 0;
   uint64_t word_count_actual = 0;
+  float fraction = 0.0;
   // периодичность, с которой корректируется "коэф.скорости обучения"
   long long alpha_chunk = 0;
   std::chrono::steady_clock::time_point start_learning_tp;
