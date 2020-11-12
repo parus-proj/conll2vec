@@ -522,7 +522,10 @@ private:
           // вычислим ошибку, умноженную на коэффициент скорости обучения
           g = (label - f) * alpha;
           // обучение весов (input only)
-          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+          if (d == 0)
+            std::transform(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, targetVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+          else
+            std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
         } // for all samples
       } // for all window contexts
     }
