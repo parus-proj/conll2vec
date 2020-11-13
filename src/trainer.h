@@ -492,10 +492,7 @@ private:
     targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
     neu1e += size_dep;
 
-    //update_random_ns();
-    bool use_ctx_assoc_upd = proper_names; // || (((next_random_ns >> 16) % 100) == 0);
-
-    if ( !proper_names /*&& fraction < 0.1*/ )
+    if ( !proper_names )
     {
       // цикл по широкооконным контекстам
       for (auto&& ctx_idx : le.sent_context)
@@ -529,7 +526,8 @@ private:
         } // for all samples
       } // for all window contexts
     }
-//    else
+
+    if (proper_names || fraction > 0.75)
     {
       for (auto&& ctx_idx : le.assoc_context)
       {
@@ -557,37 +555,37 @@ private:
           // вычислим ошибку, умноженную на коэффициент скорости обучения
           g = (label - f) * alpha;
           // обратное распространение ошибки output -> hidden
-if (use_ctx_assoc_upd)
-{
-          if (d==0)
-           std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
-          else
+          if (proper_names)
           {
-            float g_norm = g/norm_factor;
-            std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g_norm](float a, float b) -> float {return a + g_norm*b;});
+            if (d==0)
+             std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
+            else
+            {
+              float g_norm = g/norm_factor;
+              std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g_norm](float a, float b) -> float {return a + g_norm*b;});
+            }
           }
-}
           // обучение весов hidden -> output
           if ( !proper_names )
             std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
         } // for all samples
         // обучение весов input -> hidden
-        //std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
-if (use_ctx_assoc_upd)
-{
-        std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr,
-                       [](float a, float b) -> float
-                       {
-                         if ( a*b < 0 ) return a + b; // разнознаковые
-                         const float TH = 0.5;
-                         float abs_a = fabs(a);
-                         if (abs_a <= TH)
-                           return a + b;
-                         else
-                           return a + b / (abs_a+TH);
-                       }
-                      );
-}
+        if (proper_names)
+        {
+          //std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
+          std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr,
+                         [](float a, float b) -> float
+                         {
+                           if ( a*b < 0 ) return a + b; // разнознаковые
+                           const float TH = 0.5;
+                           float abs_a = fabs(a);
+                           if (abs_a <= TH)
+                             return a + b;
+                           else
+                             return a + b / (abs_a+TH);
+                         }
+                        );
+        }
       } // for all assoc contexts
     }
   } // method-end
