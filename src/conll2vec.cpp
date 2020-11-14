@@ -144,6 +144,7 @@ int main(int argc, char **argv)
     std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams.getAsString("-train"),
                                                                                                   cmdLineParams.getAsInt("-threads"),
                                                                                                   (needLoadMainVocab ? v_main : v_proper ),
+                                                                                                  needLoadProperVocab,
                                                                                                   v_dep_ctx, v_assoc_ctx,
                                                                                                   2,
                                                                                                   cmdLineParams.getAsInt("-col_ctx_d") - 1,
@@ -173,6 +174,10 @@ int main(int argc, char **argv)
     {
       trainer.create_net();
       trainer.init_net();  // инициализация левой матрицы случайными значениями (для словаря собственных имен)
+      VectorsModel vm;
+      if ( !vm.load(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt")) )
+        return -1;
+      trainer.restore_assoc_by_model(vm);
       trainer.restore( cmdLineParams.getAsString("-restore"), false, true );
     }
 
@@ -318,7 +323,7 @@ int main(int argc, char **argv)
     // к моменту создания "поставщика обучающих примеров" словарь должен быть загружен (в частности, используется cn_sum())
     std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams.getAsString("-train"),
                                                                                                   cmdLineParams.getAsInt("-threads"),
-                                                                                                  v_toks, v_dep_ctx, v_assoc_ctx,
+                                                                                                  v_toks, false, v_dep_ctx, v_assoc_ctx,
                                                                                                   1,
                                                                                                   cmdLineParams.getAsInt("-col_ctx_d") - 1,
                                                                                                   (cmdLineParams.getAsInt("-use_deprel") == 1),

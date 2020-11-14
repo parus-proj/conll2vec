@@ -70,8 +70,8 @@ public:
     // инициализируем распределения, имитирующие шум (для словарей контекстов)
     if ( dep_ctx_vocabulary )
       InitUnigramTable(table_dep, dep_ctx_vocabulary);
-    if ( assoc_ctx_vocabulary )
-      InitUnigramTable(table_assoc, assoc_ctx_vocabulary);
+//    if ( assoc_ctx_vocabulary )
+//      InitUnigramTable(table_assoc, assoc_ctx_vocabulary);
   }
   // деструктор
   virtual ~Trainer()
@@ -85,8 +85,8 @@ public:
       free_aligned(syn1_assoc);
     if (table_dep)
       free(table_dep);
-    if (table_assoc)
-      free(table_assoc);
+//    if (table_assoc)
+//      free(table_assoc);
   }
   // функция создания весовых матриц нейросети
   void create_net()
@@ -103,7 +103,7 @@ public:
       ap = posix_memalign((void **)&syn1_dep, 128, (long long)dep_vocab_size * size_dep * sizeof(float));
       if (syn1_dep == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
     }
-    if ( assoc_ctx_vocabulary )
+    if ( assoc_ctx_vocabulary && proper_names )
     {
       size_t assoc_vocab_size = assoc_ctx_vocabulary->size();
       ap = posix_memalign((void **)&syn1_assoc, 128, (long long)assoc_vocab_size * size_assoc * sizeof(float));
@@ -137,7 +137,7 @@ public:
       std::fill(syn1_dep, syn1_dep+dep_vocab_size*size_dep, 0.0);
     }
 
-    if ( assoc_ctx_vocabulary )
+    if ( assoc_ctx_vocabulary && proper_names )
     {
       size_t assoc_vocab_size = assoc_ctx_vocabulary->size();
       std::fill(syn1_assoc, syn1_assoc+assoc_vocab_size*size_assoc, 0.0);
@@ -270,11 +270,11 @@ public:
         fprintf(fo, "%lu %lu\n", dep_ctx_vocabulary->size(), size_dep);
         saveEmbeddingsBin_helper(fo, dep_ctx_vocabulary, syn1_dep, size_dep);
       }
-      if ( assoc_ctx_vocabulary )
-      {
-        fprintf(fo, "%lu %lu\n", assoc_ctx_vocabulary->size(), size_assoc);
-        saveEmbeddingsBin_helper(fo, assoc_ctx_vocabulary, syn1_assoc, size_assoc);
-      }
+//      if ( assoc_ctx_vocabulary )
+//      {
+//        fprintf(fo, "%lu %lu\n", assoc_ctx_vocabulary->size(), size_assoc);
+//        saveEmbeddingsBin_helper(fo, assoc_ctx_vocabulary, syn1_assoc, size_assoc);
+//      }
     }
     fclose(fo);
   } // method-end
@@ -314,16 +314,30 @@ public:
       if ( !restore__read_matrix(ifs, dep_ctx_vocabulary, size_dep, syn1_dep) )
         return false;
 
-      restore__read_sizes(ifs, vocab_size, emb_size);
-      if (vocab_size != assoc_ctx_vocabulary->size() || emb_size != size_assoc)
-      {
-        std::cerr << "Restore: Dimensions fail" << std::endl;
-        return false;
-      }
-      if ( !restore__read_matrix(ifs, assoc_ctx_vocabulary, size_assoc, syn1_assoc) )
-        return false;
+//      restore__read_sizes(ifs, vocab_size, emb_size);
+//      if (vocab_size != assoc_ctx_vocabulary->size() || emb_size != size_assoc)
+//      {
+//        std::cerr << "Restore: Dimensions fail" << std::endl;
+//        return false;
+//      }
+//      if ( !restore__read_matrix(ifs, assoc_ctx_vocabulary, size_assoc, syn1_assoc) )
+//        return false;
     }
     start_learning_tp = std::chrono::steady_clock::now();
+    return true;
+  } // method-end
+  // функция восстановления ассоциативной весовой матрицы по векторной модели
+  bool restore_assoc_by_model(const VectorsModel& vm)
+  {
+    if (!assoc_ctx_vocabulary)
+      return true;
+    for (size_t a = 0; a < assoc_ctx_vocabulary->size(); ++a)
+    {
+      auto& aword = assoc_ctx_vocabulary->idx_to_data(a).word;   // !!! частотный порог в assoc-словаре типично ниже, чем в основном словаре
+      size_t w_idx = vm.get_word_idx(aword);
+      if (w_idx == vm.words_count)
+        assoc_ctx_vocabulary->hide_word(...);
+    }
     return true;
   } // method-end
   // функция восстановления левой весовой матрицы из векторной модели
@@ -490,12 +504,9 @@ private:
 
     // цикл по ассоциативным контекстам
     targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
-    neu1e += size_dep;
-
-    if ( !proper_names )
+    if (!proper_names)
     {
-      // цикл по широкооконным контекстам
-      for (auto&& ctx_idx : le.sent_context)
+      for (auto&& ctx_idx : le.assoc_context)
       {
         for (size_t d = 0; d <= negative; ++d)
         {
@@ -524,68 +535,18 @@ private:
           else
             std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
         } // for all samples
-      } // for all window contexts
+      } // for all assoc contexts
     }
-
-    if (proper_names || fraction > 0.75)
+    else
     {
       for (auto&& ctx_idx : le.assoc_context)
       {
-        // зануляем текущие значения ошибок (это частная производная ошибки E по выходу скрытого слоя h)
-        std::fill(neu1e, neu1e+size_assoc, 0.0);
-        for (size_t d = 0; d <= negative; ++d)
-        {
-          if (d == 0) // на первой итерации рассматриваем положительный пример (контекст)
-          {
-            selected_ctx = ctx_idx;
-            label = 1;
-          }
-          else // на остальных итерациях рассматриваем отрицательные примеры (случайные контексты из noise distribution)
-          {
-            update_random_ns();
-            selected_ctx = table_assoc[(next_random_ns >> 16) % table_size];
-            label = 0;
-          }
-          // вычисляем смещение вектора, соответствующего очередному положительному/отрицательному примеру
-          float *ctxVectorPtr = syn1_assoc + selected_ctx * size_assoc;
-          // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
-          float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, 0.0);
-          if ( std::isnan(f) ) continue;
-          f = sigmoid(f);
-          // вычислим ошибку, умноженную на коэффициент скорости обучения
-          g = (label - f) * alpha;
-          // обратное распространение ошибки output -> hidden
-          if (proper_names)
-          {
-            if (d==0)
-             std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
-            else
-            {
-              float g_norm = g/norm_factor;
-              std::transform(neu1e, neu1e+size_assoc, ctxVectorPtr, neu1e, [g_norm](float a, float b) -> float {return a + g_norm*b;});
-            }
-          }
-          // обучение весов hidden -> output
-          if ( !proper_names )
-            std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
-        } // for all samples
-        // обучение весов input -> hidden
-        if (proper_names)
-        {
-          //std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr, std::plus<float>());
-          std::transform(targetVectorPtr, targetVectorPtr+size_assoc, neu1e, targetVectorPtr,
-                         [](float a, float b) -> float
-                         {
-                           if ( a*b < 0 ) return a + b; // разнознаковые
-                           const float TH = 0.5;
-                           float abs_a = fabs(a);
-                           if (abs_a <= TH)
-                             return a + b;
-                           else
-                             return a + b / (abs_a+TH);
-                         }
-                        );
-        }
+        float *ctxVectorPtr = syn1_assoc + ctx_idx * size_assoc;
+        float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, 0.0);
+        if ( std::isnan(f) ) continue;
+        f = sigmoid(f);
+        g = (1.0 - f) * alpha;
+        std::transform(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, targetVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all assoc contexts
     }
   } // method-end
