@@ -492,7 +492,7 @@ private:
         sum += embeddings[w*emb_size+d];
       sum /= vocab_size;
       sum = fabs(sum);
-      if (maxShifts.empty() || sum > maxShifts.begin()->first)
+      if (maxShifts.size() < ZSH_CNT || sum > maxShifts.begin()->first)
       {
         maxShifts[sum] = d;
         if (maxShifts.size() > ZSH_CNT)
