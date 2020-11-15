@@ -50,6 +50,8 @@ public:
         std::cerr << "Invalid record: " << buf << std::endl;
         return false;
       }
+      if ( stoplist.find(vocabulary_record_components[0]) != stoplist.end() )
+        continue;
       vocabulary_hash[vocabulary_record_components[0]] = vocabulary.size(); // сразу строим хэш-отображение для поиска индекса слова в словаре по слову (строке)
       vocabulary.emplace_back( vocabulary_record_components[0], std::stoull(vocabulary_record_components[1]) );
     }
@@ -70,9 +72,20 @@ public:
     vocabulary_hash[word] = vocabulary.size();
     CustomVocabulary::append(word, cn);
   }
+  // инициализация списка стоп-слов
+  void init_stoplist(const std::string& stopwords_filename)
+  {
+    std::ifstream ifs(stopwords_filename);
+    std::string line;
+    while ( std::getline(ifs, line).good() )
+      stoplist.insert(line);
+
+  } // method-end
 private:
   // хэш-отображение слов в их индексы в словаре (для быстрого поиска)
   std::unordered_map<std::string, size_t> vocabulary_hash;
+  // список стоп-слов для словаря (используется при загрузке)
+  std::set<std::string> stoplist;
 };
 
 #endif /* ORIGINAL_WORD2VEC_VOCABULARY_H_ */

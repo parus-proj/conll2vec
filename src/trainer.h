@@ -270,11 +270,6 @@ public:
         fprintf(fo, "%lu %lu\n", dep_ctx_vocabulary->size(), size_dep);
         saveEmbeddingsBin_helper(fo, dep_ctx_vocabulary, syn1_dep, size_dep);
       }
-//      if ( assoc_ctx_vocabulary )
-//      {
-//        fprintf(fo, "%lu %lu\n", assoc_ctx_vocabulary->size(), size_assoc);
-//        saveEmbeddingsBin_helper(fo, assoc_ctx_vocabulary, syn1_assoc, size_assoc);
-//      }
     }
     fclose(fo);
   } // method-end
@@ -313,15 +308,6 @@ public:
       }
       if ( !restore__read_matrix(ifs, dep_ctx_vocabulary, size_dep, syn1_dep) )
         return false;
-
-//      restore__read_sizes(ifs, vocab_size, emb_size);
-//      if (vocab_size != assoc_ctx_vocabulary->size() || emb_size != size_assoc)
-//      {
-//        std::cerr << "Restore: Dimensions fail" << std::endl;
-//        return false;
-//      }
-//      if ( !restore__read_matrix(ifs, assoc_ctx_vocabulary, size_assoc, syn1_assoc) )
-//        return false;
     }
     start_learning_tp = std::chrono::steady_clock::now();
     return true;
@@ -333,10 +319,16 @@ public:
       return true;
     for (size_t a = 0; a < assoc_ctx_vocabulary->size(); ++a)
     {
-      auto& aword = assoc_ctx_vocabulary->idx_to_data(a).word;   // !!! частотный порог в assoc-словаре типично ниже, чем в основном словаре
+      auto& aword = assoc_ctx_vocabulary->idx_to_data(a).word;
       size_t w_idx = vm.get_word_idx(aword);
       if (w_idx == vm.words_count)
-        assoc_ctx_vocabulary->hide_word(...);
+      {
+        std::cerr << "restore_assoc_by_model: vocabs inconsistency" << std::endl;
+        return false;
+      }
+      float* assoc_offset = vm.embeddings + w_idx * vm.emb_size + size_dep;
+      float* trg_offset = syn1_assoc + a * size_assoc;
+      std::copy(assoc_offset, assoc_offset + size_assoc, trg_offset);
     }
     return true;
   } // method-end

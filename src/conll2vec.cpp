@@ -135,6 +135,7 @@ int main(int argc, char **argv)
     if (needLoadAssocCtxVocab)
     {
       v_assoc_ctx = std::make_shared<OriginalWord2VecVocabulary>();
+      v_assoc_ctx->init_stoplist("stopwords.assoc");
       if ( !v_assoc_ctx->load( cmdLineParams.getAsString("-vocab_a") ) )
         return -1;
     }
