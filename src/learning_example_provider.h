@@ -53,9 +53,9 @@ class LearningExampleProvider
 public:
   // конструктор
   LearningExampleProvider(const std::string& trainFilename, size_t threadsCount,
-                          std::shared_ptr< OriginalWord2VecVocabulary> wordsVocabulary,
+                          std::shared_ptr<OriginalWord2VecVocabulary> wordsVocabulary,
                           bool trainProperNames,
-                          std::shared_ptr< OriginalWord2VecVocabulary> depCtxVocabulary, std::shared_ptr< OriginalWord2VecVocabulary> assocCtxVocabulary,
+                          std::shared_ptr<OriginalWord2VecVocabulary> depCtxVocabulary, std::shared_ptr<OriginalWord2VecVocabulary> assocCtxVocabulary,
                           size_t embColumn, size_t depColumn, bool useDeprel,
                           float wordsSubsample, float depSubsample, float assocSubsample)
   : threads_count(threadsCount)
@@ -164,7 +164,6 @@ public:
         const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
         std::vector< std::vector<size_t> > deps( sm_size );  // хранилище синатксических контекстов для каждого токена
         std::set<size_t> associations;                       // хранилище ассоциативных контекстов для всего предложения
-        std::set<size_t> window;                             // хранилище широкооконных контекстов
         if ( dep_ctx_vocabulary )
         {
           for (size_t i = 0; i < sm_size; ++i)
