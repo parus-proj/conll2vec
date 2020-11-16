@@ -11,6 +11,46 @@
 #include <set>
 #include <fstream>
 
+// Класс, хранящий данные по чтению обучающих данных и выводящий прогресс-сообщения
+class StatHelper
+{
+public:
+  void calc_sentence(size_t cnt)
+  {
+    tokens_processed += cnt; // статистику ведём и по некорректным предложениям
+    tokens_dbg_counter += cnt;
+    if (tokens_dbg_counter >= 100000)
+    {
+      tokens_dbg_counter %= 100000;
+      if (tokens_processed >= 1000000)
+        std::cout << '\r' << (tokens_processed / 1000000) << " M        ";
+      else
+        std::cout << '\r' << (tokens_processed / 1000) << " K        ";
+      std::cout.flush();
+    }
+    if (cnt > 0)
+      sentence_processed++;
+  }
+  void inc_sr_fils()
+  {
+    ++sr_fails_cnt;
+  }
+  void output_stat()
+  {
+    if ( sr_fails_cnt > 0)
+      std::cerr << "Sentence reading fails count: " << sr_fails_cnt << std::endl;
+    std::cout << "Sentences count: " << sentence_processed << std::endl;
+    std::cout << "Tokens count: " << tokens_processed << std::endl;
+    std::cout << std::endl;
+  }
+private:
+  uint64_t sr_fails_cnt = 0;    // количество ошибок чтения предложений (предложений, содержащих хотя бы одну некорректную запись)
+  uint64_t sentence_processed = 0;
+  uint64_t tokens_processed = 0;
+  size_t   tokens_dbg_counter = 0;
+};
+
+
 // Класс, обеспечивающие создание словарей (-task vocab)
 class VocabsBuilder
 {
@@ -45,27 +85,14 @@ public:
     // в цикле читаем предложения из CoNLL-файла и извлекаем из них информацию для словарей
     SentenceMatrix sentence_matrix;
     sentence_matrix.reserve(5000);
-    uint64_t sr_fails_cnt = 0;    // количество ошибок чтения предложений (предложений, содержащих хотя бы одну некорректную запись)
-    uint64_t sentence_processed = 0;
-    uint64_t tokens_processed = 0;
-    size_t   tokens_dbg_counter = 0;
+    StatHelper stat;
     while ( !feof(conll_file) )
     {
       bool succ = ConllReader::read_sentence(conll_file, sentence_matrix);
-      tokens_processed += sentence_matrix.size(); // статистику ведём и по некорректным предложениям
-      tokens_dbg_counter += sentence_matrix.size();
-      if (tokens_dbg_counter >= 100000)
-      {
-        tokens_dbg_counter %= 100000;
-        std::cout << '\r' << (tokens_processed / 1000) << " K        ";
-        std::cout.flush();
-
-      }
-      if (sentence_matrix.size() > 0)
-        sentence_processed++;
+      stat.calc_sentence(sentence_matrix.size());
       if (!succ)
       {
-        ++sr_fails_cnt;
+        stat.inc_sr_fils();
         continue;
       }
       if (sentence_matrix.size() == 0)
@@ -78,12 +105,7 @@ public:
     }
     fclose(conll_file);
     std::cout << std::endl;
-    if ( sr_fails_cnt > 0)
-      std::cerr << "Sentence reading fails count: " << sr_fails_cnt << std::endl;
-    std::cout << "Sentences count: " << sentence_processed << std::endl;
-    std::cout << "Tokens count: " << tokens_processed << std::endl;
-    std::cout << std::endl;
-
+    stat.output_stat();
     // сохраняем словари в файлах
     std::cout << "Save lemmas main vocabulary..." << std::endl;
     erase_main_stopwords(vocab_lemma_main); // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах морфологического анализа
