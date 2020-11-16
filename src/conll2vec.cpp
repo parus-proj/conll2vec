@@ -60,9 +60,9 @@ int main(int argc, char **argv)
     VocabsBuilder vb;
     bool succ = vb.build_vocabs( cmdLineParams.getAsString("-train"),
                                  cmdLineParams.getAsString("-vocab_m"), cmdLineParams.getAsString("-vocab_p"), cmdLineParams.getAsString("-vocab_t"),
-                                 cmdLineParams.getAsString("-tl_map"), cmdLineParams.getAsString("-vocab_d"), cmdLineParams.getAsString("-vocab_a"),
+                                 cmdLineParams.getAsString("-tl_map"), cmdLineParams.getAsString("-vocab_d"),
                                  cmdLineParams.getAsInt("-min-count_m"), cmdLineParams.getAsInt("-min-count_p"), cmdLineParams.getAsInt("-min-count_t"),
-                                 cmdLineParams.getAsInt("-min-count_d"), cmdLineParams.getAsInt("-min-count_a"),
+                                 cmdLineParams.getAsInt("-min-count_d"),
                                  cmdLineParams.getAsInt("-col_ctx_d") - 1, (cmdLineParams.getAsInt("-use_deprel") == 1)
                                );
     return ( succ ? 0 : -1 );
@@ -95,12 +95,12 @@ int main(int argc, char **argv)
       std::cerr << "-restore parameter must be defined (when -vocab_p is defined)." << std::endl;
       return -1;
     }
-    if ( !cmdLineParams.isDefined("-vocab_d") && cmdLineParams.getAsInt("-size_d") > 0 ) // устанавливая -size_d 0, можно строить только ассоциативную модель
+    if ( cmdLineParams.getAsInt("-size_d") > 0 && !cmdLineParams.isDefined("-vocab_d") ) // устанавливая -size_d 0, можно строить только ассоциативную модель
     {
       std::cerr << "-vocab_d parameter must be defined." << std::endl;
       return -1;
     }
-    if ( !cmdLineParams.isDefined("-vocab_a") && cmdLineParams.getAsInt("-size_a") > 0 ) // устанавливая -size_a 0, можно строить только синтаксическую модель
+    if ( cmdLineParams.getAsInt("-size_a") > 0 && !cmdLineParams.isDefined("-vocab_a") ) // устанавливая -size_a 0, можно строить только синтаксическую модель
     {
       std::cerr << "-vocab_a parameter must be defined." << std::endl;
       return -1;
@@ -311,6 +311,7 @@ int main(int argc, char **argv)
     if (needLoadAssocCtxVocab)
     {
       v_assoc_ctx = std::make_shared<OriginalWord2VecVocabulary>();
+      v_assoc_ctx->init_stoplist("stopwords.assoc");
       if ( !v_assoc_ctx->load( cmdLineParams.getAsString("-vocab_a") ) )
         return -1;
     }
@@ -346,8 +347,8 @@ int main(int argc, char **argv)
     // инициализация нейросети
     trainer.create_net();
     trainer.init_net();  // начальная инициализация левой матрицы случайными значениями
+    trainer.restore_left_matrix(vm);  // перенос векторых представлений из загруженной модели в левую матрицу
     trainer.restore( cmdLineParams.getAsString("-restore"), false, true );
-    trainer.restore_left_matrix(vm);  // // перенос векторых представлений из загруженной модели в левую матрицу
 
     // запускаем потоки, осуществляющие обучение
     size_t threads_count = cmdLineParams.getAsInt("-threads");

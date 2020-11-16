@@ -8,7 +8,6 @@ VOC_M=main.vocab
 VOC_P=proper.vocab
 VOC_T=tokens.vocab
 VOC_D=ctx_dep.vocab
-VOC_A=ctx_assoc.vocab
 THREADS=8
 
 echo "MAKING BINARIES"
@@ -22,8 +21,8 @@ gzip --decompress --stdout ./data/parus_first_10m_lines.conll.zip | ./conll2vec 
 echo ""
 echo "BUILDING VOCABULARIES"
 ./conll2vec -task vocab -train $TRAIN_FN \
-            -vocab_m $VOC_M -vocab_p $VOC_P -vocab_t $VOC_T -vocab_d $VOC_D -vocab_a $VOC_A -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL \
-            -min-count_m 70 -min-count_p 100 -min-count_t 50 -min-count_d 20 -min-count_a 20
+            -vocab_m $VOC_M -vocab_p $VOC_P -vocab_t $VOC_T -vocab_d $VOC_D -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL \
+            -min-count_m 70 -min-count_p 100 -min-count_t 50 -min-count_d 20
 
 echo ""
 echo "TRAINING EMBEDDINGS -- MAIN"

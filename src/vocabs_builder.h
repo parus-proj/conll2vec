@@ -23,8 +23,8 @@ private:
 public:
   // построение всех словарей
   bool build_vocabs(const std::string& conll_fn, const std::string& voc_m_fn, const std::string& voc_p_fn, const std::string& voc_t_fn,
-                    const std::string& voc_tm_fn, const std::string& voc_d_fn, const std::string& voc_a_fn,
-                    size_t limit_m, size_t limit_p, size_t limit_t, size_t limit_d, size_t limit_a,
+                    const std::string& voc_tm_fn, const std::string& voc_d_fn,
+                    size_t limit_m, size_t limit_p, size_t limit_t, size_t limit_d,
                     size_t ctx_vocabulary_column_d, bool use_deprel)
   {
     // открываем файл с тренировочными данными
@@ -41,7 +41,6 @@ public:
     VocabMappingPtr vocab_token = std::make_shared<VocabMapping>();
     Token2LemmasMapPtr token2lemmas_map = std::make_shared<Token2LemmasMap>();
     VocabMappingPtr vocab_dep = std::make_shared<VocabMapping>();
-    VocabMappingPtr vocab_assoc = std::make_shared<VocabMapping>();
 
     // в цикле читаем предложения из CoNLL-файла и извлекаем из них информацию для словарей
     SentenceMatrix sentence_matrix;
@@ -76,7 +75,6 @@ public:
       process_sentence_lemmas_proper(vocab_lemma_proper, sentence_matrix);
       process_sentence_tokens(vocab_token, token2lemmas_map, sentence_matrix);
       process_sentence_dep_ctx(vocab_dep, sentence_matrix, ctx_vocabulary_column_d, use_deprel);
-      process_sentence_assoc_ctx(vocab_assoc, sentence_matrix, 2); // всегда строим по леммам (нормальным формам)
     }
     fclose(conll_file);
     std::cout << std::endl;
@@ -96,9 +94,6 @@ public:
     save_vocab(vocab_token, limit_t, voc_t_fn, token2lemmas_map, voc_tm_fn);
     std::cout << "Save dependency contexts vocabulary..." << std::endl;
     save_vocab(vocab_dep, limit_d, voc_d_fn);
-    std::cout << "Save associative contexts vocabulary..." << std::endl;
-    erase_assoc_stopwords(vocab_assoc);
-    save_vocab(vocab_assoc, limit_a, voc_a_fn);
     return true;
   } // method-end
 private:
@@ -107,29 +102,6 @@ private:
   {
     return feats.length() >=2 && feats[0] == 'N' && feats[1] == 'p';
   } // method-end
-  // проверка, является ли токен стоп-словом для словаря ассоциативных контекстов
-  void erase_assoc_stopwords(VocabMappingPtr vocab)
-  {
-    static bool isListLoaded = false;
-    std::set<std::string> stoplist;
-    if (!isListLoaded)
-    {
-      isListLoaded = true;
-      std::ifstream ifs("stopwords.assoc");
-      std::string line;
-      while ( std::getline(ifs, line).good() )
-        stoplist.insert(line);
-    }
-    std::cout << "  stopwords reduce" << std::endl;
-    auto it = vocab->begin();
-    while (it != vocab->end())    //TODO: в C++20 заменить на std::erase_if (https://en.cppreference.com/w/cpp/container/map/erase_if)
-    {
-      if (stoplist.find(it->first) == stoplist.end())
-        ++it;
-      else
-        it = vocab->erase(it);
-    }
-  }
   // проверка, является ли токен стоп-словом для основного словаря (служит для исправления ошибок в разметке собственных имен)
   void erase_main_stopwords(VocabMappingPtr vocab)
   {
@@ -270,22 +242,6 @@ private:
         else
           ++it->second;
       } // if ( use_depre ) then ... else ...
-    }
-  } // method-end
-  void process_sentence_assoc_ctx(VocabMappingPtr vocab, const SentenceMatrix& sentence, size_t column)
-  {
-    for (auto& token : sentence)
-    {
-      if (token[7] == "PUNC")  // знаки препинания в словарь контекстов для моделирования ассоциаций не включаем
-        continue;
-      if ( token[column] == "_" ) // символ отсутствия значения в conll
-        continue;
-      auto& word = token[column];
-      auto it = vocab->find( word );
-      if (it == vocab->end())
-        (*vocab)[word] = 1;
-      else
-        ++it->second;
     }
   } // method-end
   bool is_punct__patch(const std::string& word)

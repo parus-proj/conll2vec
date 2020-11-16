@@ -27,7 +27,6 @@ public:
         {"-min-count_p",  {"Min frequency in Lemmas proper-names vocabulary", "50", std::nullopt}},
         {"-min-count_t",  {"Min frequency in Tokens vocabulary", "50", std::nullopt}},
         {"-min-count_d",  {"Min frequency in Dependency vocabulary", "50", std::nullopt}},
-        {"-min-count_a",  {"Min frequency in Associative vocabulary", "50", std::nullopt}},
         {"-col_ctx_d",    {"Dependency contexts vocabulary column (in conll)", "3", std::nullopt}},
         {"-use_deprel",   {"Include DEPREL field in dependency context", "1", std::nullopt}},
         {"-size_d",       {"Size of Dependency part of word vectors", "75", std::nullopt}},
