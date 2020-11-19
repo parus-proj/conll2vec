@@ -144,13 +144,9 @@ public:
   // обобщенная процедура обучения (точка входа для потоков)
   void train_entry_point( size_t thread_idx )
   {
-//    if ( thread_idx == 0 )
-//      ctrl_log_prepare();
     unsigned long long next_random_ns = thread_idx;
     // выделение памяти для хранения величины ошибки
     float *neu1e = (float *)calloc(layer1_size, sizeof(float));
-    // выделение памяти для хранения тематического вектора
-    float *thematic_vec = (dep_ctx_vocabulary) ? (float *)calloc(size_dep, sizeof(float)) : nullptr;
     // цикл по эпохам
     for (size_t epochIdx = 0; epochIdx < epoch_count; ++epochIdx)
     {
@@ -174,7 +170,6 @@ public:
             printf( "\rAlpha: %f  Progress: %.2f%%  Words/sec: %.2fk   ", alpha,
                     fraction * 100,
                     word_count_actual / (learning_seconds.count() * 1000) );
-//            printf( "Ctrl: %.5f        ", ctrl_log_calc_not_sim() );
             fflush(stdout);
           }
           alpha = starting_alpha * (1.0 - fraction);
@@ -186,14 +181,12 @@ public:
         word_count = lep->getWordsCount(thread_idx);
         if (!learning_example) break; // признак окончания эпохи (все обучающие примеры перебраны)
         // используем обучающий пример для обучения нейросети
-        skip_gram( learning_example.value(), neu1e, thematic_vec, next_random_ns );
+        skip_gram( learning_example.value(), neu1e, next_random_ns );
       } // for all learning examples
       word_count_actual += (word_count - last_word_count);
       if ( !lep->epoch_unprepare(thread_idx) )
         return;
     } // for all epochs
-    if (thematic_vec)
-      free(thematic_vec);
     free(neu1e);
   } // method-end: train_entry_point
   // функция, реализующая сохранение эмбеддингов
@@ -414,23 +407,8 @@ private:
         i = vocabulary->size() - 1;
     }
   } // method-end
-//  void InitUniformTable(int*& table, std::shared_ptr< CustomVocabulary > vocabulary)
-//  {
-//    table = (int *)malloc(table_size * sizeof(int));
-//    size_t i = 0;
-//    double d1 = 1.0 / vocabulary->size();
-//    for (size_t a = 0; a < table_size; ++a)
-//    {
-//      table[a] = i;
-//      if (a / (double)table_size > d1)
-//      {
-//        i++;
-//        d1 += 1.0 / vocabulary->size();
-//      }
-//    }
-//  } // method-end
   // функция, реализующая модель обучения skip-gram
-  void skip_gram( const LearningExample& le, float *neu1e, float *thematic_vec, unsigned long long& next_random_ns )
+  void skip_gram( const LearningExample& le, float *neu1e, unsigned long long& next_random_ns )
   {
     float norm_factor = negative - fraction*(negative-1);
     size_t selected_ctx;   // хранилище для индекса контекста
@@ -492,28 +470,6 @@ private:
                      }
                     );
     } // for all dep contexts
-
-    // шаг в сторону тематического вектора
-    if (!proper_names && thematic_vec && !le.dep_context.empty() && !le.assoc_context.empty())
-    {
-      // формируем тематический вектор, как сумму векторов слов предложения (нормированную по числу слов)
-      std::fill(thematic_vec, thematic_vec+size_dep, 0.0);
-      for (auto&& ctx_idx : le.assoc_context)
-      {
-        float *ctxVectorPtr = syn0 + ctx_idx * layer1_size;
-        std::transform(thematic_vec, thematic_vec+size_dep, ctxVectorPtr, thematic_vec, std::plus<float>());
-      }
-      size_t ac_cnt = le.assoc_context.size();
-      std::transform(thematic_vec, thematic_vec+size_dep, thematic_vec, [ac_cnt](float a) -> float {return a / ac_cnt;});
-      // делаем шажок в направлении тематического вектора
-      float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_dep, thematic_vec, 0.0);
-      if ( !std::isnan(f) )
-      {
-        f = sigmoid(f);
-        g = (1.0 - f) * alpha * (1.0-fraction)*0.5;
-        std::transform(targetVectorPtr, targetVectorPtr+size_dep, thematic_vec, targetVectorPtr, [g](float a, float b) -> float {return a + g*b;});
-      }
-    }
 
     // цикл по ассоциативным контекстам
     targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
@@ -625,51 +581,6 @@ private:
     }
     return true;
   } // method-end
-
-//private:
-//  // множество несвязанных слов (для отладочной индикации средней меры сходства между ними в ходе обучения)
-//  std::vector<std::pair<size_t, size_t>> dbg_not_sim;
-//  void ctrl_log_prepare()
-//  {
-//    const std::vector<std::pair<std::string, std::string>> dbg_not_sim_strs = {
-//        {"синий", "кофе"},
-//        {"синий", "сообщать"},
-//        {"синий", "быстро"},
-//        {"синий", "восемь"},
-//        {"кофе", "сообщать"},
-//        {"кофе", "высоко"},
-//        {"кофе", "восемь"},
-//        {"сообщать", "высоко"},
-//        {"сообщать", "восемь"},
-//        {"быстро", "восемь"}
-//      };
-//    for (auto& p : dbg_not_sim_strs)
-//    {
-//      size_t i1 = w_vocabulary->word_to_idx(p.first);
-//      size_t i2 = w_vocabulary->word_to_idx(p.second);
-//      if (i1 == std::numeric_limits<size_t>::max() || i2 == std::numeric_limits<size_t>::max()) // неизвестные слова
-//        continue;
-//      dbg_not_sim.push_back( std::make_pair(i1, i2) );
-//    }
-//  } // method-end
-//  float ctrl_log_calc_not_sim()
-//  {
-//    float result = 0;
-//    size_t cnt = 0;
-//    for (auto& p : dbg_not_sim)
-//    {
-//      float* o1 = syn0 + p.first * layer1_size;
-//      float* o2 = syn0 + p.second * layer1_size;
-//      float ip = std::inner_product(o1, o1+layer1_size, o2, 0.0);
-//      float len1 = std::sqrt( std::inner_product(o1, o1+layer1_size, o1, 0.0) );
-//      float len2 = std::sqrt( std::inner_product(o2, o2+layer1_size, o2, 0.0) );
-//      if ( !std::isnormal(len1) || !std::isnormal(len2) || !std::isnormal(ip) )
-//        continue;
-//      result += ip / len1 / len2;
-//      ++cnt;
-//    }
-//    return result/cnt;
-//  } // method-end
 }; // class-decl-end
 
 
