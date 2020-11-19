@@ -70,8 +70,6 @@ public:
     // инициализируем распределения, имитирующие шум (для словарей контекстов)
     if ( dep_ctx_vocabulary )
       InitUnigramTable(table_dep, dep_ctx_vocabulary);
-//    if ( assoc_ctx_vocabulary )
-//      InitUnigramTable(table_assoc, assoc_ctx_vocabulary);
   }
   // деструктор
   virtual ~Trainer()
@@ -85,8 +83,6 @@ public:
       free_aligned(syn1_assoc);
     if (table_dep)
       free(table_dep);
-//    if (table_assoc)
-//      free(table_assoc);
   }
   // функция создания весовых матриц нейросети
   void create_net()
@@ -150,9 +146,11 @@ public:
   {
 //    if ( thread_idx == 0 )
 //      ctrl_log_prepare();
-    next_random_ns = thread_idx;
+    unsigned long long next_random_ns = thread_idx;
     // выделение памяти для хранения величины ошибки
     float *neu1e = (float *)calloc(layer1_size, sizeof(float));
+    // выделение памяти для хранения тематического вектора
+    float *thematic_vec = (dep_ctx_vocabulary) ? (float *)calloc(size_dep, sizeof(float)) : nullptr;
     // цикл по эпохам
     for (size_t epochIdx = 0; epochIdx < epoch_count; ++epochIdx)
     {
@@ -188,12 +186,14 @@ public:
         word_count = lep->getWordsCount(thread_idx);
         if (!learning_example) break; // признак окончания эпохи (все обучающие примеры перебраны)
         // используем обучающий пример для обучения нейросети
-        skip_gram( learning_example.value(), neu1e );
+        skip_gram( learning_example.value(), neu1e, thematic_vec, next_random_ns );
       } // for all learning examples
       word_count_actual += (word_count - last_word_count);
       if ( !lep->epoch_unprepare(thread_idx) )
         return;
     } // for all epochs
+    if (thematic_vec)
+      free(thematic_vec);
     free(neu1e);
   } // method-end: train_entry_point
   // функция, реализующая сохранение эмбеддингов
@@ -383,11 +383,10 @@ private:
   float *expTable = nullptr;
   // noise distribution for negative sampling
   const size_t table_size = 1e8; // 100 млн.
-  int *table_dep = nullptr,
-      *table_assoc = nullptr;
-  unsigned long long next_random_ns = 0;
+  int *table_dep = nullptr;
 
-  inline void update_random_ns()
+  // вычисление очередного случайного значения (для случайного выбора векторов в рамках процедуры negative sampling)
+  inline void update_random_ns(unsigned long long& next_random_ns)
   {
     next_random_ns = next_random_ns * (unsigned long long)25214903917 + 11;
   }
@@ -431,7 +430,7 @@ private:
 //    }
 //  } // method-end
   // функция, реализующая модель обучения skip-gram
-  void skip_gram( const LearningExample& le, float *neu1e )
+  void skip_gram( const LearningExample& le, float *neu1e, float *thematic_vec, unsigned long long& next_random_ns )
   {
     float norm_factor = negative - fraction*(negative-1);
     size_t selected_ctx;   // хранилище для индекса контекста
@@ -453,7 +452,7 @@ private:
         }
         else // на остальных итерациях рассматриваем отрицательные примеры (случайные контексты из noise distribution)
         {
-          update_random_ns();
+          update_random_ns(next_random_ns);
           selected_ctx = table_dep[(next_random_ns >> 16) % table_size];
           label = 0;
         }
@@ -494,6 +493,28 @@ private:
                     );
     } // for all dep contexts
 
+    // шаг в сторону тематического вектора
+    if (!proper_names && thematic_vec && !le.dep_context.empty() && !le.assoc_context.empty())
+    {
+      // формируем тематический вектор, как сумму векторов слов предложения (нормированную по числу слов)
+      std::fill(thematic_vec, thematic_vec+size_dep, 0.0);
+      for (auto&& ctx_idx : le.assoc_context)
+      {
+        float *ctxVectorPtr = syn0 + ctx_idx * layer1_size;
+        std::transform(thematic_vec, thematic_vec+size_dep, ctxVectorPtr, thematic_vec, std::plus<float>());
+      }
+      size_t ac_cnt = le.assoc_context.size();
+      std::transform(thematic_vec, thematic_vec+size_dep, thematic_vec, [ac_cnt](float a) -> float {return a / ac_cnt;});
+      // делаем шажок в направлении тематического вектора
+      float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_dep, thematic_vec, 0.0);
+      if ( !std::isnan(f) )
+      {
+        f = sigmoid(f);
+        g = (1.0 - f) * alpha * (1.0-fraction)*0.5;
+        std::transform(targetVectorPtr, targetVectorPtr+size_dep, thematic_vec, targetVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+      }
+    }
+
     // цикл по ассоциативным контекстам
     targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
     if (!proper_names)
@@ -509,7 +530,7 @@ private:
           }
           else // на остальных итерациях рассматриваем отрицательные примеры (случайные контексты из noise distribution)
           {
-            update_random_ns();
+            update_random_ns(next_random_ns);
             selected_ctx = (next_random_ns >> 16) % w_vocabulary_size; // uniform distribution
             label = 0;
           }
