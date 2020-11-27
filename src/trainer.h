@@ -204,45 +204,19 @@ public:
   void appendEmbeddings(const std::string& filename, bool useTxtFmt = false) const
   {
     // загружаем всю модель в память
-    std::ifstream ifs(filename.c_str(), std::ios::binary);
-    if ( !ifs.good() ) { std::cerr << "Append: Model file not found" << std::endl; return; }
-    std::string buf;
-    size_t old_vocab_size, emb_size;
-    ifs >> old_vocab_size;
-    ifs >> emb_size;
-    std::getline(ifs,buf); // считываем конец строки
-    if (emb_size != layer1_size) { std::cerr << "Append: Dimensions fail" << std::endl; return; }
-    std::shared_ptr< CustomVocabulary > old_vocab = std::make_shared<OriginalWord2VecVocabulary>();
-    float *old_matrix;
-    long long ap = posix_memalign((void **)&old_matrix, 128, (long long)old_vocab_size * emb_size * sizeof(float));
-    if (old_matrix == nullptr || ap != 0) {std::cerr << "Append: Memory allocation failed" << std::endl; exit(1);}
-    for (size_t i = 0; i < old_vocab_size; ++i)
-    {
-      std::getline(ifs, buf, ' '); // читаем слово (до пробела)
-      old_vocab->append( buf, 0 );
-      float* eOffset = old_matrix + i*emb_size;
-      if ( !useTxtFmt )
-        ifs.read( reinterpret_cast<char*>( eOffset ), sizeof(float)*emb_size );
-      else
-      {
-        for (size_t j = 0; j < emb_size; ++j)
-          ifs >> eOffset[j];
-      }
-      std::getline(ifs,buf); // считываем конец строки
-    }
-    ifs.close();
+    VectorsModel vm;
+    if ( !vm.load(filename, useTxtFmt) )
+      return;
+    if (vm.emb_size != layer1_size) { std::cerr << "Append: Dimensions fail" << std::endl; return; }
     // сохраняем старую модель, затем текущую
     FILE *fo = fopen(filename.c_str(), "wb");
-    fprintf(fo, "%lu %lu\n", old_vocab_size + w_vocabulary->size(), emb_size);
+    fprintf(fo, "%lu %lu\n", vm.words_count + w_vocabulary->size(), layer1_size);
+    for (size_t a = 0; a < vm.vocab.size(); ++a)
+      VectorsModel::write_embedding(fo, useTxtFmt, vm.vocab[a], &vm.embeddings[a * vm.emb_size], vm.emb_size);
     if ( !useTxtFmt )
-      saveEmbeddingsBin_helper(fo, old_vocab, old_matrix, emb_size);
+      saveEmbeddingsBin_helper(fo, w_vocabulary, syn0, layer1_size);
     else
-      saveEmbeddingsTxt_helper(fo, old_vocab, old_matrix, emb_size);
-    free_aligned(old_matrix);
-    if ( !useTxtFmt )
-      saveEmbeddingsBin_helper(fo, w_vocabulary, syn0, emb_size);
-    else
-      saveEmbeddingsTxt_helper(fo, w_vocabulary, syn0, emb_size);
+      saveEmbeddingsTxt_helper(fo, w_vocabulary, syn0, layer1_size);
     fclose(fo);
   } // method-end
   // функция сохранения весовых матриц в файл
