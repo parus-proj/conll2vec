@@ -539,22 +539,12 @@ private:
   void saveEmbeddingsBin_helper(FILE *fo, std::shared_ptr< CustomVocabulary > vocabulary, float *weight_matrix, size_t emb_size) const
   {
     for (size_t a = 0; a < vocabulary->size(); ++a)
-    {
-      fprintf(fo, "%s ", vocabulary->idx_to_data(a).word.c_str());
-      for (size_t b = 0; b < emb_size; ++b)
-        fwrite(&weight_matrix[a * emb_size + b], sizeof(float), 1, fo);
-      fprintf(fo, "\n");
-    }
+      VectorsModel::write_embedding(fo, false, vocabulary->idx_to_data(a).word, &weight_matrix[a * emb_size], emb_size);
   } // method-end
   void saveEmbeddingsTxt_helper(FILE *fo, std::shared_ptr< CustomVocabulary > vocabulary, float *weight_matrix, size_t emb_size) const
   {
     for (size_t a = 0; a < vocabulary->size(); ++a)
-    {
-      fprintf(fo, "%s", vocabulary->idx_to_data(a).word.c_str());
-      for (size_t b = 0; b < emb_size; ++b)
-        fprintf(fo, " %lf", weight_matrix[a * emb_size + b]);
-      fprintf(fo, "\n");
-    }
+      VectorsModel::write_embedding(fo, true, vocabulary->idx_to_data(a).word, &weight_matrix[a * emb_size], emb_size);
   } // method-end
   void restore__read_sizes(std::ifstream& ifs, size_t& vocab_size, size_t& emb_size)
   {

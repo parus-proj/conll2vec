@@ -3,6 +3,7 @@
 
 #include "original_word2vec_vocabulary.h"
 #include "str_conv.h"
+#include "vectors_model.h"
 
 #include <memory>
 #include <string>
@@ -101,15 +102,7 @@ public:
     {
       if ( vocab[a].empty() )
         continue;
-      fprintf(fo, "%s ", StrConv::To_UTF8(vocab[a]).c_str());
-      for (size_t b = 0; b < emb_size; ++b)
-      {
-        if ( !useTxtFmt )
-          fwrite(&embeddings[a * emb_size + b], sizeof(float), 1, fo);
-        else
-          fprintf(fo, " %lf", embeddings[a * emb_size + b]);
-      }
-      fprintf(fo, "\n");
+      VectorsModel::write_embedding(fo, useTxtFmt, StrConv::To_UTF8(vocab[a]), &embeddings[a * emb_size], emb_size);
     }
     fclose(fo);
   } // method-end

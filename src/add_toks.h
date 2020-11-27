@@ -82,29 +82,11 @@ public:
     FILE *fo = fopen(model_fn.c_str(), "wb");
     fprintf(fo, "%lu %lu\n", vm.vocab.size()+t2l_map.size(), vm.emb_size);
     for (size_t a = 0; a < vm.vocab.size(); ++a)
-    {
-      fprintf(fo, "%s ", vm.vocab[a].c_str());
-      for (size_t b = 0; b < vm.emb_size; ++b)
-      {
-        if ( !useTxtFmt )
-          fwrite(&vm.embeddings[a * vm.emb_size + b], sizeof(float), 1, fo);
-        else
-          fprintf(fo, " %lf", vm.embeddings[a * vm.emb_size + b]);
-      }
-      fprintf(fo, "\n");
-    }
+      VectorsModel::write_embedding(fo, useTxtFmt, vm.vocab[a], &vm.embeddings[a * vm.emb_size], vm.emb_size);
     neOffset = new_embeddings;
     for (auto& token : t2l_map)
     {
-      fprintf(fo, "%s ", token.first.c_str());
-      for (size_t b = 0; b < vm.emb_size; ++b)
-      {
-        if ( !useTxtFmt )
-          fwrite(&neOffset[b], sizeof(float), 1, fo);
-        else
-          fprintf(fo, " %lf", neOffset[b]);
-      }
-      fprintf(fo, "\n");
+      VectorsModel::write_embedding(fo, useTxtFmt, token.first, neOffset, vm.emb_size);
       neOffset += vm.emb_size;
     }
     fclose(fo);

@@ -19,26 +19,13 @@ public:
     if ( !vm.load(model_fn, useTxtFmt) )
       return;
 
-    // 2. Сохраняем модель, корректируя веса ассоциативной части векторов
-    FILE *fo = fopen(model_fn.c_str(), "wb");
-    fprintf(fo, "%lu %lu\n", vm.words_count, vm.emb_size);
+    // 2. Корректируем веса ассоциативной части векторов
     for (size_t a = 0; a < vm.vocab.size(); ++a)
-    {
-      fprintf(fo, "%s ", vm.vocab[a].c_str());
-      for (size_t b = 0; b < vm.emb_size; ++b)
-      {
-        float val = vm.embeddings[a * vm.emb_size + b];
-        if (b >= dep_size)
-          val *= a_ratio;
-        if ( !useTxtFmt )
-          fwrite(&val, sizeof(float), 1, fo);
-        else
-          fprintf(fo, " %lf", val);
-      }
-      fprintf(fo, "\n");
-    }
-    fclose(fo);
+      for (size_t b = dep_size; b < vm.emb_size; ++b)
+        vm.embeddings[a * vm.emb_size + b] *= a_ratio;
 
+    // 3. Сохраняем модель
+    vm.save(model_fn, useTxtFmt);
   } // method-end
 }; // class-decl-end
 

@@ -20,6 +20,19 @@
 
 
 
+// создание объекта, отвечающего за измерение семантической близости между словами
+std::shared_ptr<SimilarityEstimator> create_sim_estimator(const CommandLineParametersDefs& cmdLineParams)
+{
+  std::shared_ptr<SimilarityEstimator> sim_estimator = std::make_shared<SimilarityEstimator>( cmdLineParams.getAsInt("-size_d"),
+                                                                                              cmdLineParams.getAsInt("-size_a"),
+                                                                                              cmdLineParams.getAsFloat("-a_ratio") );
+  if ( !sim_estimator->load_model(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt")) )
+    return nullptr;
+  return sim_estimator;
+}
+
+
+
 int main(int argc, char **argv)
 {
   // выполняем разбор параметров командной строки
@@ -41,7 +54,9 @@ int main(int argc, char **argv)
               << "  -task unPNize     -- merge common & proper names models" << std::endl
               << "  -task toks        -- add tokens to model" << std::endl
               << "  -task toks_train  -- train tokens model" << std::endl
-              << "  -task balance     -- balance model dep/assoc ratio" << std::endl;
+              << "  -task balance     -- balance model dep/assoc ratio" << std::endl
+              << "  -task sub         -- extract sub-model (for dimensions range)" << std::endl
+              << "  -task fsim        -- calc similarity measure for word pairs in file" << std::endl;
     return -1;
   }
   auto&& task = cmdLineParams.getAsString("-task");
@@ -220,18 +235,18 @@ int main(int argc, char **argv)
   // если поставлена задача оценки близости значений (в интерактивном режиме)
   if (task == "sim")
   {
-    SimilarityEstimator sim_estimator(cmdLineParams.getAsInt("-size_d"), cmdLineParams.getAsInt("-size_a"), cmdLineParams.getAsFloat("-a_ratio"));
-    if ( !sim_estimator.load_model(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt")) )
+    auto sim_estimator = create_sim_estimator(cmdLineParams);
+    if (!sim_estimator)
       return -1;
-    sim_estimator.run();
+    sim_estimator->run();
     return 0;
   } // if task == sim
 
   // если поставлена задача самодиагностики (язык: русский)
   if (task == "selftest_ru")
   {
-    std::shared_ptr<SimilarityEstimator> sim_estimator = std::make_shared<SimilarityEstimator>(cmdLineParams.getAsInt("-size_d"), cmdLineParams.getAsInt("-size_a"), cmdLineParams.getAsFloat("-a_ratio"));
-    if ( !sim_estimator->load_model(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt")) )
+    auto sim_estimator = create_sim_estimator(cmdLineParams);
+    if (!sim_estimator)
       return -1;
     SelfTest_ru st(sim_estimator, (cmdLineParams.getAsInt("-st_yo")==1));
     st.run(false);
@@ -372,6 +387,34 @@ int main(int argc, char **argv)
                   cmdLineParams.getAsInt("-size_d"), cmdLineParams.getAsFloat("-a_ratio"));
     return 0;
   } // if task == balance
+
+  // если поставлена задача извлечения подмодели
+  if (task == "sub")
+  {
+    std::string model_fn = cmdLineParams.getAsString("-model");
+    bool useTxtFmt = (cmdLineParams.getAsString("-model_fmt") == "txt");
+    size_t lb = cmdLineParams.getAsInt("-sub_l");
+    size_t rb = cmdLineParams.getAsInt("-sub_r");
+    VectorsModel vm;
+    if ( !vm.load(model_fn, useTxtFmt) )
+      return -1;
+    FILE *fo = fopen(model_fn.c_str(), "wb");
+    fprintf(fo, "%lu %lu\n", vm.words_count, rb-lb);
+    for (size_t a = 0; a < vm.vocab.size(); ++a)
+      VectorsModel::write_embedding_slice(fo, useTxtFmt, vm.vocab[a], &vm.embeddings[a * vm.emb_size], lb, rb);
+    fclose(fo);
+    return 0;
+  } // if task == sub
+
+  // если поставлена задача оценки близости значений (в пакетном режиме)
+  if (task == "fsim")
+  {
+    auto sim_estimator = create_sim_estimator(cmdLineParams);
+    if (!sim_estimator)
+      return -1;
+    sim_estimator->run_for_file(cmdLineParams.getAsString("-fsim_file"), cmdLineParams.getAsString("-fsim_fmt"));
+    return 0;
+  } // if task == fsim
 
   return -1;
 }

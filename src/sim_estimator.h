@@ -11,6 +11,7 @@
 #include <numeric>
 #include <optional>
 #include <iostream>
+#include <fstream>
 #ifdef _MSC_VER
   #include <io.h>
   #include <fcntl.h>
@@ -73,6 +74,43 @@ public:
       }
     } // infinite loop
   } // method-end
+  void run_for_file(const std::string& filename, const std::string& fmt)
+  {
+    std::ifstream ifs(filename);
+    if ( !ifs.good() )
+    {
+      std::cerr << "Can't open file: " << filename << std::endl;
+      return;
+    }
+    std::string line;
+    if (fmt == "russe") // process header
+    {
+      std::getline(ifs, line);
+      std::cout << line << std::endl;
+    }
+    while ( std::getline(ifs, line).good() )
+    {
+      size_t delimiters_count = std::count(line.begin(), line.end(), ',');
+      if (delimiters_count != 2)
+      {
+        std::cerr << "Invalid record: " << line << std::endl;
+        continue;
+      }
+      size_t c1 = line.find(',');
+      size_t c2 = line.find(',', c1+1);
+      auto word1 = line.substr(0, c1);
+      auto word2 = line.substr(c1+1, c2-(c1+1));
+      auto sim = get_sim(cdAll, word1, word2);
+      std::cout << word1 << "," << word2 << "," << sim.value_or(0);
+      if (fmt == "detail")
+      {
+        auto simd = get_sim(cdDepOnly, word1, word2);
+        auto sima = get_sim(cdAssocOnly, word1, word2);
+        std::cout << "," << simd.value_or(0) << "," << sima.value_or(0);
+      }
+      std::cout << std::endl;
+    }
+  } // method-end
   // получение расстояния для заданной пары слов
   std::optional<float> get_sim(CmpDims dims, const std::string& word1, const std::string& word2)
   {
@@ -80,10 +118,9 @@ public:
     auto widx2 = vm.get_word_idx(word2);
     if (widx1 == vm.words_count || widx2 == vm.words_count)
       return std::nullopt;
-    cmp_dims = dims;
     float* w1Offset = vm.embeddings + widx1*vm.emb_size;
     float* w2Offset = vm.embeddings + widx2*vm.emb_size;
-    return cosine_measure(w1Offset, w2Offset);
+    return cosine_measure(w1Offset, w2Offset, dims);
   }
   // предоставление доступа к векторному пространству
   void raw(size_t& wordsCnt, size_t& embSize, float*& vectors, std::vector<std::string>& words)
@@ -109,10 +146,10 @@ private:
     cmPair      // оценка сходства между парой слов
   } cmp_mode;
 
-  float cosine_measure(float* w1_Offset, float* w2_Offset)
+  float cosine_measure(float* w1_Offset, float* w2_Offset, CmpDims dims)
   {
     float result = 0;
-    switch ( cmp_dims )
+    switch ( dims )
     {
     case cdAll       : //result = std::inner_product(w1_Offset, w1_Offset+vm.emb_size, w2_Offset, 0.0); break;
                        {
@@ -163,7 +200,7 @@ private:
     {
       if (i == widx) continue;
       float* iOffset = vm.embeddings + i*vm.emb_size;
-      float sim = cosine_measure(iOffset, wiOffset);
+      float sim = cosine_measure(iOffset, wiOffset, cmp_dims);
       if (best.size() < 40)
         best.insert( std::make_pair(sim, vm.vocab[i]) );
       else
@@ -209,7 +246,7 @@ private:
     // оцениваем и выводим меру близости
     float* w1Offset = vm.embeddings + widx1*vm.emb_size;
     float* w2Offset = vm.embeddings + widx2*vm.emb_size;
-    float sim = cosine_measure(w1Offset, w2Offset);
+    float sim = cosine_measure(w1Offset, w2Offset, cmp_dims);
     str_to_console( "cosine similarity = " + std::to_string(sim) + "\n" );
   }
 

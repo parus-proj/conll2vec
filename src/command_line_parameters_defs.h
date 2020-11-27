@@ -40,7 +40,11 @@ public:
         {"-threads",      {"Use <int> threads", "8", std::nullopt}},
         {"-fit_input",    {"<file>.conll to fit (or stdin)", std::nullopt, std::nullopt}},
         {"-a_ratio" ,     {"Associations contribution to similarity", "1.0", std::nullopt}},
-        {"-st_yo" ,       {"Replace 'yo' in russe while self-testing", "0", std::nullopt}}
+        {"-st_yo" ,       {"Replace 'yo' in russe while self-testing", "0", std::nullopt}},
+        {"-sub_l" ,       {"Left range bound for sub-model", std::nullopt, std::nullopt}},
+        {"-sub_r" ,       {"Right range bound for sub-model", std::nullopt, std::nullopt}},
+        {"-fsim_file" ,   {"File with word paris for fsim task", std::nullopt, std::nullopt}},
+        {"-fsim_fmt" ,    {"File with word paris format (detail|russe)", "detail", std::nullopt}}
     };
   }
 };

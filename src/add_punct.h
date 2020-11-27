@@ -97,28 +97,10 @@ public:
     {
       if ( vm.vocab[a].empty() )
         continue;
-      fprintf(fo, "%s ", vm.vocab[a].c_str());
-      for (size_t b = 0; b < vm.emb_size; ++b)
-      {
-        if ( !useTxtFmt )
-          fwrite(&vm.embeddings[a * vm.emb_size + b], sizeof(float), 1, fo);
-        else
-          fprintf(fo, " %lf", vm.embeddings[a * vm.emb_size + b]);
-      }
-      fprintf(fo, "\n");
+      VectorsModel::write_embedding(fo, useTxtFmt, vm.vocab[a], &vm.embeddings[a * vm.emb_size], vm.emb_size);
     }
     for (size_t a = 0; a < new_vocab.size(); ++a)
-    {
-      fprintf(fo, "%s ", new_vocab[a].c_str());
-      for (size_t b = 0; b < vm.emb_size; ++b)
-      {
-        if ( !useTxtFmt )
-          fwrite(&new_embeddings[a * vm.emb_size + b], sizeof(float), 1, fo);
-        else
-          fprintf(fo, " %lf", new_embeddings[a * vm.emb_size + b]);
-      }
-      fprintf(fo, "\n");
-    }
+      VectorsModel::write_embedding(fo, useTxtFmt, new_vocab[a], &new_embeddings[a * vm.emb_size ], vm.emb_size);
     fclose(fo);
 
   } // method-end

@@ -96,6 +96,15 @@ public:
     }
     return true;
   } // method-end
+  // сохранение модели
+  void save( const std::string& model_fn, bool useTxtFmt )
+  {
+    FILE *fo = fopen(model_fn.c_str(), "wb");
+    fprintf(fo, "%lu %lu\n", words_count, emb_size);
+    for (size_t a = 0; a < vocab.size(); ++a)
+      VectorsModel::write_embedding(fo, useTxtFmt, vocab[a], &embeddings[a * emb_size], emb_size);
+    fclose(fo);
+  } // method-end
   // поиск слова в словаре
   size_t get_word_idx(const std::string& word) const
   {
@@ -114,6 +123,25 @@ public:
       float *offs = base_embedding + d;
       *(new_embedding + d) = *offs + random_sign() * (*offs / 100 * distance_factor);
     }
+  } // method-end
+  // статический метод записи одного эмбеддинга в файл
+  static void write_embedding( FILE* fo, bool useTxtFmt, const std::string& word, float* embedding, size_t emb_size )
+  {
+    write_embedding_slice( fo, useTxtFmt, word, embedding, 0, emb_size );
+  } // method-end
+  static void write_embedding_slice( FILE* fo, bool useTxtFmt, const std::string& word, float* embedding, size_t begin, size_t end )
+  {
+    fprintf(fo, "%s", word.c_str());
+    if ( !useTxtFmt )
+      fprintf(fo, " ");
+    for (size_t b = begin; b < end; ++b)
+    {
+      if ( !useTxtFmt )
+        fwrite(&embedding[b], sizeof(float), 1, fo);
+      else
+        fprintf(fo, " %lf", embedding[b]);
+    }
+    fprintf(fo, "\n");
   } // method-end
 }; // class-decl-end
 
