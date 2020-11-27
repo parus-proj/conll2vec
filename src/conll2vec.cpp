@@ -391,10 +391,15 @@ int main(int argc, char **argv)
   // если поставлена задача извлечения подмодели
   if (task == "sub")
   {
-    std::string model_fn = cmdLineParams.getAsString("-model");
-    bool useTxtFmt = (cmdLineParams.getAsString("-model_fmt") == "txt");
+    if ( !cmdLineParams.isDefined("-sub_l") || !cmdLineParams.isDefined("-sub_r") )
+    {
+      std::cerr << "-sub_l and -sub_r parameters must be defined." << std::endl;
+      return -1;
+    }
     size_t lb = cmdLineParams.getAsInt("-sub_l");
     size_t rb = cmdLineParams.getAsInt("-sub_r");
+    std::string model_fn = cmdLineParams.getAsString("-model");
+    bool useTxtFmt = (cmdLineParams.getAsString("-model_fmt") == "txt");
     VectorsModel vm;
     if ( !vm.load(model_fn, useTxtFmt) )
       return -1;
