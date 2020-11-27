@@ -300,7 +300,7 @@ public:
     return true;
   } // method-end
   // функция восстановления левой весовой матрицы из векторной модели
-  bool restore_left_matrix(const VectorsModel& vm)
+  bool restore_left_matrix_by_model(const VectorsModel& vm)
   {
     if (layer1_size != vm.emb_size)
     {

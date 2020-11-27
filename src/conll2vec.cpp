@@ -362,7 +362,7 @@ int main(int argc, char **argv)
     // инициализация нейросети
     trainer.create_net();
     trainer.init_net();  // начальная инициализация левой матрицы случайными значениями
-    trainer.restore_left_matrix(vm);  // перенос векторых представлений из загруженной модели в левую матрицу
+    trainer.restore_left_matrix_by_model(vm);  // перенос векторых представлений из загруженной модели в левую матрицу
     trainer.restore( cmdLineParams.getAsString("-restore"), false, true );
 
     // запускаем потоки, осуществляющие обучение
