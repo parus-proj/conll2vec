@@ -123,12 +123,9 @@ public:
     return cosine_measure(w1Offset, w2Offset, dims);
   }
   // предоставление доступа к векторному пространству
-  void raw(size_t& wordsCnt, size_t& embSize, float*& vectors, std::vector<std::string>& words)
+  VectorsModel* raw()
   {
-    wordsCnt = vm.words_count;
-    embSize = vm.emb_size;
-    vectors = vm.embeddings;
-    words = vm.vocab;
+    return &vm;
   }
 private:
   size_t dep_size;

@@ -2,6 +2,7 @@
 #define SELFTEST_RU_H_
 
 #include "sim_estimator.h"
+#include "vectors_model.h"
 
 #include <memory>
 #include <string>
@@ -44,6 +45,8 @@ public:
     test_russe2015();
     std::cout << std::endl;
     test_rusim();
+    std::cout << std::endl;
+    output_limits(); // вывод максимально достижимых показателей HJ, RT, AE, AE2 и RuSim при имеющейся полноте словаря
   } // method-end
 private:
   // указатель на объект для оценки семантической близости
@@ -64,10 +67,7 @@ private:
   void test_floats(bool verbose = false)
   {
     std::cout << "Run float checker" << std::endl;
-    size_t vocab_size = 0, emb_size = 0;
-    float* embeddings = nullptr;
-    std::vector<std::string> vocab;
-    sim_meter->raw(vocab_size, emb_size, embeddings, vocab);
+    VectorsModel* vm = sim_meter->raw();
     auto float_class_func = [](float x)
         {
             switch (std::fpclassify(x))
@@ -81,12 +81,12 @@ private:
             }
         };
     bool all_right = true;
-    for (size_t w = 0; w < vocab_size; ++w)
-      for (size_t d = 0; d < emb_size; ++d)
+    for (size_t w = 0; w < vm->words_count; ++w)
+      for (size_t d = 0; d < vm->emb_size; ++d)
       {
-        if ( !std::isnormal(*(embeddings+w*emb_size+d)) )
+        if ( !std::isnormal(*(vm->embeddings+w*vm->emb_size+d)) )
         {
-          std::cout << "  " << vocab[w] << " has abnormal value. -- " << float_class_func(*(embeddings+w*emb_size+d)) << std::endl;
+          std::cout << "  " << vm->vocab[w] << " has abnormal value. -- " << float_class_func(*(vm->embeddings+w*vm->emb_size+d)) << std::endl;
           all_right = false;
           break;
         }
@@ -447,27 +447,24 @@ private:
   void dimensions_analyse(bool verbose=false) const
   {
     // получаем доступ к векторному пространству
-    size_t vocab_size = 0, emb_size = 0;
-    float* embeddings = nullptr;
-    std::vector<std::string> vocab;
-    sim_meter->raw(vocab_size, emb_size, embeddings, vocab);
+    VectorsModel* vm = sim_meter->raw();
     // выводим данные о минимальных и максимальных значениях в пространстве
     const size_t MM_CNT = 5;
     std::map<float, std::pair<std::string,size_t>, std::greater<float>> minValues;
     std::map<float, std::pair<std::string,size_t>> maxValues;
-    for (size_t w = 0; w < vocab_size; ++w)
-      for (size_t d = 0; d < emb_size; ++d)
+    for (size_t w = 0; w < vm->words_count; ++w)
+      for (size_t d = 0; d < vm->emb_size; ++d)
       {
-        float val = embeddings[w*emb_size+d];
+        float val = vm->embeddings[w*vm->emb_size+d];
         if (minValues.empty() || val < minValues.begin()->first)
         {
-          minValues[val] = std::make_pair(vocab[w],d);
+          minValues[val] = std::make_pair(vm->vocab[w],d);
           if (minValues.size() > MM_CNT)
             minValues.erase(minValues.begin());
         }
         if (maxValues.empty() || val > maxValues.begin()->first)
         {
-          maxValues[val] = std::make_pair(vocab[w],d);
+          maxValues[val] = std::make_pair(vm->vocab[w],d);
           if (maxValues.size() > MM_CNT)
             maxValues.erase(maxValues.begin());
         }
@@ -485,12 +482,12 @@ private:
     // выводим данные о смещениях нуля в измерениях
     const size_t ZSH_CNT = 5;
     std::map<float, size_t> maxShifts;
-    for (size_t d = 0; d < emb_size; ++d)
+    for (size_t d = 0; d < vm->emb_size; ++d)
     {
       float sum = 0.0;
-      for (size_t w = 0; w < vocab_size; ++w)
-        sum += embeddings[w*emb_size+d];
-      sum /= vocab_size;
+      for (size_t w = 0; w < vm->words_count; ++w)
+        sum += vm->embeddings[w*vm->emb_size+d];
+      sum /= vm->words_count;
       sum = fabs(sum);
       if (maxShifts.size() < ZSH_CNT || sum > maxShifts.begin()->first)
       {
@@ -510,9 +507,9 @@ private:
     for (size_t i = 0; i < (2*resolution); ++i)
       bar[-1.0 + i*step] = 0;
     size_t target_dimension = maxShifts.rbegin()->second;
-    for (size_t w = 0; w < vocab_size; ++w)
+    for (size_t w = 0; w < vm->words_count; ++w)
     {
-      float val = embeddings[w*emb_size+target_dimension];
+      float val = vm->embeddings[w*vm->emb_size+target_dimension];
       auto it = std::lower_bound(bar.begin(), bar.end(), val, [](const std::pair<float, size_t> item, float bound) {return item.first < bound;});
       if (it != bar.end())
         it->second++;
@@ -563,6 +560,19 @@ private:
     float sim;
     float usim;
     size_t predict;
+  };
+
+  struct Usim_Word  // для сориторвки (usim DESC & word ASC)
+  {
+    float usim;
+    std::string word;
+    Usim_Word(float v, const std::string& w): usim(v), word(w) {}
+    friend bool operator< (const Usim_Word& lhs, const Usim_Word& rhs)
+    {
+       if      (lhs.usim > rhs.usim) return true;
+       else if (lhs.usim < rhs.usim) return false;
+       else return lhs.word < rhs.word;
+    }
   };
 
   std::map<std::string, std::map<std::string, SimUsimPredict>> read_test_file(const std::string& test_file_name, bool with_data = true) const
@@ -645,48 +655,22 @@ private:
   {
     for (auto& p1 : test_data)
     {
-      std::multimap<float, std::string, std::greater<float>> sorter;
+      std::set<Usim_Word> sorter;
       for (auto& p2 : p1.second)
-        sorter.insert( std::make_pair(p2.second.usim, p2.first) );
+        sorter.insert( Usim_Word(p2.second.usim, p2.first) );
       size_t half = sorter.size() / 2;
       size_t i = 0;
       for (auto& s : sorter)
       {
-        p1.second[s.second].predict = ( i<half ? 1 : 0 );
+        p1.second[s.word].predict = ( i<half ? 1 : 0 );
         ++i;
       }
     }
   }
 
-  float average_precision_light(const std::map<std::string, std::map<std::string, SimUsimPredict>>& test_data) const
-  {
-    std::multiset< std::pair<float, float>, std::greater<std::pair<float, float>>> sorter;
-    size_t positive_true = 0;
-    for (auto& p1 : test_data)
-      for (auto& p2 : p1.second)
-      {
-        sorter.insert( std::make_pair(p2.second.usim, p2.second.sim) );
-        if (p2.second.sim == 1)
-          ++positive_true;
-      }
-    float precision_sum = 0;
-    float positive_cnt = 0;
-    size_t cnt = 0;
-    for (auto& s : sorter)
-    {
-      ++cnt;
-      if (s.second == 1)
-      {
-        positive_cnt += 1;
-        precision_sum += positive_cnt / cnt;
-      }
-    }
-    return precision_sum / positive_true;
-  }
-
   float average_precision_sklearn_bin(const std::map<std::string, std::map<std::string, SimUsimPredict>>& test_data) const
   {
-    std::multiset< std::pair<float, float>, std::greater<std::pair<float, float>>> sorter;
+    std::multimap< float, float, std::greater<float>> sorter;
     size_t positive_true = 0;
     for (auto& p1 : test_data)
       for (auto& p2 : p1.second)
@@ -699,20 +683,24 @@ private:
     float last_recall = 0;
     float positive_cnt = 0;
     size_t cnt = 0;
-    for (auto& s : sorter)
+    auto it = sorter.begin();
+    while ( it != sorter.end() )
     {
-      ++cnt;
-      if (s.second == 1)
+      float u = it->first;
+      auto itLim = sorter.upper_bound(u);
+      for ( ; it != itLim; ++it )
       {
-        positive_cnt += 1;
-        float current_recall = positive_cnt / positive_true;
-        float recall_delta = current_recall - last_recall;
-        float current_precision = positive_cnt / cnt;
-        average_precision += recall_delta * current_precision;
-        last_recall = current_recall;
-        if (positive_cnt == positive_true)
-          break;
+        ++cnt;
+        if (it->second == 1)
+          positive_cnt += 1;
       }
+      float current_recall = positive_cnt / positive_true;
+      float recall_delta = current_recall - last_recall;
+      float current_precision = positive_cnt / cnt;
+      average_precision += recall_delta * current_precision;
+      last_recall = current_recall;
+      if (positive_cnt == positive_true)
+        break;
     }
     return average_precision;
   }
@@ -723,7 +711,7 @@ private:
     // использовалась в scikit-learn до версии 0.19.X и в частности в рамках RUSSE-2015
     // современная реализация функции average_precision_score в scikit-learn является прямоугольной аппроксимацией AUC
     // о различиях см. https://datascience.stackexchange.com/questions/52130/about-sklearn-metrics-average-precision-score-documentation
-    std::multiset< std::pair<float, float>, std::greater<std::pair<float, float>>> sorter;
+    std::multimap< float, float, std::greater<float>> sorter;
     size_t positive_true = 0;
     for (auto& p1 : test_data)
       for (auto& p2 : p1.second)
@@ -737,17 +725,25 @@ private:
     float last_precision = 1;
     float positive_cnt = 0;
     size_t cnt = 0;
-    for (auto& s : sorter)
+    auto it = sorter.begin();
+    while ( it != sorter.end() )
     {
-      ++cnt;
-      if (s.second == 1)
-        positive_cnt += 1;
+      float u = it->first;
+      auto itLim = sorter.upper_bound(u);
+      for ( ; it != itLim; ++it )
+      {
+        ++cnt;
+        if (it->second == 1)
+          positive_cnt += 1;
+      }
       float current_recall = positive_cnt / positive_true;
       float recall_delta = current_recall - last_recall;
       float current_precision = positive_cnt / cnt;
       average_precision += recall_delta * (last_precision + current_precision)/2;
       last_recall = current_recall;
       last_precision = current_precision;
+      if (positive_cnt == positive_true)
+        break;
     }
     return average_precision;
   }
@@ -894,7 +890,6 @@ private:
     std::cout << "      average_precision = " << average_precision_sklearn_bin(test_data) << std::endl;
   }
 
-
   void test_russe2015_ae() const
   {
     std::cout << "  AE" << std::endl;
@@ -912,7 +907,6 @@ private:
     std::cout << "      accuracy = " << accuracy(test_data) << std::endl;
     std::cout << "      average_precision = " << average_precision_sklearn_bin(test_data) << std::endl;
   }
-
 
   void test_russe2015_ae2() const
   {
@@ -956,6 +950,54 @@ private:
       std::cout << "      average_precision = " << average_precision_sklearn_bin(test_data) << std::endl;
     }
   }
+
+  void calc_usim_by_recall(std::map<std::string, std::map<std::string, SimUsimPredict>>& test_data) const
+  {
+    auto vm = sim_meter->raw();
+    for (auto& p1 : test_data)
+      for (auto& p2 : p1.second)
+        p2.second.usim = (vm->get_word_idx(p1.first) == vm->words_count || vm->get_word_idx(p2.first) == vm->words_count) ? 0.0 : p2.second.sim;
+  }
+
+  void output_limits() const
+  {
+   std::cout << "MaxValues for model's vocabulary" << std::endl;
+   std::cout << "                      HJ        RT        AE        AE2        RS" << std::endl;
+   auto test_data_hj = read_test_file("russe2015data/hj-test.csv");
+   calc_usim_by_recall(test_data_hj);
+   auto test_data_rt = read_test_file("russe2015data/rt-test.csv");
+   calc_usim_by_recall(test_data_rt);
+   calc_predict(test_data_rt);
+   auto test_data_ae = read_test_file("russe2015data/ae-test.csv");
+   calc_usim_by_recall(test_data_ae);
+   calc_predict(test_data_ae);
+   auto test_data_ae2 = read_test_file("russe2015data/ae2-test.csv");
+   calc_usim_by_recall(test_data_ae2);
+   calc_predict(test_data_ae2);
+   auto test_data_rs = read_test_file("rusim1000data/RuSim1000.csv");
+   calc_usim_by_recall(test_data_rs);
+   calc_predict(test_data_rs);
+
+   std::cout << "  Spearm. corr.    " << spearmans_rank_correlation_coefficient(test_data_hj) << std::endl;
+   std::cout << "  AvgPrecision15          "
+             << std::setw(10) << average_precision_sklearn_0_18_bin(test_data_rt)
+             << std::setw(10) << average_precision_sklearn_0_18_bin(test_data_ae)
+             << std::setw(11) << average_precision_sklearn_0_18_bin(test_data_ae2)
+             << std::setw(10) << average_precision_sklearn_0_18_bin(test_data_rs)
+             << std::endl;
+   std::cout << "  Accuracy                "
+             << std::setw(10) << accuracy(test_data_rt)
+             << std::setw(10) << accuracy(test_data_ae)
+             << std::setw(11) << accuracy(test_data_ae2)
+             << std::setw(10) << accuracy(test_data_rs)
+             << std::endl;
+   std::cout << "  AvgPrecision            "
+             << std::setw(10) << average_precision_sklearn_bin(test_data_rt)
+             << std::setw(10) << average_precision_sklearn_bin(test_data_ae)
+             << std::setw(11) << average_precision_sklearn_bin(test_data_ae2)
+             << std::setw(10) << average_precision_sklearn_bin(test_data_rs)
+             << std::endl;
+  } // method-end
 
 }; // class-decl-end
 
