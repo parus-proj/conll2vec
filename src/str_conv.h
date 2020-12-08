@@ -4,7 +4,7 @@
 #include <string>
 #include <locale>
 #include <codecvt>
-#include "unicode/uchar.h"
+#include <unicode/uchar.h>
 
 
 class StrConv
