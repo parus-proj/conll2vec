@@ -43,8 +43,8 @@ public:
         {"-st_yo" ,       {"Replace 'yo' in russe while self-testing", "0", std::nullopt}},
         {"-sub_l" ,       {"Left range bound for sub-model", std::nullopt, std::nullopt}},
         {"-sub_r" ,       {"Right range bound for sub-model", std::nullopt, std::nullopt}},
-        {"-fsim_file" ,   {"File with word paris for fsim task", std::nullopt, std::nullopt}},
-        {"-fsim_fmt" ,    {"File with word paris format (detail|russe)", "detail", std::nullopt}}
+        {"-fsim_file" ,   {"File with word pairs for fsim task", std::nullopt, std::nullopt}},
+        {"-fsim_fmt" ,    {"File with word pairs format (detail|russe)", "detail", std::nullopt}}
     };
   }
 };
