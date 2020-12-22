@@ -1,3 +1,4 @@
+ICU_PATH=icu
 CXX=cl
 CXXFLAGS=-std:c++17 /O2 /Oi /MD -DNDEBUG /source-charset:utf-8
 
@@ -5,8 +6,8 @@ all: conll2vec.exe
 
 conll2vec.exe: 
 	if exist $@ del $@
-	cl /nologo /c /EHsc /Fosrc\ $(CXXFLAGS) src/conll2vec.cpp
-	link /nologo /SUBSYSTEM:CONSOLE /MACHINE:X64 /OUT:$@ src/conll2vec.obj
+	cl /nologo /c /EHsc /Fosrc\ $(CXXFLAGS) /I $(ICU_PATH)\include src/conll2vec.cpp
+	link /nologo /SUBSYSTEM:CONSOLE /MACHINE:X64 /OUT:$@ src\conll2vec.obj $(ICU_PATH)\lib64\icuuc.lib
 
 clean:
 	-if exist src\*.obj del src\*.obj
