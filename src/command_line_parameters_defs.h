@@ -20,6 +20,7 @@ public:
         {"-tl_map",       {"Tokens-lemmas mapping <file>", "tl.map", std::nullopt}},
 //        {"-vocab_e",      {"Expressions vocabulary <file>", std::nullopt, std::nullopt}},
         {"-vocab_d",      {"Dependency contexts vocabulary <file>", std::nullopt, std::nullopt}},
+        {"-vocab_a",      {"Associative contexts vocabulary <file>", std::nullopt, std::nullopt}},
         {"-backup",       {"Save neural network weights to <file>", std::nullopt, std::nullopt}},
         {"-restore",      {"Restore neural network weights from <file>", std::nullopt, std::nullopt}},
         {"-min-count_m",  {"Min frequency in Lemmas main vocabulary", "50", std::nullopt}},
