@@ -75,14 +75,14 @@ public:
     for (size_t i = 0; i < threads_count; ++i)
       thread_environment[i].next_random = i;
     if ( words_vocabulary )
+    {
       train_words = words_vocabulary->cn_sum();
-    w_mul_sample_w = train_words * sample_w;
+      words_vocabulary->sampling_estimation(wordsSubsample);
+    }
     if ( dep_ctx_vocabulary )
-      train_words_dep = dep_ctx_vocabulary->cn_sum();
-    w_mul_sample_d = train_words_dep * sample_d;
+      dep_ctx_vocabulary->sampling_estimation(depSubsample);
     if ( assoc_ctx_vocabulary )
-      train_words_assoc = assoc_ctx_vocabulary->cn_sum();
-    w_mul_sample_a = train_words_assoc * sample_a;
+      assoc_ctx_vocabulary->sampling_estimation(assocSubsample);
     try
     {
       train_file_size = get_file_size(train_filename);
@@ -196,8 +196,7 @@ public:
               auto tdcIt = deps[i].begin();
               while (tdcIt != deps[i].end())
               {
-                auto&& dep_record = dep_ctx_vocabulary->idx_to_data(*tdcIt);
-                float ran = (std::sqrt(dep_record.cn / (w_mul_sample_d)) + 1) * (w_mul_sample_d) / dep_record.cn;
+                float ran = dep_ctx_vocabulary->idx_to_data(*tdcIt).sample_probability;
                 t_environment.update_random();
                 if (ran < (t_environment.next_random & 0xFFFF) / (float)65536)
                   tdcIt = deps[i].erase(tdcIt);
@@ -217,8 +216,7 @@ public:
             // применяем сабсэмплинг к ассоциациям
             if (sample_a > 0)
             {
-              auto&& assoc_record = assoc_ctx_vocabulary->idx_to_data(assoc_idx);
-              float ran = (std::sqrt(assoc_record.cn / (w_mul_sample_a)) + 1) * (w_mul_sample_a) / assoc_record.cn;
+              float ran = assoc_ctx_vocabulary->idx_to_data(assoc_idx).sample_probability;
               t_environment.update_random();
               if (ran < (t_environment.next_random & 0xFFFF) / (float)65536)
                 continue;
@@ -243,8 +241,7 @@ public:
             ++t_environment.words_count;
             if (sample_w > 0)
             {
-              auto&& w_record = words_vocabulary->idx_to_data(word_idx);
-              float ran = (std::sqrt(w_record.cn / (w_mul_sample_w)) + 1) * (w_mul_sample_w) / w_record.cn;
+              float ran = words_vocabulary->idx_to_data(word_idx).sample_probability;
               t_environment.update_random();
               if (ran < (t_environment.next_random & 0xFFFF) / (float)65536)
                 continue;
@@ -288,10 +285,6 @@ private:
   uint64_t train_file_size = 0;
   // количество слов в обучающем множестве (приблизительно, т.к. могло быть подрезание по порогу частоты при построении словаря)
   uint64_t train_words = 0;
-  // количество слов в обучающем множестве, вошедших в словарь синтаксических контекстов (приблизительно, т.к. могло быть подрезание по порогу частоты при построении словаря)
-  uint64_t train_words_dep = 0;
-  // количество слов в обучающем множестве, вошедших в словарь ассоциативных контекстов (приблизительно, т.к. могло быть подрезание по порогу частоты при построении словаря)
-  uint64_t train_words_assoc = 0;
   // словари
   std::shared_ptr< OriginalWord2VecVocabulary > words_vocabulary;
   bool proper_names;  // признак того, что выполняется обучение векторных представлений для собственных имен
@@ -303,13 +296,11 @@ private:
   // следует ли задействовать тип и направление синтаксической связи в определении синтаксического контекста
   bool use_deprel;
   // порог для алгоритма сэмплирования (subsampling) -- для словаря векторной модели
-  float sample_w = 1e-3;
+  float sample_w = 0;
   // порог для алгоритма сэмплирования (subsampling) -- для синтаксических контекстов
-  float sample_d = 1e-3;
+  float sample_d = 0;
   // порог для алгоритма сэмплирования (subsampling) -- для ассоциативных контекстов
-  float sample_a = 1e-3;
-  // хранилища произведений порога сэмплирования и количества слов в соответствующем словаре (вычислительная оптимизация)
-  float w_mul_sample_w = 0, w_mul_sample_d = 0, w_mul_sample_a = 0;
+  float sample_a = 0;
 
   // получение размера файла
   uint64_t get_file_size(const std::string& filename)
