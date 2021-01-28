@@ -71,7 +71,7 @@ public:
     for (auto& r : vocabulary)
     {
       float t_to_f = wc_mul_sample / r.cn;
-      float prob = t_to_f + std::sqrt(t_to_f);
+      float prob = t_to_f + std::sqrt(t_to_f);          // согласно статье должно быть float prob = std::sqrt(t_to_f);
       r.sample_probability = (prob > 1) ? 1.0 : prob;
     }
   }
