@@ -360,31 +360,54 @@ private:
   // функция инициализации распределения, имитирующего шум, для метода оптимизации negative sampling
   void InitUnigramTable(int*& table, std::shared_ptr< CustomVocabulary > vocabulary)
   {
-    double train_words_pow = 0;
-    double d1, power = 0.75;
+    double norma = 0;
+    double d1 = 0;
     table = (int *)malloc(table_size * sizeof(int));
-    // вычисляем нормирующую сумму (за слагаемое берется абсолютная частота слова/контекста в степени 3/4)
+    // вычисляем нормирующую сумму (с учётом сабсэмплинга)
     for (size_t a = 0; a < vocabulary->size(); ++a)
-      train_words_pow += std::pow(vocabulary->idx_to_data(a).cn, power);
+      norma += vocabulary->idx_to_data(a).cn * vocabulary->idx_to_data(a).sample_probability;
     // заполняем таблицу распределения, имитирующего шум
     size_t i = 0;
-    d1 = std::pow(vocabulary->idx_to_data(i).cn, power) / train_words_pow;
+    d1 = vocabulary->idx_to_data(i).cn * vocabulary->idx_to_data(i).sample_probability / norma;
     for (size_t a = 0; a < table_size; ++a)
     {
       table[a] = i;
       if (a / (double)table_size > d1)
       {
         i++;
-        d1 += std::pow(vocabulary->idx_to_data(i).cn, power) / train_words_pow;
+        d1 += vocabulary->idx_to_data(i).cn * vocabulary->idx_to_data(i).sample_probability / norma;
       }
       if (i >= vocabulary->size())
         i = vocabulary->size() - 1;
     }
   } // method-end
+//  void InitUnigramTable(int*& table, std::shared_ptr< CustomVocabulary > vocabulary)
+//  {
+//    double train_words_pow = 0;
+//    double d1, power = 0.75;
+//    table = (int *)malloc(table_size * sizeof(int));
+//    // вычисляем нормирующую сумму (за слагаемое берется абсолютная частота слова/контекста в степени 3/4)
+//    for (size_t a = 0; a < vocabulary->size(); ++a)
+//      train_words_pow += std::pow(vocabulary->idx_to_data(a).cn, power);
+//    // заполняем таблицу распределения, имитирующего шум
+//    size_t i = 0;
+//    d1 = std::pow(vocabulary->idx_to_data(i).cn, power) / train_words_pow;
+//    for (size_t a = 0; a < table_size; ++a)
+//    {
+//      table[a] = i;
+//      if (a / (double)table_size > d1)
+//      {
+//        i++;
+//        d1 += std::pow(vocabulary->idx_to_data(i).cn, power) / train_words_pow;
+//      }
+//      if (i >= vocabulary->size())
+//        i = vocabulary->size() - 1;
+//    }
+//  } // method-end
   // функция, реализующая модель обучения skip-gram
   void skip_gram( const LearningExample& le, float *neu1e, unsigned long long& next_random_ns )
   {
-    float norm_factor = negative - fraction*(negative-1);
+//    float norm_factor = negative - fraction*(negative-1);
     size_t selected_ctx;   // хранилище для индекса контекста
     int label;             // метка класса; знаковое целое (!)
     float g = 0;           // хранилище для величины ошибки
@@ -418,13 +441,13 @@ private:
         // вычислим ошибку, умноженную на коэффициент скорости обучения
         g = (label - f) * alpha;
         // обратное распространение ошибки output -> hidden
-        if (d==0)
+//        if (d==0)
           std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
-        else
-        {
-          float g_norm = g/norm_factor;
-          std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g_norm](float a, float b) -> float {return a + g_norm*b;});
-        }
+//        else
+//        {
+//          float g_norm = g/norm_factor;
+//          std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g_norm](float a, float b) -> float {return a + g_norm*b;});
+//        }
         // обучение весов hidden -> output
         if ( !proper_names )
           std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
@@ -436,11 +459,12 @@ private:
                      {
                        if ( a*b < 0 ) return a + b; // разнознаковые
                        const float TH = 0.5;
+                       const float ONE_TH = 1.0 - TH;
                        float abs_a = fabs(a);
                        if (abs_a <= TH)
                          return a + b;
                        else
-                         return a + b / (abs_a+TH);
+                         return a + b / (abs_a+ONE_TH);
                      }
                     );
     } // for all dep contexts
