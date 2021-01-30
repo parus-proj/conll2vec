@@ -1,6 +1,8 @@
 #ifndef ORIGINAL_WORD2VEC_VOCABULARY_H_
 #define ORIGINAL_WORD2VEC_VOCABULARY_H_
 
+#include "vocabulary.h"
+
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -8,7 +10,6 @@
 #include <iostream>
 #include <regex>
 #include <limits>
-#include "vocabulary.h"
 
 class OriginalWord2VecVocabulary : public CustomVocabulary
 {

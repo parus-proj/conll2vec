@@ -31,6 +31,7 @@ public:
         {"-use_deprel",   {"Include DEPREL field in dependency context", "1", std::nullopt}},
         {"-size_d",       {"Size of Dependency part of word vectors", "75", std::nullopt}},
         {"-size_a",       {"Size of Associative part of word vectors", "25", std::nullopt}},
+        {"-size_g",       {"Size of Grammatical part of word vectors", "20", std::nullopt}},
         {"-negative",     {"Number of negative examples", "5", std::nullopt}},
         {"-alpha",        {"Set the starting learning rate", "0.025", std::nullopt}},
         {"-iter",         {"Run more training iterations", "5", std::nullopt}},

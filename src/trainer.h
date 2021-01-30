@@ -37,6 +37,7 @@ public:
            std::shared_ptr< CustomVocabulary > assoc_contexts_vocabulary,
            size_t embedding_dep_size,
            size_t embedding_assoc_size,
+           size_t embedding_gramm_size,
            size_t epochs,
            float learning_rate,
            size_t negative_count,
@@ -50,6 +51,7 @@ public:
   , layer1_size(embedding_dep_size + embedding_assoc_size)
   , size_dep(embedding_dep_size)
   , size_assoc(embedding_assoc_size)
+  , size_gramm(embedding_gramm_size)
   , epoch_count(epochs)
   , alpha(learning_rate)
   , starting_alpha(learning_rate)
@@ -141,6 +143,28 @@ public:
 
     start_learning_tp = std::chrono::steady_clock::now();
   } // method-end
+  void create_and_init_gramm_net()
+  {
+    long long ap = 0;
+    unsigned long long next_random = 1;
+
+    size_t w_vocab_size = w_vocabulary->size();
+    ap = posix_memalign((void **)&syn0, 128, (long long)w_vocab_size * size_gramm * sizeof(float));
+    if (syn0 == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
+    for (size_t a = 0; a < w_vocab_size; ++a)
+      for (size_t b = 0; b < size_gramm; ++b)
+      {
+        next_random = next_random * (unsigned long long)25214903917 + 11;
+        syn0[a * size_gramm + b] = (((next_random & 0xFFFF) / (float)65536) - 0.5) / 100;
+      }
+
+    size_t output_size = lep->getGrammemesVectorSize();
+    ap = posix_memalign((void **)&syn1_assoc, 128, (long long)output_size * size_gramm * sizeof(float));
+    if (syn1_assoc == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
+    std::fill(syn1_assoc, syn1_assoc+output_size*size_gramm, 0.0);
+
+    start_learning_tp = std::chrono::steady_clock::now();
+  } // method-end
   // обобщенная процедура обучения (точка входа для потоков)
   void train_entry_point( size_t thread_idx )
   {
@@ -189,6 +213,114 @@ public:
     } // for all epochs
     free(neu1e);
   } // method-end: train_entry_point
+  // процедура обучения грамматического вектора (точка входа для потоков)
+  void train_entry_point__gramm( size_t thread_idx )
+  {
+    // выделение памяти для хранения выхода нейросети и дельт нейронов
+    size_t output_size = lep->getGrammemesVectorSize();
+    float *y = (float *)calloc(output_size, sizeof(float));
+    float *eo = (float *)calloc(output_size, sizeof(float));
+    float *eh = (float *)calloc(size_gramm, sizeof(float));
+    // цикл по эпохам
+    for (size_t epochIdx = 0; epochIdx < epoch_count; ++epochIdx)
+    {
+      if ( !lep->epoch_prepare(thread_idx) )
+        return;
+      long long word_count = 0, last_word_count = 0;
+      // цикл по словам
+      while (true)
+      {
+        // вывод прогресс-сообщений
+        // и корректировка коэффициента скорости обучения (alpha)
+        if (word_count - last_word_count > alpha_chunk)
+        {
+          word_count_actual += (word_count - last_word_count);
+          last_word_count = word_count;
+          fraction = word_count_actual / (float)(epoch_count * train_words + 1);
+          //if ( debug_mode != 0 )
+          {
+            std::chrono::steady_clock::time_point current_learning_tp = std::chrono::steady_clock::now();
+            std::chrono::duration< double, std::ratio<1> > learning_seconds = current_learning_tp - start_learning_tp;
+            printf( "\rAlpha: %f  Progress: %.2f%%  Words/sec: %.2fk   ", alpha,
+                    fraction * 100,
+                    word_count_actual / (learning_seconds.count() * 1000) );
+            fflush(stdout);
+          }
+          alpha = starting_alpha * (1.0 - fraction);
+          if ( alpha < starting_alpha * 0.0001 )
+            alpha = starting_alpha * 0.0001;
+        } // if ('checkpoint')
+        // читаем очередной обучающий пример
+        auto learning_example = lep->get(thread_idx, true);
+        word_count = lep->getWordsCount(thread_idx);
+        if (!learning_example) break; // признак окончания эпохи (все обучающие примеры перебраны)
+        // используем обучающий пример для обучения нейросети
+
+        // прямой проход
+        float* wordVectorPtr= syn0 + learning_example->word * size_gramm;
+        for (size_t g = 0; g < output_size; ++g)
+        {
+          float* offs = syn1_assoc + g  * size_gramm;
+          y[g] = sigmoid( std::inner_product(wordVectorPtr, wordVectorPtr+size_gramm, offs, 0.0) );
+        }
+        //softmax(y, output_size);
+
+        // обратный проход
+        std::fill(eh, eh+size_gramm, 0.0);
+        //float tSum = std::accumulate(learning_example->assoc_context.begin(), learning_example->assoc_context.end(), 0);
+        std::transform(learning_example->assoc_context.begin(), learning_example->assoc_context.end(), y, eo, [this](float a, float b) -> float {return (a - b) * alpha;});
+        // преобразуем вторую матрицу и попутно копим дельты для скрытого слоя
+        for (size_t g = 0; g < output_size; ++g)
+          for (size_t i = 0; i < size_gramm; ++i)
+          {
+            eh[i] += syn1_assoc[g*size_gramm+i] * eo[g];
+            syn1_assoc[g*size_gramm+i] += wordVectorPtr[i] * eo[g];
+          }
+        // преобразуем первую матрицу
+        std::transform(wordVectorPtr, wordVectorPtr+size_gramm, eh, wordVectorPtr, std::plus<float>());
+
+      } // for all learning examples
+      word_count_actual += (word_count - last_word_count);
+      if ( !lep->epoch_unprepare(thread_idx) )
+        return;
+    } // for all epochs
+    free(y);
+    free(eo);
+    free(eh);
+  } // method-end: train_entry_point__gramm
+  void saveGrammaticalEmbeddings(const VectorsModel& vm, const std::string& filename, bool useTxtFmt = false) const
+  {
+    const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
+    float *stub = (float *)calloc(size_gramm, sizeof(float));   // zero filled alloc
+    stub[0] = 1;
+    FILE *fo = fopen(filename.c_str(), "wb");
+    fprintf(fo, "%lu %lu\n", vm.vocab.size(), /*vm.emb_size +*/ size_gramm);
+    for (size_t a = 0; a < vm.vocab.size(); ++a)
+    {
+      size_t tok_idx = w_vocabulary->word_to_idx(vm.vocab[a]);
+      if ( tok_idx != INVALID_IDX )
+        VectorsModel::write_embedding(fo, useTxtFmt, vm.vocab[a], &syn0[tok_idx * size_gramm], size_gramm);
+      else
+        VectorsModel::write_embedding(fo, useTxtFmt, vm.vocab[a], stub, size_gramm);
+    }
+    fclose(fo);
+    free(stub);
+  }
+//  inline void softmax(float* uVec, size_t sz)
+//  {
+//    float max = std::numeric_limits<float>::min();
+//    float sum = 0.0;
+//    for (size_t i = 0; i < sz; ++i)
+//      if (max < uVec[i])
+//        max = uVec[i];
+//    for (size_t i = 0; i < sz; ++i)
+//    {
+//      uVec[i] = std::exp(uVec[i] - max);   // overflow guard             TODO: использовать предобсчитанную таблицу экспонент с лимитами?
+//      sum += uVec[i];
+//    }
+//    for (size_t i = 0; i < sz; ++i)
+//      uVec[i] /= sum;
+//  }
   // функция, реализующая сохранение эмбеддингов
   void saveEmbeddings(const std::string& filename, bool useTxtFmt = false) const
   {
@@ -336,6 +468,8 @@ private:
   size_t size_dep;
   // размерность части эмбеддинга, обучаемого на ассоциативных контекстах
   size_t size_assoc;
+  // размерность части эмбеддинга, обучаемого грамматическим признакам
+  size_t size_gramm;
   // количество эпох обучения
   size_t epoch_count;
   // learning rate

@@ -37,8 +37,10 @@ public:
     emb_size = 0;
     vocab.clear();
     if (embeddings)
+    {
       free(embeddings);
-
+      embeddings = nullptr;
+    }
   } // method-end
   // функция загрузки
   // выделяет память под хранение векторной модели
