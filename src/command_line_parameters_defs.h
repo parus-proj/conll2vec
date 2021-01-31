@@ -41,6 +41,7 @@ public:
         {"-threads",      {"Use <int> threads", "8", std::nullopt}},
         {"-fit_input",    {"<file>.conll to fit (or stdin)", std::nullopt, std::nullopt}},
         {"-a_ratio" ,     {"Associations contribution to similarity", "1.0", std::nullopt}},
+        {"-g_ratio" ,     {"Grammatics contribution to similarity", "0.1", std::nullopt}},
         {"-st_yo" ,       {"Replace 'yo' in russe while self-testing", "0", std::nullopt}},
         {"-sub_l" ,       {"Left range bound for sub-model", std::nullopt, std::nullopt}},
         {"-sub_r" ,       {"Right range bound for sub-model", std::nullopt, std::nullopt}},

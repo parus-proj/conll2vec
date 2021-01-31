@@ -288,20 +288,28 @@ public:
     free(eo);
     free(eh);
   } // method-end: train_entry_point__gramm
-  void saveGrammaticalEmbeddings(const VectorsModel& vm, const std::string& filename, bool useTxtFmt = false) const
+  void saveGrammaticalEmbeddings(const VectorsModel& vm, float g_ratio, const std::string& filename, bool useTxtFmt = false) const
   {
     const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
     float *stub = (float *)calloc(size_gramm, sizeof(float));   // zero filled alloc
-    stub[0] = 1;
+    stub[0] = g_ratio;
+    // масштабируем абсолютные значения грамматических векторов
+    size_t syn0size = w_vocabulary->size() * size_gramm;
+    for (size_t i = 0; i < syn0size; ++i)
+      syn0[i] *= g_ratio;
+    // дописываем грамм-вектора к семантическим
     FILE *fo = fopen(filename.c_str(), "wb");
-    fprintf(fo, "%lu %lu\n", vm.vocab.size(), /*vm.emb_size +*/ size_gramm);
+    fprintf(fo, "%lu %lu\n", vm.vocab.size(), vm.emb_size + size_gramm);
     for (size_t a = 0; a < vm.vocab.size(); ++a)
     {
+      VectorsModel::write_embedding__start(fo, useTxtFmt, vm.vocab[a]);
+      VectorsModel::write_embedding__vec(fo, useTxtFmt, &vm.embeddings[a*vm.emb_size], 0, vm.emb_size);
       size_t tok_idx = w_vocabulary->word_to_idx(vm.vocab[a]);
       if ( tok_idx != INVALID_IDX )
-        VectorsModel::write_embedding(fo, useTxtFmt, vm.vocab[a], &syn0[tok_idx * size_gramm], size_gramm);
+        VectorsModel::write_embedding__vec(fo, useTxtFmt, &syn0[tok_idx * size_gramm], 0, size_gramm);
       else
-        VectorsModel::write_embedding(fo, useTxtFmt, vm.vocab[a], stub, size_gramm);
+        VectorsModel::write_embedding__vec(fo, useTxtFmt, stub, 0, size_gramm);
+      VectorsModel::write_embedding__fin(fo);
     }
     fclose(fo);
     free(stub);

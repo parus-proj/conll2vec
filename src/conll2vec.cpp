@@ -425,7 +425,7 @@ int main(int argc, char **argv)
       threads_vec[i].join();
 
     // сохраняем вычисленные вектора в файл
-    trainer.saveGrammaticalEmbeddings( vm, cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt") );
+    trainer.saveGrammaticalEmbeddings( vm, cmdLineParams.getAsFloat("-g_ratio"), cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt") );
 
     return 0;
   } // if task == toks_gramm
