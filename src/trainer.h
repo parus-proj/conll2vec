@@ -291,7 +291,8 @@ public:
   void saveGrammaticalEmbeddings(const VectorsModel& vm, float g_ratio, const std::string& filename, bool useTxtFmt = false) const
   {
     const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
-    float *stub = (float *)calloc(size_gramm, sizeof(float));   // zero filled alloc
+    float *stub = (float *)calloc(size_gramm, sizeof(float));
+    std::fill(stub, stub+size_gramm, 1e-15);
     stub[0] = g_ratio;
     // масштабируем абсолютные значения грамматических векторов
     size_t syn0size = w_vocabulary->size() * size_gramm;
