@@ -25,6 +25,7 @@ std::shared_ptr<SimilarityEstimator> create_sim_estimator(const CommandLineParam
 {
   std::shared_ptr<SimilarityEstimator> sim_estimator = std::make_shared<SimilarityEstimator>( cmdLineParams.getAsInt("-size_d"),
                                                                                               cmdLineParams.getAsInt("-size_a"),
+                                                                                              cmdLineParams.getAsInt("-size_g"),
                                                                                               cmdLineParams.getAsFloat("-a_ratio") );
   if ( !sim_estimator->load_model(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt")) )
     return nullptr;
@@ -54,6 +55,7 @@ int main(int argc, char **argv)
               << "  -task unPNize     -- merge common & proper names models" << std::endl
               << "  -task toks        -- add tokens to model" << std::endl
               << "  -task toks_train  -- train tokens model" << std::endl
+              << "  -task toks_gramm  -- train grammatical embeddings and append them to model" << std::endl
               << "  -task balance     -- balance model dep/assoc ratio" << std::endl
               << "  -task sub         -- extract sub-model (for dimensions range)" << std::endl
               << "  -task fsim        -- calc similarity measure for word pairs in file" << std::endl;
@@ -175,6 +177,7 @@ int main(int argc, char **argv)
                      v_dep_ctx, v_assoc_ctx,
                      cmdLineParams.getAsInt("-size_d"),
                      cmdLineParams.getAsInt("-size_a"),
+                     0,
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
                      cmdLineParams.getAsInt("-negative"),
@@ -354,6 +357,7 @@ int main(int argc, char **argv)
                      v_dep_ctx, v_assoc_ctx,
                      cmdLineParams.getAsInt("-size_d"),
                      cmdLineParams.getAsInt("-size_a"),
+                     0,
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
                      cmdLineParams.getAsInt("-negative"),
@@ -380,11 +384,58 @@ int main(int argc, char **argv)
     return 0;
   } // if task == toks_train
 
+  // если поставлена задача добавления в модель грамматических эмбеддингов
+  if (task == "toks_gramm")
+  {
+    // загрузим модель
+    VectorsModel vm;
+    if ( !vm.load(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt")) )
+      return -1;
+    // загрузи словарь токенов
+    std::shared_ptr< OriginalWord2VecVocabulary > v_toks = std::make_shared<OriginalWord2VecVocabulary>();
+    if ( !v_toks->load( cmdLineParams.getAsString("-vocab_t") ) )
+      return -1;
+    // создание поставщика обучающих примеров
+    std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams.getAsString("-train"),
+                                                                                                  cmdLineParams.getAsInt("-threads"),
+                                                                                                  v_toks, false, nullptr, nullptr,
+                                                                                                  1,
+                                                                                                  0, false, cmdLineParams.getAsFloat("-sample_w"), 0, 0
+                                                                                                );
+    // создаем объект, организующий обучение
+    Trainer trainer( lep, v_toks, false, nullptr, nullptr,
+                     cmdLineParams.getAsInt("-size_d"),
+                     cmdLineParams.getAsInt("-size_a"),
+                     cmdLineParams.getAsInt("-size_g"),
+                     cmdLineParams.getAsInt("-iter"),
+                     cmdLineParams.getAsFloat("-alpha"),
+                     cmdLineParams.getAsInt("-negative"),
+                     cmdLineParams.getAsInt("-threads") );
+
+    // инициализация нейросети
+    trainer.create_and_init_gramm_net();
+
+    size_t threads_count = cmdLineParams.getAsInt("-threads");
+    // запускаем потоки, осуществляющие обучение
+    std::vector<std::thread> threads_vec;
+    threads_vec.reserve(threads_count);
+    for (size_t i = 0; i < threads_count; ++i)
+      threads_vec.emplace_back(&Trainer::train_entry_point__gramm, &trainer, i);
+    // ждем завершения обучения
+    for (size_t i = 0; i < threads_count; ++i)
+      threads_vec[i].join();
+
+    // сохраняем вычисленные вектора в файл
+    trainer.saveGrammaticalEmbeddings( vm, cmdLineParams.getAsFloat("-g_ratio"), cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt") );
+
+    return 0;
+  } // if task == toks_gramm
+
   // если поставлена задача балансировки модели (изменения весового соотношения dep и assoc частей)
   if (task == "balance")
   {
     Balancer::run(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt"),
-                  cmdLineParams.getAsInt("-size_d"), cmdLineParams.getAsFloat("-a_ratio"));
+                  cmdLineParams.getAsInt("-size_d"), cmdLineParams.getAsInt("-size_a"), cmdLineParams.getAsFloat("-a_ratio"));
     return 0;
   } // if task == balance
 

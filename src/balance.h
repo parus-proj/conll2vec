@@ -12,7 +12,7 @@
 class Balancer
 {
 public:
-  static void run( const std::string& model_fn, bool useTxtFmt, size_t dep_size, float a_ratio )
+  static void run( const std::string& model_fn, bool useTxtFmt, size_t dep_size, size_t assoc_size, float a_ratio )
   {
     // 1. Загружаем модель
     VectorsModel vm;
@@ -21,7 +21,7 @@ public:
 
     // 2. Корректируем веса ассоциативной части векторов
     for (size_t a = 0; a < vm.vocab.size(); ++a)
-      for (size_t b = dep_size; b < vm.emb_size; ++b)
+      for (size_t b = dep_size; b < dep_size+assoc_size; ++b)
         vm.embeddings[a * vm.emb_size + b] *= a_ratio;
 
     // 3. Сохраняем модель

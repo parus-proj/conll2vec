@@ -37,8 +37,10 @@ public:
     emb_size = 0;
     vocab.clear();
     if (embeddings)
+    {
       free(embeddings);
-
+      embeddings = nullptr;
+    }
   } // method-end
   // функция загрузки
   // выделяет память под хранение векторной модели
@@ -131,16 +133,28 @@ public:
   } // method-end
   static void write_embedding_slice( FILE* fo, bool useTxtFmt, const std::string& word, float* embedding, size_t begin, size_t end )
   {
+    write_embedding__start(fo, useTxtFmt, word);
+    write_embedding__vec(fo, useTxtFmt, embedding, begin, end);
+    write_embedding__fin(fo);
+  } // method-end
+  static void write_embedding__start( FILE* fo, bool useTxtFmt, const std::string& word )
+  {
     fprintf(fo, "%s", word.c_str());
     if ( !useTxtFmt )
       fprintf(fo, " ");
+  } // method-end
+  static void write_embedding__vec( FILE* fo, bool useTxtFmt, float* embedding, size_t begin, size_t end )
+  {
     for (size_t b = begin; b < end; ++b)
     {
-      if ( !useTxtFmt )
-        fwrite(&embedding[b], sizeof(float), 1, fo);
-      else
+      if ( useTxtFmt )
         fprintf(fo, " %lf", embedding[b]);
+      else
+        fwrite(&embedding[b], sizeof(float), 1, fo);
     }
+  } // method-end
+  static void write_embedding__fin( FILE* fo )
+  {
     fprintf(fo, "\n");
   } // method-end
 }; // class-decl-end
