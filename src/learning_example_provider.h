@@ -428,6 +428,7 @@ private:
     gcStAdv,
     gcNumeralCard,
     gcNumeralOrd,
+    gcNumeralCollect,
 
     gcLast
   };
@@ -630,6 +631,7 @@ private:
           {
           case 'c': le.assoc_context[gcNumeralCard] = 1; break;
           case 'o': le.assoc_context[gcNumeralOrd] = 1; break;
+          case 'l': le.assoc_context[gcNumeralCollect] = 1; break;
           }
         }
         if (i == 2) encodeGender(msd[i], le);

@@ -25,6 +25,7 @@ std::shared_ptr<SimilarityEstimator> create_sim_estimator(const CommandLineParam
 {
   std::shared_ptr<SimilarityEstimator> sim_estimator = std::make_shared<SimilarityEstimator>( cmdLineParams.getAsInt("-size_d"),
                                                                                               cmdLineParams.getAsInt("-size_a"),
+                                                                                              cmdLineParams.getAsInt("-size_g"),
                                                                                               cmdLineParams.getAsFloat("-a_ratio") );
   if ( !sim_estimator->load_model(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt")) )
     return nullptr;
@@ -434,7 +435,7 @@ int main(int argc, char **argv)
   if (task == "balance")
   {
     Balancer::run(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt"),
-                  cmdLineParams.getAsInt("-size_d"), cmdLineParams.getAsFloat("-a_ratio"));
+                  cmdLineParams.getAsInt("-size_d"), cmdLineParams.getAsInt("-size_a"), cmdLineParams.getAsFloat("-a_ratio"));
     return 0;
   } // if task == balance
 
