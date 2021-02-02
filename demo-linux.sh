@@ -1,5 +1,6 @@
 SIZE_DEP=75
 SIZE_ASSOC=25
+SIZE_GRAMM=0
 TRAIN_FN=parus_first_10m_lines.conll
 COL_CTX_D=3
 USE_DEPREL=1
@@ -40,5 +41,5 @@ echo "TRAINING EMBEDDINGS -- PROPER"
 
 echo ""
 echo "RUN SIMILARITY METER"
-./conll2vec -task sim -model $MODEL_FN -model_fmt bin -size_d $SIZE_DEP -size_a $SIZE_ASSOC
+./conll2vec -task sim -model $MODEL_FN -model_fmt bin -size_d $SIZE_DEP -size_a $SIZE_ASSOC -size_g $SIZE_GRAMM
 

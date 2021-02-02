@@ -3,6 +3,7 @@
 SETLOCAL
 SET SIZE_DEP=75
 SET SIZE_ASSOC=25
+SET SIZE_GRAMM=0
 SET TRAIN_FN=parus_first_10m_lines.conll
 SET COL_CTX_D=3
 SET USE_DEPREL=1
@@ -45,4 +46,4 @@ conll2vec -task train -train %TRAIN_FN% -vocab_p %VOC_P% -restore backup.data -v
 
 echo.
 echo RUN SIMILARITY METER
-conll2vec -task sim -model %MODEL_FN% -model_fmt bin -size_d %SIZE_DEP% -size_a %SIZE_ASSOC%
+conll2vec -task sim -model %MODEL_FN% -model_fmt bin -size_d %SIZE_DEP% -size_a %SIZE_ASSOC% -size_g %SIZE_GRAMM%
