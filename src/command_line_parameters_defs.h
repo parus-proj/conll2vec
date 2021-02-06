@@ -18,6 +18,7 @@ public:
         {"-vocab_p",      {"Lemmas proper names vocabulary <file>", std::nullopt, std::nullopt}},
         {"-vocab_t",      {"Tokens vocabulary <file>", std::nullopt, std::nullopt}},
         {"-tl_map",       {"Tokens-lemmas mapping <file>", "tl.map", std::nullopt}},
+        {"-vocab_o",      {"OOV items vocabulary <file>", std::nullopt, std::nullopt}},
 //        {"-vocab_e",      {"Expressions vocabulary <file>", std::nullopt, std::nullopt}},
         {"-vocab_d",      {"Dependency contexts vocabulary <file>", std::nullopt, std::nullopt}},
         {"-vocab_a",      {"Associative contexts vocabulary <file>", std::nullopt, std::nullopt}},
@@ -27,6 +28,7 @@ public:
         {"-min-count_p",  {"Min frequency in Lemmas proper-names vocabulary", "50", std::nullopt}},
         {"-min-count_t",  {"Min frequency in Tokens vocabulary", "50", std::nullopt}},
         {"-min-count_d",  {"Min frequency in Dependency vocabulary", "50", std::nullopt}},
+        {"-min-count_o",  {"Min frequency in OOV vocabulary", "10000", std::nullopt}},
         {"-col_ctx_d",    {"Dependency contexts vocabulary column (in conll)", "3", std::nullopt}},
         {"-use_deprel",   {"Include DEPREL field in dependency context", "1", std::nullopt}},
         {"-size_d",       {"Size of Dependency part of word vectors", "75", std::nullopt}},
@@ -40,13 +42,14 @@ public:
         {"-sample_a",     {"Associative contexts subsampling threshold", "1e-5", std::nullopt}},
         {"-threads",      {"Use <int> threads", "8", std::nullopt}},
         {"-fit_input",    {"<file>.conll to fit (or stdin)", std::nullopt, std::nullopt}},
-        {"-a_ratio" ,     {"Associations contribution to similarity", "1.0", std::nullopt}},
-        {"-g_ratio" ,     {"Grammatics contribution to similarity", "0.1", std::nullopt}},
-        {"-st_yo" ,       {"Replace 'yo' in russe while self-testing", "0", std::nullopt}},
-        {"-sub_l" ,       {"Left range bound for sub-model", std::nullopt, std::nullopt}},
-        {"-sub_r" ,       {"Right range bound for sub-model", std::nullopt, std::nullopt}},
-        {"-fsim_file" ,   {"File with word pairs for fsim task", std::nullopt, std::nullopt}},
-        {"-fsim_fmt" ,    {"File with word pairs format (detail|russe)", "detail", std::nullopt}}
+        {"-a_ratio",      {"Associations contribution to similarity", "1.0", std::nullopt}},
+        {"-g_ratio",      {"Grammatics contribution to similarity", "0.1", std::nullopt}},
+        {"-st_yo",        {"Replace 'yo' in russe while self-testing", "0", std::nullopt}},
+        {"-exclude_nums", {"Exclude digital numbers when building tokens vocabulary", "0", std::nullopt}},
+        {"-sub_l",        {"Left range bound for sub-model", std::nullopt, std::nullopt}},
+        {"-sub_r",        {"Right range bound for sub-model", std::nullopt, std::nullopt}},
+        {"-fsim_file",    {"File with word pairs for fsim task", std::nullopt, std::nullopt}},
+        {"-fsim_fmt",     {"File with word pairs format (detail|russe)", "detail", std::nullopt}}
     };
   }
 };

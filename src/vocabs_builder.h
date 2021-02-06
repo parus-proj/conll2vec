@@ -2,6 +2,7 @@
 #define VOCABS_BUILDER_H_
 
 #include "conll_reader.h"
+#include "str_conv.h"
 
 #include <memory>
 #include <string>
@@ -62,10 +63,11 @@ private:
   typedef std::shared_ptr<Token2LemmasMap> Token2LemmasMapPtr;
 public:
   // построение всех словарей
-  bool build_vocabs(const std::string& conll_fn, const std::string& voc_m_fn, const std::string& voc_p_fn, const std::string& voc_t_fn,
-                    const std::string& voc_tm_fn, const std::string& voc_d_fn,
-                    size_t limit_m, size_t limit_p, size_t limit_t, size_t limit_d,
-                    size_t ctx_vocabulary_column_d, bool use_deprel)
+  bool build_vocabs(const std::string& conll_fn,
+                    const std::string& voc_m_fn, const std::string& voc_p_fn, const std::string& voc_t_fn,
+                    const std::string& voc_tm_fn, const std::string& voc_oov_fn, const std::string& voc_d_fn,
+                    size_t limit_m, size_t limit_p, size_t limit_t, size_t limit_o, size_t limit_d,
+                    size_t ctx_vocabulary_column_d, bool use_deprel, bool excludeNumsFromToks)
   {
     // открываем файл с тренировочными данными
     FILE *conll_file = fopen(conll_fn.c_str(), "rb");
@@ -80,6 +82,7 @@ public:
     VocabMappingPtr vocab_lemma_proper = std::make_shared<VocabMapping>();
     VocabMappingPtr vocab_token = std::make_shared<VocabMapping>();
     Token2LemmasMapPtr token2lemmas_map = std::make_shared<Token2LemmasMap>();
+    VocabMappingPtr vocab_oov = (voc_oov_fn.empty()) ? nullptr : std::make_shared<VocabMapping>();
     VocabMappingPtr vocab_dep = std::make_shared<VocabMapping>();
 
     // в цикле читаем предложения из CoNLL-файла и извлекаем из них информацию для словарей
@@ -100,7 +103,9 @@ public:
       apply_patches(sentence_matrix); // todo: УБРАТЬ!  временный дополнительный корректор для борьбы с "грязными данными" в результатах лемматизации
       process_sentence_lemmas_main(vocab_lemma_main, sentence_matrix);
       process_sentence_lemmas_proper(vocab_lemma_proper, sentence_matrix);
-      process_sentence_tokens(vocab_token, token2lemmas_map, sentence_matrix);
+      process_sentence_tokens(vocab_token, token2lemmas_map, excludeNumsFromToks, sentence_matrix);
+      if (vocab_oov)
+        process_sentence_oov(vocab_oov, sentence_matrix);
       process_sentence_dep_ctx(vocab_dep, sentence_matrix, ctx_vocabulary_column_d, use_deprel);
     }
     fclose(conll_file);
@@ -114,6 +119,11 @@ public:
     save_vocab(vocab_lemma_proper, limit_p, voc_p_fn);
     std::cout << "Save tokens vocabulary..." << std::endl;
     save_vocab(vocab_token, limit_t, voc_t_fn, token2lemmas_map, voc_tm_fn);
+    if (vocab_oov)
+    {
+      std::cout << "Save OOV vocabulary..." << std::endl;
+      save_vocab(vocab_oov, limit_o, voc_oov_fn);
+    }
     std::cout << "Save dependency contexts vocabulary..." << std::endl;
     save_vocab(vocab_dep, limit_d, voc_d_fn);
     return true;
@@ -189,13 +199,15 @@ private:
         ++it->second;
     }
   } // method-end
-  void process_sentence_tokens(VocabMappingPtr vocab, Token2LemmasMapPtr token2lemmas_map, const SentenceMatrix& sentence)
+  void process_sentence_tokens(VocabMappingPtr vocab, Token2LemmasMapPtr token2lemmas_map, bool excludeNumsFromToks, const SentenceMatrix& sentence)
   {
     for ( auto& token : sentence )
     {
       if (token[7] == "PUNC")  // знаки препинания в словарь не включаем (они обрабатываются особо)
         continue;
       if ( token[1] == "_" || token[2] == "_" )   // символ отсутствия значения в conll
+        continue;
+      if ( excludeNumsFromToks && (token[2] == "@num@" || token[2] == "@num@:@num@") )
         continue;
       auto word = token[1];
 
@@ -211,6 +223,45 @@ private:
       else
         ++itt->second;
     }
+  } // method-end
+  void process_sentence_oov(VocabMappingPtr vocab, const SentenceMatrix& sentence)
+  {
+    for ( auto& token : sentence )
+    {
+      if (token[7] == "PUNC")  // знаки препинания в словарь не включаем (они обрабатываются особо)
+        continue;
+      if ( token[1] == "_" || token[2] == "_" )   // символ отсутствия значения в conll
+        continue;
+      if ( token[2] == "@num@" || token[2] == "@num@:@num@" )
+        continue;
+      auto word = StrConv::To_UTF32(token[1]);
+      auto wl = word.length();
+
+      const std::string OOV = "_OOV_";
+      const std::u32string Digs = U"0123456789";
+      const std::u32string RuLets = U"АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЬЫЪЭЮЯабвгдеёжзийклмнопрстуфхцчшщьыъэюя";
+
+      // вариант "первая буква, последняя цифра"
+      if ( RuLets.find(word.front()) != std::u32string::npos && Digs.find(word.back()) != std::u32string::npos )
+      {
+        (*vocab)[OOV+"LD_"] += 1;
+        continue;
+      }
+      // вариант "кириллический суффикс"
+      if (wl < 6)
+        continue;
+      std::string sfx;
+      for (size_t i = 0; i < 5; ++i)
+      {
+        if (wl <= i)
+          break;
+        bool isCyr = (RuLets.find(word[wl-i-1]) != std::u32string::npos);
+        if (!isCyr)
+          break;
+        sfx = StrConv::To_UTF8(std::u32string(1, word[wl-i-1])) + sfx;
+        (*vocab)[OOV+sfx] += 1;
+      }
+    } // for all tokens in sentence
   } // method-end
   void process_sentence_dep_ctx(VocabMappingPtr vocab, const SentenceMatrix& sentence, size_t column, bool use_deprel)
   {
