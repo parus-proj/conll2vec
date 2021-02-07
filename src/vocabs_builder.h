@@ -67,7 +67,7 @@ public:
                     const std::string& voc_m_fn, const std::string& voc_p_fn, const std::string& voc_t_fn,
                     const std::string& voc_tm_fn, const std::string& voc_oov_fn, const std::string& voc_d_fn,
                     size_t limit_m, size_t limit_p, size_t limit_t, size_t limit_o, size_t limit_d,
-                    size_t ctx_vocabulary_column_d, bool use_deprel, bool excludeNumsFromToks)
+                    size_t ctx_vocabulary_column_d, bool use_deprel, bool excludeNumsFromToks, size_t max_oov_sfx)
   {
     // открываем файл с тренировочными данными
     FILE *conll_file = fopen(conll_fn.c_str(), "rb");
@@ -105,7 +105,7 @@ public:
       process_sentence_lemmas_proper(vocab_lemma_proper, sentence_matrix);
       process_sentence_tokens(vocab_token, token2lemmas_map, excludeNumsFromToks, sentence_matrix);
       if (vocab_oov)
-        process_sentence_oov(vocab_oov, sentence_matrix);
+        process_sentence_oov(vocab_oov, sentence_matrix, max_oov_sfx);
       process_sentence_dep_ctx(vocab_dep, sentence_matrix, ctx_vocabulary_column_d, use_deprel);
     }
     fclose(conll_file);
@@ -122,6 +122,7 @@ public:
     if (vocab_oov)
     {
       std::cout << "Save OOV vocabulary..." << std::endl;
+      oov_idf_filter(vocab_oov, vocab_token, max_oov_sfx);
       save_vocab(vocab_oov, limit_o, voc_oov_fn);
     }
     std::cout << "Save dependency contexts vocabulary..." << std::endl;
@@ -129,6 +130,10 @@ public:
     return true;
   } // method-end
 private:
+  // маркер oov-слова
+  const std::string OOV = "_OOV_";
+  // минимальная длина слова, от которого берутся oov-суффиксы
+  const size_t SFX_SOURCE_WORD_MIN_LEN = 6;
   // проверка, является ли токен собственным именем
   bool isProperName(const std::string& feats)
   {
@@ -156,13 +161,49 @@ private:
       else
         it = vocab->erase(it);
     }
-  }
+  } // method-end
+  // удаление OOV-суффиксов, встречающихся при небольшом числе слов
+  void oov_idf_filter(VocabMappingPtr oov_vocab, VocabMappingPtr tokens_vocab, size_t max_oov_sfx)
+  {
+    // фильтрующий предел (суффикс должен встречаться в таком или более числе слов)
+    const size_t REP_LIM = 50;
+    // строим из токенов отображение: суффикс -> в скольких разных словах он встречается
+    std::map<std::string, size_t> sfx2wc;
+    std::set<std::string> good_sfxs;
+    for ( auto& vmi : (*tokens_vocab) )
+    {
+      auto word = StrConv::To_UTF32(vmi.first);
+      auto wl = word.length();
+      if (wl < SFX_SOURCE_WORD_MIN_LEN)
+        continue;
+      std::string sfx;
+      for (size_t i = 0; i < max_oov_sfx; ++i)
+      {
+        if (wl <= i)
+          break;
+        sfx = StrConv::To_UTF8(std::u32string(1, word[wl-i-1])) + sfx;
+        sfx2wc[sfx] += 1;
+        if (sfx2wc[sfx] == REP_LIM)
+          good_sfxs.insert(OOV+sfx);
+      }
+    }
+    // фильтруем построенный oov_vocab
+    std::cout << "  representativeness reduce (oov)" << std::endl;
+    auto it = oov_vocab->begin();
+    while (it != oov_vocab->end())    //TODO: в C++20 заменить на std::erase_if (https://en.cppreference.com/w/cpp/container/map/erase_if)
+    {
+      if (good_sfxs.find(it->first) != good_sfxs.end())
+        ++it;
+      else
+        it = oov_vocab->erase(it);
+    }
+  } // method-end
   void apply_patches(SentenceMatrix& sentence)
   {
     for ( auto& token : sentence )
       if ( is_punct__patch(token[2]) )
         token[7] = "PUNC";
-  }
+  } // method-end
   void process_sentence_lemmas_main(VocabMappingPtr vocab, const SentenceMatrix& sentence)
   {
     for ( auto& token : sentence )
@@ -224,7 +265,7 @@ private:
         ++itt->second;
     }
   } // method-end
-  void process_sentence_oov(VocabMappingPtr vocab, const SentenceMatrix& sentence)
+  void process_sentence_oov(VocabMappingPtr vocab, const SentenceMatrix& sentence, size_t max_oov_sfx)
   {
     for ( auto& token : sentence )
     {
@@ -237,7 +278,6 @@ private:
       auto word = StrConv::To_UTF32(token[1]);
       auto wl = word.length();
 
-      const std::string OOV = "_OOV_";
       const std::u32string Digs = U"0123456789";
       const std::u32string RuLets = U"АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЬЫЪЭЮЯабвгдеёжзийклмнопрстуфхцчшщьыъэюя";
 
@@ -248,10 +288,10 @@ private:
         continue;
       }
       // вариант "кириллический суффикс"
-      if (wl < 6)
+      if (wl < SFX_SOURCE_WORD_MIN_LEN)
         continue;
       std::string sfx;
-      for (size_t i = 0; i < 5; ++i)
+      for (size_t i = 0; i < max_oov_sfx; ++i)
       {
         if (wl <= i)
           break;

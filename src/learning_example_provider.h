@@ -57,7 +57,7 @@ public:
                           std::shared_ptr<OriginalWord2VecVocabulary> wordsVocabulary,
                           bool trainProperNames,
                           std::shared_ptr<OriginalWord2VecVocabulary> depCtxVocabulary, std::shared_ptr<OriginalWord2VecVocabulary> assocCtxVocabulary,
-                          size_t embColumn, size_t depColumn, bool useDeprel, bool oov,
+                          size_t embColumn, size_t depColumn, bool useDeprel, bool oov, size_t oovMaxLen,
                           float wordsSubsample, float depSubsample, float assocSubsample)
   : threads_count(threadsCount)
   , train_filename(trainFilename)
@@ -69,6 +69,7 @@ public:
   , dep_column(depColumn)
   , use_deprel(useDeprel)
   , train_oov(oov)
+  , max_oov_sfx(oovMaxLen)
   , sample_w(wordsSubsample)
   , sample_d(depSubsample)
   , sample_a(assocSubsample)
@@ -319,7 +320,7 @@ public:
     auto t32 = StrConv::To_UTF32(token);
     auto wl = t32.length();
     std::string sfx;
-    for (size_t i = 0; i < 5; ++i)
+    for (size_t i = 0; i < max_oov_sfx; ++i)
     {
       if (wl <= i)
         break;
@@ -328,6 +329,7 @@ public:
       auto word_idx = words_vocabulary->word_to_idx(oov_str);
       if ( word_idx != INVALID_IDX )
       {
+        ++t_environment.words_count;
         if (sample_w > 0)
         {
           float ran = words_vocabulary->idx_to_data(word_idx).sample_probability;
@@ -375,6 +377,8 @@ private:
   bool use_deprel;
   // нужно ли обучать oov-суффиксы
   bool train_oov;
+  // максимальная длина oov-суффикса
+  size_t max_oov_sfx;
   // порог для алгоритма сэмплирования (subsampling) -- для словаря векторной модели
   float sample_w = 0;
   // порог для алгоритма сэмплирования (subsampling) -- для синтаксических контекстов

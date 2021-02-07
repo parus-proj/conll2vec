@@ -80,7 +80,8 @@ int main(int argc, char **argv)
                                  cmdLineParams.getAsString("-tl_map"), cmdLineParams.getAsString("-vocab_o"), cmdLineParams.getAsString("-vocab_d"),
                                  cmdLineParams.getAsInt("-min-count_m"), cmdLineParams.getAsInt("-min-count_p"), cmdLineParams.getAsInt("-min-count_t"),
                                  cmdLineParams.getAsInt("-min-count_o"), cmdLineParams.getAsInt("-min-count_d"),
-                                 cmdLineParams.getAsInt("-col_ctx_d") - 1, (cmdLineParams.getAsInt("-use_deprel") == 1), (cmdLineParams.getAsInt("-exclude_nums") == 1)
+                                 cmdLineParams.getAsInt("-col_ctx_d") - 1, (cmdLineParams.getAsInt("-use_deprel") == 1), (cmdLineParams.getAsInt("-exclude_nums") == 1),
+                                 cmdLineParams.getAsInt("-max_oov_sfx")
                                );
     return ( succ ? 0 : -1 );
   }
@@ -167,7 +168,7 @@ int main(int argc, char **argv)
                                                                                                   2,
                                                                                                   cmdLineParams.getAsInt("-col_ctx_d") - 1,
                                                                                                   (cmdLineParams.getAsInt("-use_deprel") == 1),
-                                                                                                  false,
+                                                                                                  false, 0,
                                                                                                   cmdLineParams.getAsFloat("-sample_w"),
                                                                                                   cmdLineParams.getAsFloat("-sample_d"),
                                                                                                   cmdLineParams.getAsFloat("-sample_a")
@@ -348,7 +349,7 @@ int main(int argc, char **argv)
                                                                                                   1,
                                                                                                   cmdLineParams.getAsInt("-col_ctx_d") - 1,
                                                                                                   (cmdLineParams.getAsInt("-use_deprel") == 1),
-                                                                                                  false,
+                                                                                                  false, 0,
                                                                                                   cmdLineParams.getAsFloat("-sample_w"),
                                                                                                   cmdLineParams.getAsFloat("-sample_d"),
                                                                                                   cmdLineParams.getAsFloat("-sample_a")
@@ -409,7 +410,7 @@ int main(int argc, char **argv)
                                                                                                   cmdLineParams.getAsInt("-threads"),
                                                                                                   v_toks, false, nullptr, nullptr,
                                                                                                   1,
-                                                                                                  0, false, !oovv.empty(),
+                                                                                                  0, false, !oovv.empty(), cmdLineParams.getAsInt("-max_oov_sfx"),
                                                                                                   cmdLineParams.getAsFloat("-sample_w"), 0, 0
                                                                                                 );
     // создаем объект, организующий обучение

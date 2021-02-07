@@ -46,6 +46,7 @@ public:
         {"-g_ratio",      {"Grammatics contribution to similarity", "0.1", std::nullopt}},
         {"-st_yo",        {"Replace 'yo' in russe while self-testing", "0", std::nullopt}},
         {"-exclude_nums", {"Exclude digital numbers when building tokens vocabulary", "0", std::nullopt}},
+        {"-max_oov_sfx",  {"Maximal suffix length in OOV vocabulary", "5", std::nullopt}},
         {"-sub_l",        {"Left range bound for sub-model", std::nullopt, std::nullopt}},
         {"-sub_r",        {"Right range bound for sub-model", std::nullopt, std::nullopt}},
         {"-fsim_file",    {"File with word pairs for fsim task", std::nullopt, std::nullopt}},
