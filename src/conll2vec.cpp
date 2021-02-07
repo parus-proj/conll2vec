@@ -77,10 +77,11 @@ int main(int argc, char **argv)
     VocabsBuilder vb;
     bool succ = vb.build_vocabs( cmdLineParams.getAsString("-train"),
                                  cmdLineParams.getAsString("-vocab_m"), cmdLineParams.getAsString("-vocab_p"), cmdLineParams.getAsString("-vocab_t"),
-                                 cmdLineParams.getAsString("-tl_map"), cmdLineParams.getAsString("-vocab_d"),
+                                 cmdLineParams.getAsString("-tl_map"), cmdLineParams.getAsString("-vocab_o"), cmdLineParams.getAsString("-vocab_d"),
                                  cmdLineParams.getAsInt("-min-count_m"), cmdLineParams.getAsInt("-min-count_p"), cmdLineParams.getAsInt("-min-count_t"),
-                                 cmdLineParams.getAsInt("-min-count_d"),
-                                 cmdLineParams.getAsInt("-col_ctx_d") - 1, (cmdLineParams.getAsInt("-use_deprel") == 1)
+                                 cmdLineParams.getAsInt("-min-count_o"), cmdLineParams.getAsInt("-min-count_d"),
+                                 cmdLineParams.getAsInt("-col_ctx_d") - 1, (cmdLineParams.getAsInt("-use_deprel") == 1), (cmdLineParams.getAsInt("-exclude_nums") == 1),
+                                 cmdLineParams.getAsInt("-max_oov_sfx")
                                );
     return ( succ ? 0 : -1 );
   }
@@ -167,6 +168,7 @@ int main(int argc, char **argv)
                                                                                                   2,
                                                                                                   cmdLineParams.getAsInt("-col_ctx_d") - 1,
                                                                                                   (cmdLineParams.getAsInt("-use_deprel") == 1),
+                                                                                                  false, 0,
                                                                                                   cmdLineParams.getAsFloat("-sample_w"),
                                                                                                   cmdLineParams.getAsFloat("-sample_d"),
                                                                                                   cmdLineParams.getAsFloat("-sample_a")
@@ -347,6 +349,7 @@ int main(int argc, char **argv)
                                                                                                   1,
                                                                                                   cmdLineParams.getAsInt("-col_ctx_d") - 1,
                                                                                                   (cmdLineParams.getAsInt("-use_deprel") == 1),
+                                                                                                  false, 0,
                                                                                                   cmdLineParams.getAsFloat("-sample_w"),
                                                                                                   cmdLineParams.getAsFloat("-sample_d"),
                                                                                                   cmdLineParams.getAsFloat("-sample_a")
@@ -391,16 +394,24 @@ int main(int argc, char **argv)
     VectorsModel vm;
     if ( !vm.load(cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt")) )
       return -1;
-    // загрузи словарь токенов
+    // загрузим словарь токенов
     std::shared_ptr< OriginalWord2VecVocabulary > v_toks = std::make_shared<OriginalWord2VecVocabulary>();
     if ( !v_toks->load( cmdLineParams.getAsString("-vocab_t") ) )
       return -1;
+    // если работаем со словарем суффиксов, до догружаем его в словарь токенов
+    std::string oovv = cmdLineParams.getAsString("-vocab_o");
+    if (!oovv.empty())
+    {
+      if ( !v_toks->load(oovv) )
+        return -1;
+    }
     // создание поставщика обучающих примеров
     std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams.getAsString("-train"),
                                                                                                   cmdLineParams.getAsInt("-threads"),
                                                                                                   v_toks, false, nullptr, nullptr,
                                                                                                   1,
-                                                                                                  0, false, cmdLineParams.getAsFloat("-sample_w"), 0, 0
+                                                                                                  0, false, !oovv.empty(), cmdLineParams.getAsInt("-max_oov_sfx"),
+                                                                                                  cmdLineParams.getAsFloat("-sample_w"), 0, 0
                                                                                                 );
     // создаем объект, организующий обучение
     Trainer trainer( lep, v_toks, false, nullptr, nullptr,
@@ -426,7 +437,7 @@ int main(int argc, char **argv)
       threads_vec[i].join();
 
     // сохраняем вычисленные вектора в файл
-    trainer.saveGrammaticalEmbeddings( vm, cmdLineParams.getAsFloat("-g_ratio"), cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt") );
+    trainer.saveGrammaticalEmbeddings( vm, cmdLineParams.getAsFloat("-g_ratio"), oovv, cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt") );
 
     return 0;
   } // if task == toks_gramm

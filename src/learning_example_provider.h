@@ -3,6 +3,7 @@
 
 #include "conll_reader.h"
 #include "original_word2vec_vocabulary.h"
+#include "str_conv.h"
 
 #include <memory>
 #include <vector>
@@ -56,7 +57,7 @@ public:
                           std::shared_ptr<OriginalWord2VecVocabulary> wordsVocabulary,
                           bool trainProperNames,
                           std::shared_ptr<OriginalWord2VecVocabulary> depCtxVocabulary, std::shared_ptr<OriginalWord2VecVocabulary> assocCtxVocabulary,
-                          size_t embColumn, size_t depColumn, bool useDeprel,
+                          size_t embColumn, size_t depColumn, bool useDeprel, bool oov, size_t oovMaxLen,
                           float wordsSubsample, float depSubsample, float assocSubsample)
   : threads_count(threadsCount)
   , train_filename(trainFilename)
@@ -67,6 +68,8 @@ public:
   , emb_column(embColumn)
   , dep_column(depColumn)
   , use_deprel(useDeprel)
+  , train_oov(oov)
+  , max_oov_sfx(oovMaxLen)
   , sample_w(wordsSubsample)
   , sample_d(depSubsample)
   , sample_a(assocSubsample)
@@ -289,7 +292,8 @@ public:
     const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
     for (size_t i = 0; i < sm_size; ++i)
     {
-      auto word_idx = words_vocabulary->word_to_idx(sentence_matrix[i][emb_column]); // TODO: возможно по словарю модели, но там не для всех слов известны частоты
+      auto token_str = sentence_matrix[i][emb_column];            // TODO: возможно по словарю модели, но там не для всех слов известны частоты
+      auto word_idx = words_vocabulary->word_to_idx(token_str);
       if ( word_idx != INVALID_IDX )
       {
         ++t_environment.words_count;
@@ -303,6 +307,39 @@ public:
         LearningExample le;
         le.word = word_idx;
         msd2vec(le, sentence_matrix[i][5]);  // конструирование грамматического вектора из набора граммем
+        t_environment.sentence.push_back(le);
+      }
+      if (train_oov)
+        try_to_get_oov_suffixes(t_environment, token_str, sentence_matrix[i][5]);
+    }
+  } // method-end
+  void try_to_get_oov_suffixes(ThreadEnvironment& t_environment, const std::string& token, const std::string& msd)
+  {
+    const std::string OOV = "_OOV_";
+    const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
+    auto t32 = StrConv::To_UTF32(token);
+    auto wl = t32.length();
+    std::string sfx;
+    for (size_t i = 0; i < max_oov_sfx; ++i)
+    {
+      if (wl <= i)
+        break;
+      sfx = StrConv::To_UTF8(std::u32string(1, t32[wl-i-1])) + sfx;
+      auto oov_str = OOV+sfx;
+      auto word_idx = words_vocabulary->word_to_idx(oov_str);
+      if ( word_idx != INVALID_IDX )
+      {
+        ++t_environment.words_count;
+        if (sample_w > 0)
+        {
+          float ran = words_vocabulary->idx_to_data(word_idx).sample_probability;
+          t_environment.update_random();
+          if (ran < (t_environment.next_random & 0xFFFF) / (float)65536)
+            continue; // попробуем другие суффиксы, этот пропустим
+        }
+        LearningExample le;
+        le.word = word_idx;
+        msd2vec(le, msd);  // конструирование грамматического вектора из набора граммем
         t_environment.sentence.push_back(le);
       }
     }
@@ -338,6 +375,10 @@ private:
   size_t dep_column;
   // следует ли задействовать тип и направление синтаксической связи в определении синтаксического контекста
   bool use_deprel;
+  // нужно ли обучать oov-суффиксы
+  bool train_oov;
+  // максимальная длина oov-суффикса
+  size_t max_oov_sfx;
   // порог для алгоритма сэмплирования (subsampling) -- для словаря векторной модели
   float sample_w = 0;
   // порог для алгоритма сэмплирования (subsampling) -- для синтаксических контекстов

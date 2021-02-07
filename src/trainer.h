@@ -288,9 +288,10 @@ public:
     free(eo);
     free(eh);
   } // method-end: train_entry_point__gramm
-  void saveGrammaticalEmbeddings(const VectorsModel& vm, float g_ratio, const std::string& filename, bool useTxtFmt = false) const
+  void saveGrammaticalEmbeddings(const VectorsModel& vm, float g_ratio, const std::string& oov_voc_fn, const std::string& filename, bool useTxtFmt = false) const
   {
     const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
+    // создаем грамматическое представление -- заглушку (будем приписывать её словам, для которых такие представления не тренировались)
     float *stub = (float *)calloc(size_gramm, sizeof(float));
     std::fill(stub, stub+size_gramm, 1e-15);
     stub[0] = g_ratio;
@@ -298,9 +299,13 @@ public:
     size_t syn0size = w_vocabulary->size() * size_gramm;
     for (size_t i = 0; i < syn0size; ++i)
       syn0[i] *= g_ratio;
+    // загружаем словарь oov-суффиксов (если это требуется)
+    std::shared_ptr< OriginalWord2VecVocabulary > v_oov = oov_voc_fn.empty() ? nullptr : std::make_shared<OriginalWord2VecVocabulary>();
+    if ( v_oov && !v_oov->load( oov_voc_fn ) ) // fatal
+      return;
     // дописываем грамм-вектора к семантическим
     FILE *fo = fopen(filename.c_str(), "wb");
-    fprintf(fo, "%lu %lu\n", vm.vocab.size(), vm.emb_size + size_gramm);
+    fprintf(fo, "%lu %lu\n", vm.vocab.size() + (v_oov ? v_oov->size() : 0), vm.emb_size + size_gramm);
     for (size_t a = 0; a < vm.vocab.size(); ++a)
     {
       VectorsModel::write_embedding__start(fo, useTxtFmt, vm.vocab[a]);
@@ -312,9 +317,38 @@ public:
         VectorsModel::write_embedding__vec(fo, useTxtFmt, stub, 0, size_gramm);
       VectorsModel::write_embedding__fin(fo);
     }
+    if (v_oov)
+    {
+      // создаем опорный вектор для OOV (семантическая часть)
+      float *support_oov_embedding = (float *) malloc(vm.emb_size*sizeof(float));
+      calc_support_embedding(vm.words_count, vm.emb_size, vm.embeddings, support_oov_embedding);
+      auto toks_cnt = w_vocabulary->size() - v_oov->size();
+      for (size_t a = 0; a < v_oov->size(); ++a)
+      {
+        VectorsModel::write_embedding__start(fo, useTxtFmt, v_oov->idx_to_data(a).word);
+        VectorsModel::write_embedding__vec(fo, useTxtFmt, support_oov_embedding, 0, vm.emb_size);
+        VectorsModel::write_embedding__vec(fo, useTxtFmt, &syn0[(toks_cnt+a) * size_gramm], 0, size_gramm);
+        VectorsModel::write_embedding__fin(fo);
+      }
+      free(support_oov_embedding);
+    }
     fclose(fo);
     free(stub);
   }
+  void calc_support_embedding( size_t words_count, size_t emb_size, float* embeddings, float* support_embedding ) const
+  {
+    for (size_t d = 0; d < emb_size; ++d)
+    {
+      float lbound = 1e10;
+      for (size_t w = 0; w < words_count; ++w)
+      {
+        float *offs = embeddings + w*emb_size + d;
+        if ( *offs < lbound )
+          lbound = *offs;
+      }
+      *(support_embedding + d) = lbound - 0.01; // добавляем немного, чтобы не растянуть пространство
+    }
+  } // method-end
 //  inline void softmax(float* uVec, size_t sz)
 //  {
 //    float max = std::numeric_limits<float>::min();
