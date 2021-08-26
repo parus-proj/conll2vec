@@ -11,6 +11,7 @@
 #include "add_punct.h"
 #include "add_toks.h"
 #include "balance.h"
+#include "sseval.h"
 #include "vectors_model.h"
 
 #include <memory>
@@ -58,7 +59,9 @@ int main(int argc, char **argv)
               << "  -task toks_gramm  -- train grammatical embeddings and append them to model" << std::endl
               << "  -task balance     -- balance model dep/assoc ratio" << std::endl
               << "  -task sub         -- extract sub-model (for dimensions range)" << std::endl
-              << "  -task fsim        -- calc similarity measure for word pairs in file" << std::endl;
+              << "  -task fsim        -- calc similarity measure for word pairs in file" << std::endl
+              << "  -task normalize   -- normalize vectors length" << std::endl
+              << "  -task sseval      -- subsampling value estimation" << std::endl;
     return -1;
   }
   auto&& task = cmdLineParams.getAsString("-task");
@@ -482,6 +485,25 @@ int main(int argc, char **argv)
     sim_estimator->run_for_file(cmdLineParams.getAsString("-fsim_file"), cmdLineParams.getAsString("-fsim_fmt"));
     return 0;
   } // if task == fsim
+
+  // если поставлена задача нормализации векторов
+  if (task == "normalize")
+  {
+    std::string model_fn = cmdLineParams.getAsString("-model");
+    bool useTxtFmt = (cmdLineParams.getAsString("-model_fmt") == "txt");
+    VectorsModel vm;
+    if ( !vm.load(model_fn, useTxtFmt, true) )
+      return -1;
+    vm.save(model_fn, useTxtFmt);
+    return 0;
+  } // if task == normalize
+
+  // если поставлена задача оценки вариантов subsampling'а для данного словаря
+  if (task == "sseval")
+  {
+    SsEval::run(cmdLineParams.getAsString("-eval_vocab"));
+    return 0;
+  } // if task == sseval
 
   return -1;
 }
