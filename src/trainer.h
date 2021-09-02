@@ -627,6 +627,7 @@ private:
           {
             update_random_ns(next_random_ns);
             selected_ctx = (next_random_ns >> 16) % w_vocabulary_size; // uniform distribution
+            // отталкиваем даже стоп-слова!
             label = 0;
           }
           // вычисляем смещение вектора, соответствующего очередному положительному/отрицательному примеру
