@@ -658,6 +658,22 @@ private:
         std::transform(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, targetVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all assoc contexts
     }
+
+    // цикл по деривативным контекстам
+    if ( le.derivatives.size() == 2 )
+    {
+      float *vector1Ptr = syn0 + le.derivatives[0] * layer1_size + size_dep;
+      float *vector2Ptr = syn0 + le.derivatives[1] * layer1_size + size_dep;
+      float f = std::inner_product(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, 0.0);
+      if ( !std::isnan(f) )
+      {
+        f = sigmoid(f);
+        g = (1.0 - f) * alpha;
+        std::transform(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return a + g*b*0.5;});
+        std::transform(vector2Ptr, vector2Ptr+size_assoc, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return a + g*b*0.5;});
+      }
+    } // for all assoc contexts
+
   } // method-end
 
   // вычисление значения сигмоиды

@@ -13,6 +13,8 @@
 #include "balance.h"
 #include "sseval.h"
 #include "vectors_model.h"
+#include "derive_maker.h"
+#include "derive_vocab.h"
 
 #include <memory>
 #include <string>
@@ -61,7 +63,8 @@ int main(int argc, char **argv)
               << "  -task sub         -- extract sub-model (for dimensions range)" << std::endl
               << "  -task fsim        -- calc similarity measure for word pairs in file" << std::endl
               << "  -task normalize   -- normalize vectors length" << std::endl
-              << "  -task sseval      -- subsampling value estimation" << std::endl;
+              << "  -task sseval      -- subsampling value estimation" << std::endl
+              << "  -task deriv_make  -- automake derivatives vocab" << std::endl;
     return -1;
   }
   auto&& task = cmdLineParams.getAsString("-task");
@@ -160,6 +163,13 @@ int main(int argc, char **argv)
       if ( !v_assoc_ctx->load( cmdLineParams.getAsString("-vocab_a") ) )
         return -1;
     }
+    std::shared_ptr< DerivativeVocabulary > deriv_vocab;
+    if ( cmdLineParams.isDefined("-deriv_vocab"))
+    {
+      deriv_vocab = std::make_shared<DerivativeVocabulary>();
+      if ( !deriv_vocab->load( cmdLineParams.getAsString("-deriv_vocab"), v_main ) )
+        return -1;
+    }
 
     // создание поставщика обучающих примеров
     // к моменту создания "поставщика обучающих примеров" словарь должен быть загружен (в частности, используется cn_sum())
@@ -174,7 +184,8 @@ int main(int argc, char **argv)
                                                                                                   false, 0,
                                                                                                   cmdLineParams.getAsFloat("-sample_w"),
                                                                                                   cmdLineParams.getAsFloat("-sample_d"),
-                                                                                                  cmdLineParams.getAsFloat("-sample_a")
+                                                                                                  cmdLineParams.getAsFloat("-sample_a"),
+                                                                                                  deriv_vocab, cmdLineParams.getAsInt("-deriv_rate")
                                                                                                 );
 
     // создаем объект, организующий обучение
@@ -501,9 +512,26 @@ int main(int argc, char **argv)
   // если поставлена задача оценки вариантов subsampling'а для данного словаря
   if (task == "sseval")
   {
-    SsEval::run(cmdLineParams.getAsString("-eval_vocab"));
+    if ( !cmdLineParams.isDefined("-eval_vocab") )
+    {
+      std::cerr << "-eval_vocab parameter must be defined." << std::endl;
+      return -1;
+    }
+    SsEval::run( cmdLineParams.getAsString("-eval_vocab") );
     return 0;
   } // if task == sseval
+
+  // если поставлена задача построения словаря деривативов по паттернам
+  if (task == "deriv_make")
+  {
+    if ( !cmdLineParams.isDefined("-vocab_m") || !cmdLineParams.isDefined("-deriv_vocab") )
+    {
+      std::cerr << "-vocab_m & -deriv_vocab parameters must be defined." << std::endl;
+      return -1;
+    }
+    DerivativeNestsMaker::run( cmdLineParams.getAsString("-vocab_m"), "derivative.patterns", cmdLineParams.getAsString("-deriv_vocab") );
+    return 0;
+  } // if task == deriv_make
 
   return -1;
 }
