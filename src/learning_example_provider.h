@@ -3,22 +3,16 @@
 
 #include "conll_reader.h"
 #include "original_word2vec_vocabulary.h"
+#include "derive_vocab.h"
+#include "ra_vocab.h"
 #include "str_conv.h"
+#include "learning_example.h"
 
 #include <memory>
 #include <vector>
 #include <optional>
 #include <cstring>       // for std::strerror
 #include <cmath>
-
-
-// структура, представляющая обучающий пример
-struct LearningExample
-{
-  size_t word;                         // индекс слова
-  std::vector<size_t> dep_context;     // индексы синтаксических контекстов
-  std::vector<size_t> assoc_context;   // индексы ассоциативных контекстов
-};
 
 
 // информация, описывающая рабочий контекст одного потока управления (thread)
@@ -30,11 +24,13 @@ struct ThreadEnvironment
   unsigned long long next_random;                      // поле для вычисления случайных величин
   unsigned long long words_count;                      // количество прочитанных словарных слов
   std::vector< std::vector<std::string> > sentence_matrix; // conll-матрица для предложения
+  size_t deriv_counter;                                // счетчик для выбора обучающих примеров на деривацию с заданной частотой сэмплирования
   ThreadEnvironment()
   : fi(nullptr)
   , position_in_sentence(-1)
   , next_random(0)
   , words_count(0)
+  , deriv_counter(0)
   {
     sentence.reserve(1000);
     sentence_matrix.reserve(1000);
@@ -58,7 +54,9 @@ public:
                           bool trainProperNames,
                           std::shared_ptr<OriginalWord2VecVocabulary> depCtxVocabulary, std::shared_ptr<OriginalWord2VecVocabulary> assocCtxVocabulary,
                           size_t embColumn, size_t depColumn, bool useDeprel, bool oov, size_t oovMaxLen,
-                          float wordsSubsample, float depSubsample, float assocSubsample)
+                          float wordsSubsample, float depSubsample, float assocSubsample,
+                          std::shared_ptr<DerivativeVocabulary> derivVocab = nullptr, size_t derivRate = 0,
+                          std::shared_ptr<ReliableAssociativesVocabulary> raVocab = nullptr, float raSpan = 0)
   : threads_count(threadsCount)
   , train_filename(trainFilename)
   , words_vocabulary(wordsVocabulary)
@@ -73,6 +71,10 @@ public:
   , sample_w(wordsSubsample)
   , sample_d(depSubsample)
   , sample_a(assocSubsample)
+  , deriv_vocabulary(derivVocab)
+  , deriv_rate(derivRate)
+  , ra_vocabulary(raVocab)
+  , ra_span(raSpan)
   {
     thread_environment.resize(threads_count);
     for (size_t i = 0; i < threads_count; ++i)
@@ -135,7 +137,7 @@ public:
     return true;
   } // method-end
   // получение очередного обучающего примера
-  std::optional<LearningExample> get(size_t threadIndex, bool gramm = false)
+  std::optional<LearningExample> get(size_t threadIndex, float fraction, bool gramm = false)
   {
     auto& t_environment = thread_environment[threadIndex];
 
@@ -165,7 +167,7 @@ public:
         }
 
         if (!gramm)
-          get_from_sentence__usual(t_environment);
+          get_from_sentence__usual(t_environment, fraction);
         else
           get_from_sentence__gram(t_environment);
 
@@ -184,7 +186,7 @@ public:
     return result;
   } // method-end
   // извлечение обучающих примеров из предложения (вспомогат. процедура для get)
-  void get_from_sentence__usual(ThreadEnvironment& t_environment)
+  void get_from_sentence__usual(ThreadEnvironment& t_environment, float fraction)
   {
     auto& sentence_matrix = t_environment.sentence_matrix;
     auto sm_size = sentence_matrix.size();
@@ -280,6 +282,13 @@ public:
         //std::copy(associations.begin(), associations.end(), std::back_inserter(le.assoc_context));   // текущее слово считаем себе ассоциативным
         std::copy_if( associations.begin(), associations.end(), std::back_inserter(le.assoc_context),
                       [word_idx](const size_t a_idx) {return (a_idx != word_idx);} );                  // текущее слово не считаем себе ассоциативным
+        if ( deriv_vocabulary && ++t_environment.deriv_counter == deriv_rate )
+        {
+          t_environment.deriv_counter = 0;
+          le.derivatives = deriv_vocabulary->get_random(t_environment.next_random);
+        }
+        if ( ra_vocabulary && fraction < ra_span )
+          le.rassoc = ra_vocabulary->get_random(t_environment.next_random);
         t_environment.sentence.push_back(le);
       }
     }
@@ -385,6 +394,14 @@ private:
   float sample_d = 0;
   // порог для алгоритма сэмплирования (subsampling) -- для ассоциативных контекстов
   float sample_a = 0;
+  // словарь деривативных гнезд
+  std::shared_ptr<DerivativeVocabulary> deriv_vocabulary;
+  // частота сэмлпирования из деривативного словаря
+  size_t deriv_rate;
+  // словарь надежных ассоциатов
+  std::shared_ptr< ReliableAssociativesVocabulary > ra_vocabulary;
+  // процент итераций, на которых применяется словарь надежных ассоциатов
+  float ra_span;
 
   // получение размера файла
   uint64_t get_file_size(const std::string& filename)

@@ -201,7 +201,7 @@ public:
             alpha = starting_alpha * 0.0001;
         } // if ('checkpoint')
         // читаем очередной обучающий пример
-        auto learning_example = lep->get(thread_idx);
+        auto learning_example = lep->get(thread_idx, fraction);
         word_count = lep->getWordsCount(thread_idx);
         if (!learning_example) break; // признак окончания эпохи (все обучающие примеры перебраны)
         // используем обучающий пример для обучения нейросети
@@ -251,7 +251,7 @@ public:
             alpha = starting_alpha * 0.0001;
         } // if ('checkpoint')
         // читаем очередной обучающий пример
-        auto learning_example = lep->get(thread_idx, true);
+        auto learning_example = lep->get(thread_idx, fraction, true);
         word_count = lep->getWordsCount(thread_idx);
         if (!learning_example) break; // признак окончания эпохи (все обучающие примеры перебраны)
         // используем обучающий пример для обучения нейросети
@@ -658,6 +658,40 @@ private:
         std::transform(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, targetVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all assoc contexts
     }
+
+    // обработка деривативных пар
+    if ( le.derivatives )
+    {
+      auto&& led = le.derivatives.value();
+      float *vector1Ptr = syn0 + led.first * layer1_size + size_dep;
+      float *vector2Ptr = syn0 + led.second * layer1_size + size_dep;
+      float f = std::inner_product(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, 0.0);
+      if ( !std::isnan(f) )
+      {
+        f = sigmoid(f);
+        g = (1.0 - f) * alpha * 0.5;
+        std::transform(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return a + g*b;});
+        std::transform(vector2Ptr, vector2Ptr+size_assoc, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return a + g*b;});
+      }
+    } // if derivatives
+
+    // обработка "надежных" ассоциативных пар
+    if ( le.rassoc )
+    {
+      auto&& lera = le.rassoc.value();
+      float sim = std::get<2>(lera);
+      float *vector1Ptr = syn0 + std::get<0>(lera) * layer1_size + size_dep;
+      float *vector2Ptr = syn0 + std::get<1>(lera) * layer1_size + size_dep;
+      float f = std::inner_product(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, 0.0);
+      if ( !std::isnan(f) )
+      {
+        f = sigmoid(f);
+        g = (1.0 - f) * alpha * 0.5 * sim;
+        std::transform(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return a + g*b;});
+        std::transform(vector2Ptr, vector2Ptr+size_assoc, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return a + g*b;});
+      }
+    } // if reliable associatives
+
   } // method-end
 
   // вычисление значения сигмоиды
