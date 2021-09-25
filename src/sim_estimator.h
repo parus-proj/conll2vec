@@ -120,6 +120,10 @@ public:
   {
     auto widx1 = vm.get_word_idx(word1);
     auto widx2 = vm.get_word_idx(word2);
+    return get_sim(dims, widx1, widx2);
+  }
+  std::optional<float> get_sim(CmpDims dims, size_t widx1, size_t widx2)
+  {
     if (widx1 == vm.words_count || widx2 == vm.words_count)
       return std::nullopt;
     float* w1Offset = vm.embeddings + widx1*vm.emb_size;

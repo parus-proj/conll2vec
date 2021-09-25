@@ -15,6 +15,7 @@
 #include "vectors_model.h"
 #include "derive_maker.h"
 #include "derive_vocab.h"
+#include "ra_vocab.h"
 
 #include <memory>
 #include <string>
@@ -26,6 +27,11 @@
 // создание объекта, отвечающего за измерение семантической близости между словами
 std::shared_ptr<SimilarityEstimator> create_sim_estimator(const CommandLineParametersDefs& cmdLineParams)
 {
+  if ( !cmdLineParams.isDefined("-model") )
+  {
+    std::cerr << "-model parameter must be defined." << std::endl;
+    return nullptr;
+  }
   std::shared_ptr<SimilarityEstimator> sim_estimator = std::make_shared<SimilarityEstimator>( cmdLineParams.getAsInt("-size_d"),
                                                                                               cmdLineParams.getAsInt("-size_a"),
                                                                                               cmdLineParams.getAsInt("-size_g"),
@@ -64,7 +70,8 @@ int main(int argc, char **argv)
               << "  -task fsim        -- calc similarity measure for word pairs in file" << std::endl
               << "  -task normalize   -- normalize vectors length" << std::endl
               << "  -task sseval      -- subsampling value estimation" << std::endl
-              << "  -task deriv_make  -- automake derivatives vocab" << std::endl;
+              << "  -task deriv_make  -- automake derivatives vocab" << std::endl
+              << "  -task aextr       -- extract associative pairs from model" << std::endl;
     return -1;
   }
   auto&& task = cmdLineParams.getAsString("-task");
@@ -170,6 +177,13 @@ int main(int argc, char **argv)
       if ( !deriv_vocab->load( cmdLineParams.getAsString("-deriv_vocab"), v_main ) )
         return -1;
     }
+    std::shared_ptr< ReliableAssociativesVocabulary > ra_vocab;
+    if ( cmdLineParams.isDefined("-ra_vocab"))
+    {
+      ra_vocab = std::make_shared<ReliableAssociativesVocabulary>();
+      if ( !ra_vocab->load( cmdLineParams.getAsString("-ra_vocab"), v_main ) )
+        return -1;
+    }
 
     // создание поставщика обучающих примеров
     // к моменту создания "поставщика обучающих примеров" словарь должен быть загружен (в частности, используется cn_sum())
@@ -185,7 +199,8 @@ int main(int argc, char **argv)
                                                                                                   cmdLineParams.getAsFloat("-sample_w"),
                                                                                                   cmdLineParams.getAsFloat("-sample_d"),
                                                                                                   cmdLineParams.getAsFloat("-sample_a"),
-                                                                                                  deriv_vocab, cmdLineParams.getAsInt("-deriv_rate")
+                                                                                                  deriv_vocab, cmdLineParams.getAsInt("-deriv_rate"),
+                                                                                                  ra_vocab, cmdLineParams.getAsFloat("-ra_span")
                                                                                                 );
 
     // создаем объект, организующий обучение
@@ -530,6 +545,32 @@ int main(int argc, char **argv)
       return -1;
     }
     DerivativeNestsMaker::run( cmdLineParams.getAsString("-vocab_m"), "derivative.patterns", cmdLineParams.getAsString("-deriv_vocab") );
+    return 0;
+  } // if task == deriv_make
+
+  // если поставлена задача извлечения ассоциативных пар из модели
+  if (task == "aextr")
+  {
+    auto sim_estimator = create_sim_estimator(cmdLineParams);
+    if (!sim_estimator)
+      return -1;
+    if ( !cmdLineParams.isDefined("-ra_vocab") )
+    {
+      std::cerr << "-ra_vocab parameters must be defined." << std::endl;
+      return -1;
+    }
+    std::ofstream ofs(cmdLineParams.getAsString("-ra_vocab"));
+    if ( !ofs.good() )
+      return -1;
+    float min_sim = cmdLineParams.getAsFloat("-ra_min_sim");
+    auto vm = sim_estimator->raw();
+    for (size_t i = 0; i < vm->words_count-1; ++i)
+      for (size_t j = i+1; j < vm->words_count; ++j)
+      {
+        auto sim = sim_estimator->get_sim(SimilarityEstimator::cdAssocOnly, i, j);
+        if (sim && sim.value() > min_sim)
+          ofs << vm->vocab[i] << " " << vm->vocab[j] << " " << sim.value() << std::endl;
+      }
     return 0;
   } // if task == deriv_make
 

@@ -1,16 +1,17 @@
+#ifndef SRC_DERIVE_VOCAB_H_
+#define SRC_DERIVE_VOCAB_H_
+
 #include "original_word2vec_vocabulary.h"
 
 
 #include <string>
 #include <vector>
+#include <utility>
 #include <set>
 #include <fstream>
 #include <iostream>
 #include <regex>
 
-
-#ifndef SRC_DERIVE_VOCAB_H_
-#define SRC_DERIVE_VOCAB_H_
 
 // Словарь деривативных гнезд (для тренировки деривативной ассоциации)
 class DerivativeVocabulary
@@ -60,19 +61,19 @@ public:
       }
       for (size_t i = 0; i < nest.size()-1; ++i)
         for (size_t j = i+1; j < nest.size(); ++j)
-          records.push_back( std::vector<size_t>( {nest[i], nest[j]} ) );
+          records.push_back( std::make_pair( nest[i], nest[j] ) );
     }
     print_stat_dbg();
     return true;
   }
-  const std::vector<size_t>& get_random(unsigned long long next_random) const
+  const std::pair<size_t,size_t>& get_random(unsigned long long next_random) const
   {
     next_random = next_random * (unsigned long long)25214903917 + 11;
     return records[ next_random % records.size() ];
   }
 private:
   // вектор пар слов, связанных "деривационно"
-  std::vector< std::vector<size_t> > records;
+  std::vector< std::pair<size_t, size_t> > records;
 
   void print_stat_dbg() const
   {
@@ -80,8 +81,8 @@ private:
     std::set<size_t> w;
     for (auto& r : records)
     {
-      w.insert(r[0]);
-      w.insert(r[1]);
+      w.insert(r.first);
+      w.insert(r.second);
     }
     std::cout << "Deriv. words count = " << w.size() << std::endl;
   }

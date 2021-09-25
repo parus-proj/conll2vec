@@ -53,7 +53,10 @@ public:
         {"-fsim_fmt",     {"File with word pairs format (detail|russe)", "detail", std::nullopt}},
         {"-eval_vocab",   {"A vocabulary for subsampling evaluation", std::nullopt, std::nullopt}},
         {"-deriv_vocab",  {"Derivatives vocabulary <file>", std::nullopt, std::nullopt}},
-        {"-deriv_rate",   {"Derivatives sample rate", "100", std::nullopt}}
+        {"-deriv_rate",   {"Derivatives sample rate", "10", std::nullopt}},
+        {"-ra_vocab",     {"Reliable associatives vocabulary <file>", std::nullopt, std::nullopt}},
+        {"-ra_min_sim",   {"Reliable associatives minimal similarity", "0.5", std::nullopt}},
+        {"-ra_span",      {"Reliable associatives logic span", "0.2", std::nullopt}}
     };
   }
 };
