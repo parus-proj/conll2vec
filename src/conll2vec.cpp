@@ -562,17 +562,27 @@ int main(int argc, char **argv)
     std::ofstream ofs(cmdLineParams.getAsString("-ra_vocab"));
     if ( !ofs.good() )
       return -1;
+    auto contains_ru_letter = [](const std::string& lemma) -> bool
+        {
+          const std::u32string RuLets = U"абвгдеёжзийклмнопрстуфхцчшщьыъэюя";
+          auto s32 = StrConv::To_UTF32(lemma);
+          return ( s32.find_first_of(RuLets) != std::u32string::npos );
+        };
     float min_sim = cmdLineParams.getAsFloat("-ra_min_sim");
     auto vm = sim_estimator->raw();
     for (size_t i = 0; i < vm->words_count-1; ++i)
-      for (size_t j = i+1; j < vm->words_count; ++j)
+    {
+      if ( !contains_ru_letter(vm->vocab[i]) ) continue;
+      for (size_t j = (i < vm->words_count/2 ? vm->words_count/2 : i+1); j < vm->words_count; ++j)
       {
+        if ( !contains_ru_letter(vm->vocab[j]) ) continue;
         auto sim = sim_estimator->get_sim(SimilarityEstimator::cdAssocOnly, i, j);
         if (sim && sim.value() > min_sim)
           ofs << vm->vocab[i] << " " << vm->vocab[j] << " " << sim.value() << std::endl;
       }
+    }
     return 0;
-  } // if task == deriv_make
+  } // if task == aextr
 
   return -1;
 }
