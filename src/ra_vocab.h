@@ -54,6 +54,10 @@ public:
     print_stat_dbg();
     return true;
   }
+  bool empty() const
+  {
+    return records.empty();
+  }
   const std::tuple<size_t, size_t, float>& get_random(unsigned long long next_random) const
   {
     next_random = next_random * (unsigned long long)25214903917 + 11;

@@ -5,8 +5,10 @@
 #include "original_word2vec_vocabulary.h"
 #include "derive_vocab.h"
 #include "ra_vocab.h"
+#include "categoroid_vocab.h"
 #include "str_conv.h"
 #include "learning_example.h"
+#include "command_line_parameters_defs.h"
 
 #include <memory>
 #include <vector>
@@ -25,12 +27,16 @@ struct ThreadEnvironment
   unsigned long long words_count;                      // количество прочитанных словарных слов
   std::vector< std::vector<std::string> > sentence_matrix; // conll-матрица для предложения
   size_t deriv_counter;                                // счетчик для выбора обучающих примеров на деривацию с заданной частотой сэмплирования
+  size_t ra_counter;                                   // аналогично для надежных ассоциатов
+  size_t coid_counter;                                 // аналогично для категороидов
   ThreadEnvironment()
   : fi(nullptr)
   , position_in_sentence(-1)
   , next_random(0)
   , words_count(0)
   , deriv_counter(0)
+  , ra_counter(0)
+  , coid_counter(0)
   {
     sentence.reserve(1000);
     sentence_matrix.reserve(1000);
@@ -49,32 +55,40 @@ class LearningExampleProvider
 {
 public:
   // конструктор
-  LearningExampleProvider(const std::string& trainFilename, size_t threadsCount,
+  LearningExampleProvider(const CommandLineParametersDefs& cmdLineParams,
                           std::shared_ptr<OriginalWord2VecVocabulary> wordsVocabulary,
                           bool trainProperNames,
                           std::shared_ptr<OriginalWord2VecVocabulary> depCtxVocabulary, std::shared_ptr<OriginalWord2VecVocabulary> assocCtxVocabulary,
-                          size_t embColumn, size_t depColumn, bool useDeprel, bool oov, size_t oovMaxLen,
-                          float wordsSubsample, float depSubsample, float assocSubsample,
-                          std::shared_ptr<DerivativeVocabulary> derivVocab = nullptr, size_t derivRate = 0,
-                          std::shared_ptr<ReliableAssociativesVocabulary> raVocab = nullptr, float raSpan = 0)
-  : threads_count(threadsCount)
-  , train_filename(trainFilename)
+                          size_t embColumn, bool oov, size_t oovMaxLen,
+                          std::shared_ptr<DerivativeVocabulary> derivVocab = nullptr,
+                          std::shared_ptr<ReliableAssociativesVocabulary> raVocab = nullptr,
+                          std::shared_ptr< CategoroidsVocabulary > coid_vocab = nullptr)
+  : threads_count( cmdLineParams.getAsInt("-threads") )
+  , train_filename( cmdLineParams.getAsString("-train") )
   , words_vocabulary(wordsVocabulary)
   , proper_names(trainProperNames)
   , dep_ctx_vocabulary(depCtxVocabulary)
   , assoc_ctx_vocabulary(assocCtxVocabulary)
   , emb_column(embColumn)
-  , dep_column(depColumn)
-  , use_deprel(useDeprel)
+  , dep_column( cmdLineParams.getAsInt("-col_ctx_d") - 1 )
+  , use_deprel( cmdLineParams.getAsInt("-use_deprel") == 1 )
   , train_oov(oov)
   , max_oov_sfx(oovMaxLen)
-  , sample_w(wordsSubsample)
-  , sample_d(depSubsample)
-  , sample_a(assocSubsample)
+  , sample_w( cmdLineParams.getAsFloat("-sample_w") )
+  , sample_d( cmdLineParams.getAsFloat("-sample_d") )
+  , sample_a( cmdLineParams.getAsFloat("-sample_a") )
   , deriv_vocabulary(derivVocab)
-  , deriv_rate(derivRate)
+  , deriv_rate( cmdLineParams.getAsInt("-deriv_rate") )
+  , deriv_pack( cmdLineParams.getAsInt("-deriv_pack") )
+  , deriv_span( cmdLineParams.getAsFloat("-deriv_span") )
   , ra_vocabulary(raVocab)
-  , ra_span(raSpan)
+  , ra_rate( cmdLineParams.getAsInt("-ra_rate") )
+  , ra_pack( cmdLineParams.getAsInt("-ra_pack") )
+  , ra_span( cmdLineParams.getAsFloat("-ra_span") )
+  , coid_vocababulary(coid_vocab)
+  , coid_rate( cmdLineParams.getAsInt("-ca_rate") )
+  , coid_pack( cmdLineParams.getAsInt("-ca_pack") )
+  , coid_span( cmdLineParams.getAsFloat("-ca_span") )
   {
     thread_environment.resize(threads_count);
     for (size_t i = 0; i < threads_count; ++i)
@@ -82,12 +96,12 @@ public:
     if ( words_vocabulary )
     {
       train_words = words_vocabulary->cn_sum();
-      words_vocabulary->sampling_estimation(wordsSubsample);
+      words_vocabulary->sampling_estimation(sample_w);
     }
     if ( dep_ctx_vocabulary )
-      dep_ctx_vocabulary->sampling_estimation(depSubsample);
+      dep_ctx_vocabulary->sampling_estimation(sample_d);
     if ( assoc_ctx_vocabulary )
-      assoc_ctx_vocabulary->sampling_estimation(assocSubsample);
+      assoc_ctx_vocabulary->sampling_estimation(sample_a);
     try
     {
       train_file_size = get_file_size(train_filename);
@@ -282,13 +296,25 @@ public:
         //std::copy(associations.begin(), associations.end(), std::back_inserter(le.assoc_context));   // текущее слово считаем себе ассоциативным
         std::copy_if( associations.begin(), associations.end(), std::back_inserter(le.assoc_context),
                       [word_idx](const size_t a_idx) {return (a_idx != word_idx);} );                  // текущее слово не считаем себе ассоциативным
-        if ( deriv_vocabulary && ++t_environment.deriv_counter == deriv_rate )
+        if ( deriv_vocabulary && !deriv_vocabulary->empty() && ++t_environment.deriv_counter == deriv_rate && fraction < deriv_span )
         {
           t_environment.deriv_counter = 0;
-          le.derivatives = deriv_vocabulary->get_random(t_environment.next_random);
+          for (size_t i = 0; i < deriv_pack; ++i)
+            le.derivatives.push_back( deriv_vocabulary->get_random(t_environment.next_random) );
         }
-        if ( ra_vocabulary && fraction < ra_span )
-          le.rassoc = ra_vocabulary->get_random(t_environment.next_random);
+        if ( ra_vocabulary && !ra_vocabulary->empty() && ++t_environment.ra_counter == ra_rate && fraction < ra_span )
+        {
+          t_environment.ra_counter = 0;
+          for (size_t i = 0; i < ra_pack; ++i)
+            le.rassoc.push_back( ra_vocabulary->get_random(t_environment.next_random) );
+        }
+        if ( coid_vocababulary && !coid_vocababulary->empty() && ++t_environment.coid_counter == coid_rate && fraction < coid_span  )
+        {
+          t_environment.coid_counter = 0;
+          for (size_t i = 0; i < coid_pack; ++i)
+            le.categoroids.push_back( coid_vocababulary->get_random(t_environment.next_random) );
+        }
+
         t_environment.sentence.push_back(le);
       }
     }
@@ -398,10 +424,26 @@ private:
   std::shared_ptr<DerivativeVocabulary> deriv_vocabulary;
   // частота сэмлпирования из деривативного словаря
   size_t deriv_rate;
+  // количество пар в сэмле из деривативного словаря
+  size_t deriv_pack;
+  // процент итераций, на которых применяется деривативный словарь
+  float deriv_span;
   // словарь надежных ассоциатов
   std::shared_ptr< ReliableAssociativesVocabulary > ra_vocabulary;
+  // частота сэмлпирования из словаря надежных ассоциатов
+  size_t ra_rate;
+  // количество пар в сэмле из словаря надежных ассоциатов
+  size_t ra_pack;
   // процент итераций, на которых применяется словарь надежных ассоциатов
   float ra_span;
+  // словарь категороидов
+  std::shared_ptr< CategoroidsVocabulary > coid_vocababulary;
+  // частота сэмлпирования из словаря категороидов
+  size_t coid_rate;
+  // количество пар в сэмле из словаря категороидов
+  size_t coid_pack;
+  // процент итераций, на которых применяется словарь категороидов
+  float coid_span;
 
   // получение размера файла
   uint64_t get_file_size(const std::string& filename)

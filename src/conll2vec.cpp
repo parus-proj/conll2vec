@@ -16,6 +16,7 @@
 #include "derive_maker.h"
 #include "derive_vocab.h"
 #include "ra_vocab.h"
+#include "categoroid_vocab.h"
 
 #include <memory>
 #include <string>
@@ -94,7 +95,7 @@ int main(int argc, char **argv)
                                  cmdLineParams.getAsInt("-min-count_m"), cmdLineParams.getAsInt("-min-count_p"), cmdLineParams.getAsInt("-min-count_t"),
                                  cmdLineParams.getAsInt("-min-count_o"), cmdLineParams.getAsInt("-min-count_d"),
                                  cmdLineParams.getAsInt("-col_ctx_d") - 1, (cmdLineParams.getAsInt("-use_deprel") == 1), (cmdLineParams.getAsInt("-exclude_nums") == 1),
-                                 cmdLineParams.getAsInt("-max_oov_sfx")
+                                 cmdLineParams.getAsInt("-max_oov_sfx"), cmdLineParams.getAsString("-ca_vocab")
                                );
     return ( succ ? 0 : -1 );
   }
@@ -184,23 +185,23 @@ int main(int argc, char **argv)
       if ( !ra_vocab->load( cmdLineParams.getAsString("-ra_vocab"), v_main ) )
         return -1;
     }
+    std::shared_ptr< CategoroidsVocabulary > coid_vocab;
+    if ( cmdLineParams.isDefined("-ca_vocab"))
+    {
+      coid_vocab = std::make_shared<CategoroidsVocabulary>();
+      if ( !coid_vocab->load( cmdLineParams.getAsString("-ca_vocab"), v_main ) )
+        return -1;
+    }
 
     // создание поставщика обучающих примеров
     // к моменту создания "поставщика обучающих примеров" словарь должен быть загружен (в частности, используется cn_sum())
-    std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams.getAsString("-train"),
-                                                                                                  cmdLineParams.getAsInt("-threads"),
+    std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
                                                                                                   (needLoadMainVocab ? v_main : v_proper ),
                                                                                                   needLoadProperVocab,
                                                                                                   v_dep_ctx, v_assoc_ctx,
                                                                                                   2,
-                                                                                                  cmdLineParams.getAsInt("-col_ctx_d") - 1,
-                                                                                                  (cmdLineParams.getAsInt("-use_deprel") == 1),
                                                                                                   false, 0,
-                                                                                                  cmdLineParams.getAsFloat("-sample_w"),
-                                                                                                  cmdLineParams.getAsFloat("-sample_d"),
-                                                                                                  cmdLineParams.getAsFloat("-sample_a"),
-                                                                                                  deriv_vocab, cmdLineParams.getAsInt("-deriv_rate"),
-                                                                                                  ra_vocab, cmdLineParams.getAsFloat("-ra_span")
+                                                                                                  deriv_vocab, ra_vocab, coid_vocab
                                                                                                 );
 
     // создаем объект, организующий обучение
@@ -372,16 +373,10 @@ int main(int argc, char **argv)
 
     // создание поставщика обучающих примеров
     // к моменту создания "поставщика обучающих примеров" словарь должен быть загружен (в частности, используется cn_sum())
-    std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams.getAsString("-train"),
-                                                                                                  cmdLineParams.getAsInt("-threads"),
+    std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
                                                                                                   v_toks, false, v_dep_ctx, v_assoc_ctx,
                                                                                                   1,
-                                                                                                  cmdLineParams.getAsInt("-col_ctx_d") - 1,
-                                                                                                  (cmdLineParams.getAsInt("-use_deprel") == 1),
-                                                                                                  false, 0,
-                                                                                                  cmdLineParams.getAsFloat("-sample_w"),
-                                                                                                  cmdLineParams.getAsFloat("-sample_d"),
-                                                                                                  cmdLineParams.getAsFloat("-sample_a")
+                                                                                                  false, 0
                                                                                                 );
 
     // создаем объект, организующий обучение
@@ -427,7 +422,7 @@ int main(int argc, char **argv)
     std::shared_ptr< OriginalWord2VecVocabulary > v_toks = std::make_shared<OriginalWord2VecVocabulary>();
     if ( !v_toks->load( cmdLineParams.getAsString("-vocab_t") ) )
       return -1;
-    // если работаем со словарем суффиксов, до догружаем его в словарь токенов
+    // если работаем со словарем суффиксов, то догружаем его в словарь токенов
     std::string oovv = cmdLineParams.getAsString("-vocab_o");
     if (!oovv.empty())
     {
@@ -435,12 +430,10 @@ int main(int argc, char **argv)
         return -1;
     }
     // создание поставщика обучающих примеров
-    std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams.getAsString("-train"),
-                                                                                                  cmdLineParams.getAsInt("-threads"),
+    std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
                                                                                                   v_toks, false, nullptr, nullptr,
                                                                                                   1,
-                                                                                                  0, false, !oovv.empty(), cmdLineParams.getAsInt("-max_oov_sfx"),
-                                                                                                  cmdLineParams.getAsFloat("-sample_w"), 0, 0
+                                                                                                  !oovv.empty(), cmdLineParams.getAsInt("-max_oov_sfx")
                                                                                                 );
     // создаем объект, организующий обучение
     Trainer trainer( lep, v_toks, false, nullptr, nullptr,

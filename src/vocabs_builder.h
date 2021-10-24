@@ -3,6 +3,7 @@
 
 #include "conll_reader.h"
 #include "str_conv.h"
+#include "categoroid_vocab.h"
 
 #include <memory>
 #include <string>
@@ -61,13 +62,15 @@ private:
   typedef std::shared_ptr<VocabMapping> VocabMappingPtr;
   typedef std::unordered_map<std::string, std::map<std::string, size_t>> Token2LemmasMap;
   typedef std::shared_ptr<Token2LemmasMap> Token2LemmasMapPtr;
+  typedef std::shared_ptr<CategoroidsVocabulary> CategoroidsVocabularyPtr;
 public:
   // построение всех словарей
   bool build_vocabs(const std::string& conll_fn,
                     const std::string& voc_m_fn, const std::string& voc_p_fn, const std::string& voc_t_fn,
                     const std::string& voc_tm_fn, const std::string& voc_oov_fn, const std::string& voc_d_fn,
                     size_t limit_m, size_t limit_p, size_t limit_t, size_t limit_o, size_t limit_d,
-                    size_t ctx_vocabulary_column_d, bool use_deprel, bool excludeNumsFromToks, size_t max_oov_sfx)
+                    size_t ctx_vocabulary_column_d, bool use_deprel, bool excludeNumsFromToks, size_t max_oov_sfx,
+                    const std::string& categoroids_vocab_fn)
   {
     // открываем файл с тренировочными данными
     FILE *conll_file = fopen(conll_fn.c_str(), "rb");
@@ -75,6 +78,18 @@ public:
     {
       std::cerr << "Train-file open: error: " << std::strerror(errno) << std::endl;
       return false;
+    }
+
+    // загружаем справочник категороидов (при наличии)
+    CategoroidsVocabularyPtr coid_vocab;
+    if ( !categoroids_vocab_fn.empty() )
+    {
+      coid_vocab = std::make_shared<CategoroidsVocabulary>();
+      if ( !coid_vocab->load_words_list(categoroids_vocab_fn) )
+      {
+        std::cerr << "Categoroids-file loading error." << std::endl;
+        return false;
+      }
     }
 
     // создаем контейнеры для словарей
@@ -114,19 +129,24 @@ public:
     // сохраняем словари в файлах
     std::cout << "Save lemmas main vocabulary..." << std::endl;
     erase_main_stopwords(vocab_lemma_main); // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах морфологического анализа
-    save_vocab(vocab_lemma_main, limit_m, voc_m_fn);
+    reduce_vocab(vocab_lemma_main, limit_m, coid_vocab);
+    save_vocab(vocab_lemma_main, voc_m_fn);
     std::cout << "Save lemmas proper-names vocabulary..." << std::endl;
-    save_vocab(vocab_lemma_proper, limit_p, voc_p_fn);
+    reduce_vocab(vocab_lemma_proper, limit_p);
+    save_vocab(vocab_lemma_proper, voc_p_fn);
     std::cout << "Save tokens vocabulary..." << std::endl;
-    save_vocab(vocab_token, limit_t, voc_t_fn, token2lemmas_map, voc_tm_fn);
+    reduce_vocab(vocab_token, limit_t);
+    save_vocab(vocab_token, voc_t_fn, token2lemmas_map, voc_tm_fn);
     if (vocab_oov)
     {
       std::cout << "Save OOV vocabulary..." << std::endl;
       oov_idf_filter(vocab_oov, vocab_token, max_oov_sfx);
-      save_vocab(vocab_oov, limit_o, voc_oov_fn);
+      reduce_vocab(vocab_oov, limit_o);
+      save_vocab(vocab_oov, voc_oov_fn);
     }
     std::cout << "Save dependency contexts vocabulary..." << std::endl;
-    save_vocab(vocab_dep, limit_d, voc_d_fn);
+    reduce_vocab(vocab_dep, limit_d);
+    save_vocab(vocab_dep, voc_d_fn);
     return true;
   } // method-end
 private:
@@ -368,19 +388,8 @@ private:
       return false;
   }
   // редукция и сохранение словаря в файл
-  void save_vocab(VocabMappingPtr vocab, size_t min_count, const std::string& file_name, Token2LemmasMapPtr t2l = nullptr, const std::string& tlm_fn = std::string())
+  void save_vocab(VocabMappingPtr vocab, const std::string& file_name, Token2LemmasMapPtr t2l = nullptr, const std::string& tlm_fn = std::string())
   {
-    // удаляем редкие слова (ниже порога отсечения)
-    std::cout << "  min-count reduce" << std::endl;
-    auto it = vocab->begin();
-    while (it != vocab->end())    //TODO: в C++20 заменить на std::erase_if (https://en.cppreference.com/w/cpp/container/map/erase_if)
-    {
-      if (it->second >= min_count)
-        ++it;
-      else
-        it = vocab->erase(it);
-    }
-    std::cout << "  resulting vocabulary size: " << vocab->size() << std::endl;
     // пересортируем в порядке убывания частоты
     std::multimap<uint64_t, std::string, std::greater<uint64_t>> revVocab;
     for (auto& record : *vocab)
@@ -406,6 +415,26 @@ private:
       }
     }
   } // method-end
+  // редукция словаря по частотному порогу
+  void reduce_vocab(VocabMappingPtr vocab, size_t min_count, CategoroidsVocabularyPtr coid_vocab = nullptr)
+  {
+    // удаляем редкие слова (ниже порога отсечения)
+    std::cout << "  min-count reduce" << std::endl;
+    auto it = vocab->begin();
+    while (it != vocab->end())    //TODO: в C++20 заменить на std::erase_if (https://en.cppreference.com/w/cpp/container/map/erase_if)
+    {
+      if (it->second >= min_count)
+        ++it;
+      else
+      {
+        if (coid_vocab && it->second >= 5 && coid_vocab->in_words_list(it->first))
+          ++it;
+        else
+          it = vocab->erase(it);
+      }
+    }
+    std::cout << "  resulting vocabulary size: " << vocab->size() << std::endl;
+  }
 };
 
 

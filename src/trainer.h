@@ -610,6 +610,22 @@ private:
       std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
     } // for all dep contexts
 
+    // обработка "надежных" категориальных пар
+    for ( size_t d = 0; d < le.categoroids.size(); ++d )
+    {
+      auto&& lec = le.categoroids[d];
+      float *vector1Ptr = syn0 + lec.first * layer1_size;
+      float *vector2Ptr = syn0 + lec.second * layer1_size;
+      float f = std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, 0.0);
+      if ( !std::isnan(f) )
+      {
+        f = sigmoid(f);
+        g = (1.0 - f) * alpha * 0.5;
+        std::transform(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return a + g*b;});
+        std::transform(vector2Ptr, vector2Ptr+size_dep, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return a + g*b;});
+      }
+    } // if categoroids
+
     // цикл по ассоциативным контекстам
     targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
     if (!proper_names)
@@ -660,9 +676,9 @@ private:
     }
 
     // обработка деривативных пар
-    if ( le.derivatives )
+    for ( size_t d = 0; d < le.derivatives.size(); ++d )
     {
-      auto&& led = le.derivatives.value();
+      auto&& led = le.derivatives[d];
       float *vector1Ptr = syn0 + led.first * layer1_size + size_dep;
       float *vector2Ptr = syn0 + led.second * layer1_size + size_dep;
       float f = std::inner_product(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, 0.0);
@@ -676,9 +692,9 @@ private:
     } // if derivatives
 
     // обработка "надежных" ассоциативных пар
-    if ( le.rassoc )
+    for ( size_t d = 0; d < le.rassoc.size(); ++d )
     {
-      auto&& lera = le.rassoc.value();
+      auto&& lera = le.rassoc[d];
       float sim = std::get<2>(lera);
       float *vector1Ptr = syn0 + std::get<0>(lera) * layer1_size + size_dep;
       float *vector2Ptr = syn0 + std::get<1>(lera) * layer1_size + size_dep;

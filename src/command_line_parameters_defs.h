@@ -54,9 +54,17 @@ public:
         {"-eval_vocab",   {"A vocabulary for subsampling evaluation", std::nullopt, std::nullopt}},
         {"-deriv_vocab",  {"Derivatives vocabulary <file>", std::nullopt, std::nullopt}},
         {"-deriv_rate",   {"Derivatives sample rate", "10", std::nullopt}},
+        {"-deriv_pack",   {"Derivatives package size", "1", std::nullopt}},
+        {"-deriv_span",   {"Derivatives logic span", "0.5", std::nullopt}},
         {"-ra_vocab",     {"Reliable associatives vocabulary <file>", std::nullopt, std::nullopt}},
         {"-ra_min_sim",   {"Reliable associatives minimal similarity", "0.5", std::nullopt}},
-        {"-ra_span",      {"Reliable associatives logic span", "0.2", std::nullopt}}
+        {"-ra_rate",      {"Reliable associatives sample rate", "1", std::nullopt}},
+        {"-ra_pack",      {"Reliable associatives package size", "1", std::nullopt}},
+        {"-ra_span",      {"Reliable associatives logic span", "0.2", std::nullopt}},
+        {"-ca_vocab",     {"Categoroids vocabulary <file>", std::nullopt, std::nullopt}},
+        {"-ca_rate",      {"Categoroids sample rate", "1", std::nullopt}},
+        {"-ca_pack",      {"Categoroids package size", "1", std::nullopt}},
+        {"-ca_span",      {"Categoroids logic span", "0.2", std::nullopt}}
     };
   }
 };
