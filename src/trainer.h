@@ -12,6 +12,8 @@
 #include <iostream>
 #include <fstream>
 
+//#include <mutex>
+
 #ifdef _MSC_VER
   #define posix_memalign(p, a, s) (((*(p)) = _aligned_malloc((s), (a))), *(p) ? 0 : errno)
   #define free_aligned(p) _aligned_free((p))
@@ -22,6 +24,8 @@
 
 #define EXP_TABLE_SIZE 1000
 #define MAX_EXP 6
+//#define EXP_TABLE_SIZE 5000
+//#define MAX_EXP 30
 
 
 // хранит общие параметры и данные для всех потоков
@@ -72,6 +76,12 @@ public:
     // инициализируем распределения, имитирующие шум (для словарей контекстов)
     if ( dep_ctx_vocabulary )
       InitUnigramTable(table_dep, dep_ctx_vocabulary);
+
+//agit_ofs = new std::ofstream("agit.log");
+//agit_n = w_vocabulary->word_to_idx("агитация");
+//agit_v = w_vocabulary->word_to_idx("агитировать");
+////agit_n = w_vocabulary->word_to_idx("атаковать");
+////agit_v = w_vocabulary->word_to_idx("атака");
   }
   // деструктор
   virtual ~Trainer()
@@ -594,6 +604,7 @@ private:
         f = sigmoid(f);
         // вычислим ошибку, умноженную на коэффициент скорости обучения
         g = (label - f) * alpha;
+        if (g == 0) continue;
         // обратное распространение ошибки output -> hidden
         if (d==0)
           std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
@@ -608,6 +619,17 @@ private:
       } // for all samples
       // обучение весов input -> hidden
       std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
+//if (le.word == agit_n || le.word == agit_v)
+//{
+//  float *vector1Ptr = syn0 + agit_n * layer1_size;
+//  float *vector2Ptr = syn0 + agit_v * layer1_size;
+//  float dist = std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, 0.0);
+//  dist /= std::sqrt( std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector1Ptr, 0.0) );
+//  dist /= std::sqrt( std::inner_product(vector2Ptr, vector2Ptr+size_dep, vector2Ptr, 0.0) );
+//  auto s = "1\t" + std::to_string(dist) + "\n";
+//  std::lock_guard<std::mutex> lg(agit_mut);
+//  (*agit_ofs) << s;
+//}
     } // for all dep contexts
 
     // обработка "надежных" категориальных пар
@@ -621,8 +643,20 @@ private:
       {
         f = sigmoid(f);
         g = (1.0 - f) * alpha * 0.5;
-        std::transform(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return a + g*b;});
-        std::transform(vector2Ptr, vector2Ptr+size_dep, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return a + g*b;});
+        if (g != 0)
+        {
+          std::transform(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return a + g*b;});
+          std::transform(vector2Ptr, vector2Ptr+size_dep, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return a + g*b;});
+//if (lec.first == agit_n && lec.second == agit_v)
+//{
+//  float dist = std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, 0.0);
+//  dist /= std::sqrt( std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector1Ptr, 0.0) );
+//  dist /= std::sqrt( std::inner_product(vector2Ptr, vector2Ptr+size_dep, vector2Ptr, 0.0) );
+//  auto s = "2\t" + std::to_string(dist) + "\t" + std::to_string(g) + "\t" + std::to_string(f) + "\n";
+//  std::lock_guard<std::mutex> lg(agit_mut);
+//  (*agit_ofs) << s;
+//}
+        }
       }
     } // if categoroids
 
@@ -654,6 +688,7 @@ private:
           f = sigmoid(f);
           // вычислим ошибку, умноженную на коэффициент скорости обучения
           g = (label - f) * alpha;
+          if (g == 0) continue;
           // обучение весов (input only)
           if (d == 0)
             std::transform(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, targetVectorPtr, [g](float a, float b) -> float {return a + g*b;});
@@ -671,6 +706,7 @@ private:
         if ( std::isnan(f) ) continue;
         f = sigmoid(f);
         g = (1.0 - f) * alpha;
+        if (g == 0) continue;
         std::transform(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, targetVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all assoc contexts
     }
@@ -686,6 +722,7 @@ private:
       {
         f = sigmoid(f);
         g = (1.0 - f) * alpha * 0.5;
+        if (g == 0) continue;
         std::transform(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return a + g*b;});
         std::transform(vector2Ptr, vector2Ptr+size_assoc, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return a + g*b;});
       }
@@ -703,6 +740,7 @@ private:
       {
         f = sigmoid(f);
         g = (1.0 - f) * alpha * 0.5 * sim;
+        if (g == 0) continue;
         std::transform(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return a + g*b;});
         std::transform(vector2Ptr, vector2Ptr+size_assoc, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return a + g*b;});
       }
@@ -761,6 +799,11 @@ private:
     }
     return true;
   } // method-end
+//private:
+//  size_t agit_n;
+//  size_t agit_v;
+//  std::ofstream* agit_ofs;
+//  std::mutex agit_mut;
 }; // class-decl-end
 
 

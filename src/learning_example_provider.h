@@ -296,23 +296,32 @@ public:
         //std::copy(associations.begin(), associations.end(), std::back_inserter(le.assoc_context));   // текущее слово считаем себе ассоциативным
         std::copy_if( associations.begin(), associations.end(), std::back_inserter(le.assoc_context),
                       [word_idx](const size_t a_idx) {return (a_idx != word_idx);} );                  // текущее слово не считаем себе ассоциативным
-        if ( deriv_vocabulary && !deriv_vocabulary->empty() && ++t_environment.deriv_counter == deriv_rate && fraction < deriv_span )
+        if ( deriv_vocabulary && !deriv_vocabulary->empty() && fraction < deriv_span )
         {
-          t_environment.deriv_counter = 0;
-          for (size_t i = 0; i < deriv_pack; ++i)
-            le.derivatives.push_back( deriv_vocabulary->get_random(t_environment.next_random) );
+          if (++t_environment.deriv_counter == deriv_rate)
+          {
+            t_environment.deriv_counter = 0;
+            for (size_t i = 0; i < deriv_pack; ++i)
+              le.derivatives.push_back( deriv_vocabulary->get_random(t_environment.next_random) );
+          }
         }
-        if ( ra_vocabulary && !ra_vocabulary->empty() && ++t_environment.ra_counter == ra_rate && fraction < ra_span )
+        if ( ra_vocabulary && !ra_vocabulary->empty() && fraction < ra_span )
         {
-          t_environment.ra_counter = 0;
-          for (size_t i = 0; i < ra_pack; ++i)
-            le.rassoc.push_back( ra_vocabulary->get_random(t_environment.next_random) );
+          if (++t_environment.ra_counter == ra_rate)
+          {
+            t_environment.ra_counter = 0;
+            for (size_t i = 0; i < ra_pack; ++i)
+              le.rassoc.push_back( ra_vocabulary->get_random(t_environment.next_random) );
+          }
         }
-        if ( coid_vocababulary && !coid_vocababulary->empty() && ++t_environment.coid_counter == coid_rate && fraction < coid_span  )
+        if ( coid_vocababulary && !coid_vocababulary->empty() && fraction < coid_span  )
         {
-          t_environment.coid_counter = 0;
-          for (size_t i = 0; i < coid_pack; ++i)
-            le.categoroids.push_back( coid_vocababulary->get_random(t_environment.next_random) );
+          if (++t_environment.coid_counter == coid_rate)
+          {
+            t_environment.coid_counter = 0;
+            for (size_t i = 0; i < coid_pack; ++i)
+              le.categoroids.push_back( coid_vocababulary->get_random(t_environment.next_random) );
+          }
         }
 
         t_environment.sentence.push_back(le);
