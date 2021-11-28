@@ -22,6 +22,7 @@ public:
 //        {"-vocab_e",      {"Expressions vocabulary <file>", std::nullopt, std::nullopt}},
         {"-vocab_d",      {"Dependency contexts vocabulary <file>", std::nullopt, std::nullopt}},
         {"-vocab_a",      {"Associative contexts vocabulary <file>", std::nullopt, std::nullopt}},
+        {"-separate_p",   {"Separate proper names learning", "0", std::nullopt}},
         {"-backup",       {"Save neural network weights to <file>", std::nullopt, std::nullopt}},
         {"-restore",      {"Restore neural network weights from <file>", std::nullopt, std::nullopt}},
         {"-min-count_m",  {"Min frequency in Lemmas main vocabulary", "50", std::nullopt}},
@@ -53,18 +54,18 @@ public:
         {"-fsim_fmt",     {"File with word pairs format (detail|russe)", "detail", std::nullopt}},
         {"-eval_vocab",   {"A vocabulary for subsampling evaluation", std::nullopt, std::nullopt}},
         {"-deriv_vocab",  {"Derivatives vocabulary <file>", std::nullopt, std::nullopt}},
-        {"-deriv_rate",   {"Derivatives sample rate", "10", std::nullopt}},
+        {"-deriv_rate",   {"Derivatives sample rate", "1", std::nullopt}},
         {"-deriv_pack",   {"Derivatives package size", "1", std::nullopt}},
-        {"-deriv_span",   {"Derivatives logic span", "0.5", std::nullopt}},
+        {"-deriv_span",   {"Derivatives logic span", "0.1", std::nullopt}},
         {"-ra_vocab",     {"Reliable associatives vocabulary <file>", std::nullopt, std::nullopt}},
         {"-ra_min_sim",   {"Reliable associatives minimal similarity", "0.5", std::nullopt}},
         {"-ra_rate",      {"Reliable associatives sample rate", "1", std::nullopt}},
         {"-ra_pack",      {"Reliable associatives package size", "1", std::nullopt}},
-        {"-ra_span",      {"Reliable associatives logic span", "0.2", std::nullopt}},
+        {"-ra_span",      {"Reliable associatives logic span", "0.1", std::nullopt}},
         {"-ca_vocab",     {"Categoroids vocabulary <file>", std::nullopt, std::nullopt}},
         {"-ca_rate",      {"Categoroids sample rate", "1", std::nullopt}},
         {"-ca_pack",      {"Categoroids package size", "1", std::nullopt}},
-        {"-ca_span",      {"Categoroids logic span", "0.2", std::nullopt}}
+        {"-ca_span",      {"Categoroids logic span", "0.1", std::nullopt}}
     };
   }
 };

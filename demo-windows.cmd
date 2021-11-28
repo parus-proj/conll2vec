@@ -1,8 +1,8 @@
 @echo off
 
 SETLOCAL
-SET SIZE_DEP=75
-SET SIZE_ASSOC=25
+SET SIZE_DEP=60
+SET SIZE_ASSOC=40
 SET SIZE_GRAMM=0
 SET TRAIN_FN=parus_first_10m_lines.conll
 SET COL_CTX_D=3
@@ -34,15 +34,15 @@ if not exist %TRAIN_FN% (
 
 echo.
 echo BUILDING VOCABULARIES
-conll2vec -task vocab -train %TRAIN_FN% -vocab_m %VOC_M% -vocab_p %VOC_P% -vocab_t %VOC_T% -vocab_d %VOC_D% -min-count_m 70 -min-count_p 100 -min-count_t 50 -min-count_d 20 -use_deprel %USE_DEPREL% -col_ctx_d %COL_CTX_D%
+conll2vec -task vocab -train %TRAIN_FN% -vocab_m %VOC_M% -vocab_p %VOC_P% -vocab_t %VOC_T% -vocab_d %VOC_D% -min-count_m 70 -min-count_p 100 -min-count_t 50 -min-count_d 20 -use_deprel %USE_DEPREL% -col_ctx_d %COL_CTX_D% -exclude_nums 1 -separate_p 0
 
 echo.
 echo TRAINING EMBEDDINGS -- MAIN
 conll2vec -task train -train %TRAIN_FN% -vocab_m %VOC_M% -backup backup.data -vocab_d %VOC_D% -vocab_a %VOC_M% -model %MODEL_FN% -size_d %SIZE_DEP% -size_a %SIZE_ASSOC% -sample_w 1e-4 -sample_d 1e-4 -sample_a 1e-4 -negative 4 -iter 10 -col_ctx_d %COL_CTX_D% -use_deprel %USE_DEPREL% -threads %THREADS%
 
-echo.
-echo TRAINING EMBEDDINGS -- PROPER
-conll2vec -task train -train %TRAIN_FN% -vocab_p %VOC_P% -restore backup.data -vocab_d %VOC_D% -vocab_a %VOC_M% -model %MODEL_FN% -size_d %SIZE_DEP% -size_a %SIZE_ASSOC% -sample_w 1e-2 -sample_d 1e-2 -sample_a 1e-4 -negative 4 -iter 10 -col_ctx_d %COL_CTX_D% -use_deprel %USE_DEPREL% -threads %THREADS%
+rem echo.
+rem echo TRAINING EMBEDDINGS -- PROPER
+rem conll2vec -task train -train %TRAIN_FN% -vocab_p %VOC_P% -restore backup.data -vocab_d %VOC_D% -vocab_a %VOC_M% -model %MODEL_FN% -size_d %SIZE_DEP% -size_a %SIZE_ASSOC% -sample_w 1e-2 -sample_d 1e-2 -sample_a 1e-4 -negative 4 -iter 10 -col_ctx_d %COL_CTX_D% -use_deprel %USE_DEPREL% -threads %THREADS%
 
 echo.
 echo RUN SIMILARITY METER

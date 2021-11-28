@@ -89,7 +89,7 @@ int main(int argc, char **argv)
   if (task == "vocab")
   {
     VocabsBuilder vb;
-    bool succ = vb.build_vocabs( cmdLineParams.getAsString("-train"),
+    bool succ = vb.build_vocabs( cmdLineParams.getAsString("-train"), (cmdLineParams.getAsInt("-separate_p") == 1),
                                  cmdLineParams.getAsString("-vocab_m"), cmdLineParams.getAsString("-vocab_p"), cmdLineParams.getAsString("-vocab_t"),
                                  cmdLineParams.getAsString("-tl_map"), cmdLineParams.getAsString("-vocab_o"), cmdLineParams.getAsString("-vocab_d"),
                                  cmdLineParams.getAsInt("-min-count_m"), cmdLineParams.getAsInt("-min-count_p"), cmdLineParams.getAsInt("-min-count_t"),

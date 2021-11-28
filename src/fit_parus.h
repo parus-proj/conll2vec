@@ -52,6 +52,8 @@ public:
         continue;
       if (sentence_matrix.size() == 0)
         continue;
+//      if ( !is_token_no_sequence_valid(sentence_matrix) )
+//        continue;
       // конвертируем строки в utf-32
       u32_sentence_matrix.clear();
       for (auto& t : sentence_matrix)
@@ -93,6 +95,19 @@ private:
     }
     ofs << '\n';
   } // method-end
+//  // проверка корректности нумерации токенов в предложении
+//  bool is_token_no_sequence_valid(const SentenceMatrix& data)
+//  {
+//    size_t pre_tn = 0;
+//    for (auto& t : data)
+//    {
+//      size_t tn = 0;
+//      try { tn = std::stoi(t[0]); } catch (...) { return false; }
+//      if (tn != pre_tn+1) return false;
+//      pre_tn = tn;
+//    }
+//    return true;
+//  }
   // функция обработки отдельного предложения
   void process_sentence(u32SentenceMatrix& data)
   {
@@ -145,14 +160,14 @@ private:
   void process_unknonw(u32SentenceMatrix& data)
   {
     for (auto& t : data)
-      if ( t[2] == U"<unknown>" /*|| t[2] == U"@card@"*/ )
+      if ( t[2] == U"<unknown>" || t[2] == U"@card@" )
         t[2] = U"_";
   }
   // обобщение токенов, содержащих числовые величины
   void process_nums(u32SentenceMatrix& data)
   {
     // превращаем числа в @num@
-    const std::u32string CARD = U"@card@";
+//    const std::u32string CARD = U"@card@";
     const std::u32string NUM  = U"@num@";
     const std::u32string Digs = U"0123456789";
     const std::u32string RuLets = U"АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЬЫЪЭЮЯабвгдеёжзийклмнопрстуфхцчшщьыъэюя";
@@ -162,25 +177,25 @@ private:
       auto& lemma = t[2];
       auto& synrel = t[7];
       if (synrel == U"PUNC") continue;
-      // если лемма=@card@ или токен состоит только из цифр, то лемму заменяем на @num@
-      if ( lemma == CARD || token.find_first_not_of(Digs) == std::u32string::npos )
-      {
-        lemma = NUM;
-        continue;
-      }
-      // превращаем 10:10 в @num@:@num@
-      size_t colonPos = token.find(U":");
-      if (colonPos != std::u32string::npos)
-      {
-        std::u32string firstPart  = token.substr(0, colonPos);
-        std::u32string secondPart = token.substr(colonPos+1);
-        if ( firstPart.find_first_not_of(Digs) == std::u32string::npos )
-          if ( secondPart.find_first_not_of(Digs) == std::u32string::npos )
-          {
-            lemma = NUM+U":"+NUM;
-            continue;
-          }
-      }
+//      // если лемма=@card@ или токен состоит только из цифр, то лемму заменяем на @num@
+//      if ( lemma == CARD || token.find_first_not_of(Digs) == std::u32string::npos )
+//      {
+//        lemma = NUM;
+//        continue;
+//      }
+//      // превращаем 10:10 в @num@:@num@
+//      size_t colonPos = token.find(U":");
+//      if (colonPos != std::u32string::npos)
+//      {
+//        std::u32string firstPart  = token.substr(0, colonPos);
+//        std::u32string secondPart = token.substr(colonPos+1);
+//        if ( firstPart.find_first_not_of(Digs) == std::u32string::npos )
+//          if ( secondPart.find_first_not_of(Digs) == std::u32string::npos )
+//          {
+//            lemma = NUM+U":"+NUM;
+//            continue;
+//          }
+//      }
       // превращаем слова вида 15-летие в @num@-летие
       size_t hyphenPos = token.find(U"-");
       if (hyphenPos != std::u32string::npos)

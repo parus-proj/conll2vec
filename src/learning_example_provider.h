@@ -280,6 +280,7 @@ public:
     for (size_t i = 0; i < sm_size; ++i)
     {
       auto word_idx = words_vocabulary->word_to_idx(sentence_matrix[i][emb_column]);
+      //TODO: не учитывается фильтрация по proper? Если "орел" есть в обоих словарях, то он учится и так, и этак. Проверить/исправить.
       if ( word_idx != INVALID_IDX )
       {
         ++t_environment.words_count;

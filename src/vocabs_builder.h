@@ -65,13 +65,15 @@ private:
   typedef std::shared_ptr<CategoroidsVocabulary> CategoroidsVocabularyPtr;
 public:
   // построение всех словарей
-  bool build_vocabs(const std::string& conll_fn,
+  bool build_vocabs(const std::string& conll_fn, bool separate_pn_learing,
                     const std::string& voc_m_fn, const std::string& voc_p_fn, const std::string& voc_t_fn,
                     const std::string& voc_tm_fn, const std::string& voc_oov_fn, const std::string& voc_d_fn,
                     size_t limit_m, size_t limit_p, size_t limit_t, size_t limit_o, size_t limit_d,
                     size_t ctx_vocabulary_column_d, bool use_deprel, bool excludeNumsFromToks, size_t max_oov_sfx,
                     const std::string& categoroids_vocab_fn)
   {
+    separate_proper_names_learing = separate_pn_learing;
+
     // открываем файл с тренировочными данными
     FILE *conll_file = fopen(conll_fn.c_str(), "rb");
     if ( conll_file == nullptr )
@@ -117,7 +119,8 @@ public:
         continue;
       apply_patches(sentence_matrix); // todo: УБРАТЬ!  временный дополнительный корректор для борьбы с "грязными данными" в результатах лемматизации
       process_sentence_lemmas_main(vocab_lemma_main, sentence_matrix);
-      process_sentence_lemmas_proper(vocab_lemma_proper, sentence_matrix);
+      if (separate_proper_names_learing)
+        process_sentence_lemmas_proper(vocab_lemma_proper, sentence_matrix);
       process_sentence_tokens(vocab_token, token2lemmas_map, excludeNumsFromToks, sentence_matrix);
       if (vocab_oov)
         process_sentence_oov(vocab_oov, sentence_matrix, max_oov_sfx);
@@ -128,7 +131,8 @@ public:
     stat.output_stat();
     // сохраняем словари в файлах
     std::cout << "Save lemmas main vocabulary..." << std::endl;
-    erase_main_stopwords(vocab_lemma_main); // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах морфологического анализа
+    if (separate_proper_names_learing)
+      erase_main_stopwords(vocab_lemma_main); // todo: УБРАТЬ!  временный дополнительный фильтр для борьбы с "грязными данными" в результатах морфологического анализа
     reduce_vocab(vocab_lemma_main, limit_m, coid_vocab);
     save_vocab(vocab_lemma_main, voc_m_fn);
     std::cout << "Save lemmas proper-names vocabulary..." << std::endl;
@@ -154,11 +158,22 @@ private:
   const std::string OOV = "_OOV_";
   // минимальная длина слова, от которого берутся oov-суффиксы
   const size_t SFX_SOURCE_WORD_MIN_LEN = 6;
+  // следует ли собственные имена тренировать отдельно от нарицательных
+  bool separate_proper_names_learing;
   // проверка, является ли токен собственным именем
   bool isProperName(const std::string& feats)
   {
-    return feats.length() >=2 && feats[0] == 'N' && feats[1] == 'p';
+    if ( !separate_proper_names_learing )
+      return false;
+    else
+      return feats.length() >=2 && feats[0] == 'N' && feats[1] == 'p';
   } // method-end
+  // проверка, является ли токен числовой конструкцией
+  bool isNumeric(const std::string& lemma)
+  {
+    return ( lemma == "@num@" || lemma == "@num@,@num@" || lemma == "@num@:@num@" ||
+             lemma == "@num@-@num@" || lemma == "@num@--@num@" || lemma == "@num@‒@num@" || lemma == "@num@–@num@" || lemma == "@num@—@num@" );
+  }
   // проверка, является ли токен стоп-словом для основного словаря (служит для исправления ошибок в разметке собственных имен)
   void erase_main_stopwords(VocabMappingPtr vocab)
   {
@@ -268,7 +283,7 @@ private:
         continue;
       if ( token[1] == "_" || token[2] == "_" )   // символ отсутствия значения в conll
         continue;
-      if ( excludeNumsFromToks && (token[2] == "@num@" || token[2] == "@num@:@num@") )
+      if ( excludeNumsFromToks && isNumeric(token[2]) )
         continue;
       auto word = token[1];
 
@@ -293,7 +308,7 @@ private:
         continue;
       if ( token[1] == "_" || token[2] == "_" )   // символ отсутствия значения в conll
         continue;
-      if ( token[2] == "@num@" || token[2] == "@num@:@num@" )
+      if ( isNumeric(token[2]) )
         continue;
       auto word = StrConv::To_UTF32(token[1]);
       auto wl = word.length();
