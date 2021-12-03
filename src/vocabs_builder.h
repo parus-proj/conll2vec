@@ -74,14 +74,6 @@ public:
   {
     separate_proper_names_learing = separate_pn_learing;
 
-    // открываем файл с тренировочными данными
-    FILE *conll_file = fopen(conll_fn.c_str(), "rb");
-    if ( conll_file == nullptr )
-    {
-      std::cerr << "Train-file open: error: " << std::strerror(errno) << std::endl;
-      return false;
-    }
-
     // загружаем справочник категороидов (при наличии)
     CategoroidsVocabularyPtr coid_vocab;
     if ( !categoroids_vocab_fn.empty() )
@@ -92,6 +84,14 @@ public:
         std::cerr << "Categoroids-file loading error." << std::endl;
         return false;
       }
+    }
+
+    // открываем файл с тренировочными данными
+    FILE *conll_file = fopen(conll_fn.c_str(), "rb");
+    if ( conll_file == nullptr )
+    {
+      std::cerr << "Train-file open: error: " << std::strerror(errno) << std::endl;
+      return false;
     }
 
     // создаем контейнеры для словарей
@@ -173,7 +173,7 @@ private:
   {
     return ( lemma == "@num@" || lemma == "@num@,@num@" || lemma == "@num@:@num@" ||
              lemma == "@num@-@num@" || lemma == "@num@--@num@" || lemma == "@num@‒@num@" || lemma == "@num@–@num@" || lemma == "@num@—@num@" );
-  }
+  } // method-end
   // проверка, является ли токен стоп-словом для основного словаря (служит для исправления ошибок в разметке собственных имен)
   void erase_main_stopwords(VocabMappingPtr vocab)
   {
