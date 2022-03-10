@@ -57,6 +57,8 @@ public:
                     "  DIM=GRAMM -- use only 'grammatical' dimensions\n"
                     "  MOD=WORD -- find most similar words for selected one\n"
                     "  MOD=PAIR -- estimate similarity for pair of words\n"
+                    "  SHORTEST -- show words with short vectors\n"
+                    "  LONGEST -- show words with long vectors\n"
                     "Initially: DIM=ALL, MOD=WORD\n\n" );
     // в цикле считываем слова и ищем для них ближайшие (по косинусной мере) в векторной модели
     while (true)
@@ -71,6 +73,8 @@ public:
       if (word == "DIM=GRAMM") { cmp_dims = cdGrammOnly; continue; }
       if (word == "MOD=WORD")  { cmp_mode = cmWord; continue; }
       if (word == "MOD=PAIR")  { cmp_mode = cmPair; continue; }
+      if (word == "SHORTEST")  { shortest(); continue; }
+      if (word == "LONGEST")   { longest(); continue; }
       switch ( cmp_mode )
       {
       case cmWord: word_mode_helper(word); break;
@@ -151,6 +155,43 @@ private:
     cmWord,     // вывод соседей указанного слова
     cmPair      // оценка сходства между парой слов
   } cmp_mode;
+
+  void shortest()
+  {
+    std::multimap<float, std::string, std::less<float>> est;
+    len_est(est);
+  }
+  void longest()
+  {
+    std::multimap<float, std::string, std::greater<float>> est;
+    len_est(est);
+  }
+  template<typename T>
+  void len_est(T est)
+  {
+    size_t s_dim = 0, f_dim = 0;
+    switch (cmp_dims)
+    {
+    case cdAll: s_dim = 0; f_dim = dep_size + assoc_size + gramm_size; break;
+    case cdDepOnly: s_dim = 0; f_dim = dep_size; break;
+    case cdAssocOnly: s_dim = dep_size; f_dim = dep_size + assoc_size; break;
+    case cdGrammOnly: s_dim = dep_size + assoc_size; f_dim = dep_size + assoc_size + gramm_size; break;
+    }
+    for (size_t i = 0; i < vm.words_count; ++i)
+    {
+      float* wOffset = vm.embeddings + i*vm.emb_size;
+      float len = std::sqrt( std::inner_product(wOffset+s_dim, wOffset+f_dim, wOffset+s_dim, 0.0) );
+      est.insert(std::make_pair(len, vm.vocab[i]));
+    }
+    auto it = est.begin();
+    std::advance(it, 100);
+    est.erase(it, est.end());
+    for (auto& i : est)
+    {
+      std::string s = ( i.second + "\t" + std::to_string(i.first) + "\n" );
+      str_to_console(s);
+    }
+  }
 
   float cosine_measure(float* w1_Offset, float* w2_Offset, CmpDims dims)
   {
