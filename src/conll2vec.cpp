@@ -17,6 +17,7 @@
 #include "derive_vocab.h"
 #include "ra_vocab.h"
 #include "categoroid_vocab.h"
+#include "model_splitter.h"
 
 #include <memory>
 #include <string>
@@ -72,7 +73,8 @@ int main(int argc, char **argv)
               << "  -task normalize   -- normalize vectors length" << std::endl
               << "  -task sseval      -- subsampling value estimation" << std::endl
               << "  -task deriv_make  -- automake derivatives vocab" << std::endl
-              << "  -task aextr       -- extract associative pairs from model" << std::endl;
+              << "  -task aextr       -- extract associative pairs from model" << std::endl
+              << "  -task spl_m       -- split model (stem, suffix)" << std::endl;
     return -1;
   }
   auto&& task = cmdLineParams.getAsString("-task");
@@ -576,6 +578,14 @@ int main(int argc, char **argv)
     }
     return 0;
   } // if task == aextr
+
+  // если поставлена задача разделения модели на подмодели псевдооснов, суффиксов и полных слов
+  if (task == "spl_m")
+  {
+    ModelSplitter::run( cmdLineParams.getAsString("-model"), cmdLineParams.getAsString("-tl_map"),
+                        cmdLineParams.getAsString("-vocab_o"), cmdLineParams.getAsInt("-size_g"), (cmdLineParams.getAsString("-model_fmt") == "txt") );
+    return 0;
+  } // if task == toks
 
   return -1;
 }
