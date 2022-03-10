@@ -5,6 +5,8 @@
 #include <locale>
 #include <codecvt>
 #include <unicode/uchar.h>
+#include <vector>
+#include <regex>
 
 
 class StrConv
@@ -61,6 +63,38 @@ public:
     ltrim(s);
     rtrim(s);
   }
+};
+
+
+class StrUtil
+{
+public:
+  // деление строки на подстроки строго по пробелу
+  static void split_by_space(const std::string& str, std::vector<std::string>& result)
+  {
+    size_t prev = 0;
+    while (true)
+    {
+      size_t curr = str.find(' ', prev);
+      if (curr == std::string::npos)
+      {
+        result.push_back( str.substr(prev) );
+        break;
+      }
+      else
+      {
+        result.push_back( str.substr(prev, curr-prev) );
+        prev = curr + 1;
+      }
+    }
+  } // method-end
+  // деление строки на подстроки по space-последовательностям
+  static void split_by_whitespaces(const std::string& str, std::vector<std::string>& result)
+  {
+    const std::regex space_re("\\s+");
+    result = std::vector<std::string>( std::sregex_token_iterator(str.cbegin(), str.cend(), space_re, -1),
+                                       std::sregex_token_iterator() );
+  } // method-end
 };
 
 

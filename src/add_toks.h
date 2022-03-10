@@ -2,6 +2,7 @@
 #define ADD_TOKS_H_
 
 #include "vectors_model.h"
+#include "str_conv.h"
 
 #include <memory>
 #include <string>
@@ -26,7 +27,7 @@ public:
     while ( std::getline(t2l_ifs, buf).good() )
     {
       std::vector<std::string> parts;
-      split_by_space(buf, parts);
+      StrUtil::split_by_space(buf, parts);
       if ( parts.size() < 3 || parts.size() % 2 == 0 ) continue;    // skip invalid records
       std::string token = parts[0];
       // если токен равен хоть какой-нибудь лемме (с уже построенным вектором), то пропускаем его
@@ -92,25 +93,6 @@ public:
     fclose(fo);
   } // method-end
 
-private:
-  static void split_by_space(const std::string& str, std::vector<std::string>& result)
-  {
-    size_t prev = 0;
-    while (true)
-    {
-      size_t curr = str.find(' ', prev);
-      if (curr == std::string::npos)
-      {
-        result.push_back( str.substr(prev) );
-        break;
-      }
-      else
-      {
-        result.push_back( str.substr(prev, curr-prev) );
-        prev = curr + 1;
-      }
-    }
-  } // method-end
 }; // class-decl-end
 
 
