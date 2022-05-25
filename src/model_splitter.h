@@ -40,12 +40,13 @@ public:
       std::map<size_t, size_t> lcmap;
       for ( size_t i = 0; i < ((parts.size()-1)/2); ++i )
       {
-        size_t lemma_idx = vm.get_word_idx(parts[i*2+1]);
+        const auto& lemma = parts[i*2+1];
+        const auto& cnt_str = parts[i*2+2];
+        size_t lemma_idx = vm.get_word_idx(lemma);
         if ( lemma_idx == vm.vocab.size() ) continue;
-        std::string cnt_str = parts[i*2+2];
         size_t cnt = 0;
         try { cnt = std::stoi(cnt_str); } catch (...) { isParseOk = false; break; }
-        if (cnt < 10) continue; // отсечем шум
+        if (cnt < 50) continue; // отсечем шум
         lcmap[lemma_idx] = cnt;
       }
       if (!isParseOk || lcmap.empty()) continue;
