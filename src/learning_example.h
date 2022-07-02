@@ -15,6 +15,7 @@ struct LearningExample
   std::vector<std::pair<size_t, size_t>> derivatives;       // индексы ассоциатов по деривации
   std::vector<std::tuple<size_t, size_t, float>> rassoc;    // индексы ассоциатов, согласно надежному источнику + степень их близости
   std::vector<std::pair<size_t, size_t>> categoroids;       // индексы категориально близких слов (согласно надежному источнику)
+  std::vector<std::pair<size_t, size_t>> rcat;              // индексы слов с сильной категориальной связью (согласно надежному источнику)
 };
 
 

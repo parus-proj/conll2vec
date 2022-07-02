@@ -65,7 +65,12 @@ public:
         {"-ca_vocab",     {"Categoroids vocabulary <file>", std::nullopt, std::nullopt}},
         {"-ca_rate",      {"Categoroids sample rate", "1", std::nullopt}},
         {"-ca_pack",      {"Categoroids package size", "1", std::nullopt}},
-        {"-ca_span",      {"Categoroids logic span", "0.1", std::nullopt}}
+        {"-ca_span",      {"Categoroids logic span", "0.1", std::nullopt}},
+        {"-rc_vocab",     {"Reliable categorial nests vocabulary <file>", std::nullopt, std::nullopt}},
+        {"-rc_rate",      {"Reliable categorial nests sample rate", "1", std::nullopt}},
+        {"-rc_pack",      {"Reliable categorial nests package size", "1", std::nullopt}},
+        {"-rc_span",      {"Reliable categorial nests logic span", "0.1", std::nullopt}}
+
     };
   }
 };

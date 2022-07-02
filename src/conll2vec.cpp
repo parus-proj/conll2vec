@@ -194,6 +194,13 @@ int main(int argc, char **argv)
       if ( !coid_vocab->load( cmdLineParams.getAsString("-ca_vocab"), v_main ) )
         return -1;
     }
+    std::shared_ptr< CategoroidsVocabulary > rc_vocab;
+    if ( cmdLineParams.isDefined("-rc_vocab"))
+    {
+      rc_vocab = std::make_shared<CategoroidsVocabulary>();
+      if ( !rc_vocab->load( cmdLineParams.getAsString("-rc_vocab"), v_main ) )
+        return -1;
+    }
 
     // создание поставщика обучающих примеров
     // к моменту создания "поставщика обучающих примеров" словарь должен быть загружен (в частности, используется cn_sum())
@@ -203,7 +210,7 @@ int main(int argc, char **argv)
                                                                                                   v_dep_ctx, v_assoc_ctx,
                                                                                                   2,
                                                                                                   false, 0,
-                                                                                                  deriv_vocab, ra_vocab, coid_vocab
+                                                                                                  deriv_vocab, ra_vocab, coid_vocab, rc_vocab
                                                                                                 );
 
     // создаем объект, организующий обучение

@@ -12,7 +12,7 @@
 #include <iostream>
 #include <fstream>
 
-//#include <mutex>
+//#include "log.h"
 
 #ifdef _MSC_VER
   #define posix_memalign(p, a, s) (((*(p)) = _aligned_malloc((s), (a))), *(p) ? 0 : errno)
@@ -77,11 +77,14 @@ public:
     if ( dep_ctx_vocabulary )
       InitUnigramTable(table_dep, dep_ctx_vocabulary);
 
-//agit_ofs = new std::ofstream("agit.log");
 //agit_n = w_vocabulary->word_to_idx("агитация");
 //agit_v = w_vocabulary->word_to_idx("агитировать");
 ////agit_n = w_vocabulary->word_to_idx("атаковать");
 ////agit_v = w_vocabulary->word_to_idx("атака");
+//be200_id = w_vocabulary->word_to_idx("бе-200");
+//gs_id = w_vocabulary->word_to_idx("гидросамолет");
+//be200_id = w_vocabulary->word_to_idx("сбербанк");
+//gs_id = w_vocabulary->word_to_idx("банк");
   }
   // деструктор
   virtual ~Trainer()
@@ -288,6 +291,8 @@ public:
           }
         // преобразуем первую матрицу
         std::transform(wordVectorPtr, wordVectorPtr+size_gramm, eh, wordVectorPtr, std::plus<float>());
+        // ограничение степени выраженности признака
+        std::transform(wordVectorPtr, wordVectorPtr+size_gramm, wordVectorPtr, Trainer::space_threshold_functor);
 
       } // for all learning examples
       word_count_actual += (word_count - last_word_count);
@@ -324,17 +329,22 @@ public:
       if ( tok_idx != INVALID_IDX )
         VectorsModel::write_embedding__vec(fo, useTxtFmt, &syn0[tok_idx * size_gramm], 0, size_gramm);
       else
+      {
         VectorsModel::write_embedding__vec(fo, useTxtFmt, stub, 0, size_gramm);
+        //std::cout << "stub gramm part for: " << vm.vocab[a] << std::endl;       //todo: это из-за того, что леммы могут не попадать словарь токенов (по частотному порогу)
+      }
       VectorsModel::write_embedding__fin(fo);
     }
     if (v_oov)
     {
       // создаем опорный вектор для OOV (семантическая часть)
       float *support_oov_embedding = (float *) malloc(vm.emb_size*sizeof(float));
-      calc_support_embedding(vm.words_count, vm.emb_size, vm.embeddings, support_oov_embedding);
+      //calc_support_embedding(vm.words_count, vm.emb_size, vm.embeddings, support_oov_embedding);
       auto toks_cnt = w_vocabulary->size() - v_oov->size();
       for (size_t a = 0; a < v_oov->size(); ++a)
       {
+        //std::cout << "save: " << v_oov->idx_to_data(a).word << std::endl;
+        calc_support_embedding_oov(vm, v_oov->idx_to_data(a).word, support_oov_embedding);
         VectorsModel::write_embedding__start(fo, useTxtFmt, v_oov->idx_to_data(a).word);
         VectorsModel::write_embedding__vec(fo, useTxtFmt, support_oov_embedding, 0, vm.emb_size);
         VectorsModel::write_embedding__vec(fo, useTxtFmt, &syn0[(toks_cnt+a) * size_gramm], 0, size_gramm);
@@ -344,6 +354,32 @@ public:
     }
     fclose(fo);
     free(stub);
+  }
+  void calc_support_embedding_oov(const VectorsModel& vm, const std::string& oov_rec, float* support_embedding) const
+  {
+    const std::u32string OOV = U"_OOV_";
+    const size_t OOV_PREFIX_LEN = OOV.length();
+    const size_t SFX_SOURCE_WORD_MIN_LEN = 6;
+    auto sfx = StrConv::To_UTF32(oov_rec).substr(OOV_PREFIX_LEN);
+    for (size_t d = 0; d < vm.emb_size; ++d)
+    {
+      // воспользуемся методом Уэлфорда для вычисления среднего (чтобы избежать рисков переполнения при суммировании)
+      // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
+      float meanValue = 0;
+      size_t mvc = 1;
+      float* offset = vm.embeddings + d;
+      for (size_t w = 0; w < vm.words_count; ++w)
+      {
+        auto w_rec = StrConv::To_UTF32(vm.vocab[w]);
+        if (w_rec.length() >= SFX_SOURCE_WORD_MIN_LEN && w_rec.rfind(sfx) == w_rec.length()-sfx.length())
+        {
+          meanValue += ((*offset) - meanValue) / mvc;
+          ++mvc;
+        }
+        offset += vm.emb_size;
+      }
+      *(support_embedding + d) = meanValue;
+    }
   }
   void calc_support_embedding( size_t words_count, size_t emb_size, float* embeddings, float* support_embedding ) const
   {
@@ -569,6 +605,14 @@ private:
         i = vocabulary->size() - 1;
     }
   } // method-end
+  // функтор ограничения пространства
+  static float space_threshold_functor(float value)
+  {
+    const float FEATURE_VALUE_THRESHOLD = 3.0;
+    if ( value > FEATURE_VALUE_THRESHOLD ) return FEATURE_VALUE_THRESHOLD;
+    else if ( value < -FEATURE_VALUE_THRESHOLD ) return -FEATURE_VALUE_THRESHOLD;
+    else return value;
+  }
   // функция, реализующая модель обучения skip-gram
   void skip_gram( const LearningExample& le, float *neu1e, unsigned long long& next_random_ns )
   {
@@ -619,17 +663,18 @@ private:
       } // for all samples
       // обучение весов input -> hidden
       std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
-//if (le.word == agit_n || le.word == agit_v)
-//{
-//  float *vector1Ptr = syn0 + agit_n * layer1_size;
-//  float *vector2Ptr = syn0 + agit_v * layer1_size;
-//  float dist = std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, 0.0);
-//  dist /= std::sqrt( std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector1Ptr, 0.0) );
-//  dist /= std::sqrt( std::inner_product(vector2Ptr, vector2Ptr+size_dep, vector2Ptr, 0.0) );
-//  auto s = "1\t" + std::to_string(dist) + "\n";
-//  std::lock_guard<std::mutex> lg(agit_mut);
-//  (*agit_ofs) << s;
-//}
+      // ограничение степени выраженности признака
+      std::transform(targetVectorPtr, targetVectorPtr+size_dep, targetVectorPtr, Trainer::space_threshold_functor);
+//      if (le.word == gs_id || le.word == be200_id)
+//      {
+//        float *vector1Ptr = syn0 + gs_id * layer1_size;
+//        float *vector2Ptr = syn0 + be200_id * layer1_size;
+//        float dist = std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, 0.0);
+//        dist /= std::sqrt( std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector1Ptr, 0.0) );
+//        dist /= std::sqrt( std::inner_product(vector2Ptr, vector2Ptr+size_dep, vector2Ptr, 0.0) );
+//        auto s = "1\t" + std::to_string(dist);
+//        Log::getInstance()(s);
+//      }
     } // for all dep contexts
 
     // обработка "надежных" категориальных пар
@@ -638,27 +683,46 @@ private:
       auto&& lec = le.categoroids[d];
       float *vector1Ptr = syn0 + lec.first * layer1_size;
       float *vector2Ptr = syn0 + lec.second * layer1_size;
-      float f = std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, 0.0);
-      if ( !std::isnan(f) )
+      std::transform(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, neu1e, std::minus<float>());
+      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+size_dep, neu1e, 0.0) );
+      if ( e_dist > 0.1)
       {
-        f = sigmoid(f);
-        g = (1.0 - f) * alpha * 0.5;
-        if (g != 0)
-        {
-          std::transform(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return a + g*b;});
-          std::transform(vector2Ptr, vector2Ptr+size_dep, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return a + g*b;});
-//if (lec.first == agit_n && lec.second == agit_v)
-//{
-//  float dist = std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, 0.0);
-//  dist /= std::sqrt( std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector1Ptr, 0.0) );
-//  dist /= std::sqrt( std::inner_product(vector2Ptr, vector2Ptr+size_dep, vector2Ptr, 0.0) );
-//  auto s = "2\t" + std::to_string(dist) + "\t" + std::to_string(g) + "\t" + std::to_string(f) + "\n";
-//  std::lock_guard<std::mutex> lg(agit_mut);
-//  (*agit_ofs) << s;
-//}
-        }
+        std::transform(neu1e, neu1e+size_dep, neu1e, [this](float a) -> float {return a * alpha * 0.5;});
+        std::transform(vector2Ptr, vector2Ptr+size_dep, neu1e, vector2Ptr, std::plus<float>());
+        std::transform(vector1Ptr, vector1Ptr+size_dep, neu1e, vector1Ptr, std::minus<float>());
       }
     } // if categoroids
+
+    // обработка "сверхнадежных" категориальных пар
+    for ( size_t d = 0; d < le.rcat.size(); ++d )
+    {
+      auto&& lec = le.rcat[d];
+      float *vector1Ptr = syn0 + lec.first * layer1_size;
+      float *vector2Ptr = syn0 + lec.second * layer1_size;
+      std::transform(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, neu1e, std::minus<float>());
+      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+size_dep, neu1e, 0.0) );
+      if ( e_dist > 0.1)
+      {
+        std::transform(neu1e, neu1e+size_dep, neu1e, [this](float a) -> float {return a * alpha;});
+        std::transform(vector2Ptr, vector2Ptr+size_dep, neu1e, vector2Ptr, std::plus<float>());
+//        if (lec.first == gs_id && lec.second == be200_id)
+//        {
+//          float dist = std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, 0.0);
+//          dist /= std::sqrt( std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector1Ptr, 0.0) );
+//          dist /= std::sqrt( std::inner_product(vector2Ptr, vector2Ptr+size_dep, vector2Ptr, 0.0) );
+//          auto s = "2\t" + std::to_string(dist) + "\t_\t" + std::to_string(e_dist);
+//          Log::getInstance()(s);
+//        }
+      }
+//      else
+//      {
+//        float dist = std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, 0.0);
+//        dist /= std::sqrt( std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector1Ptr, 0.0) );
+//        dist /= std::sqrt( std::inner_product(vector2Ptr, vector2Ptr+size_dep, vector2Ptr, 0.0) );
+//        auto s = "00\t" + std::to_string(dist) + "\t_\t" + std::to_string(e_dist);
+//        Log::getInstance()(s);
+//      }
+    } // if reliable categorial pairs
 
     // цикл по ассоциативным контекстам
     targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
@@ -691,9 +755,17 @@ private:
           if (g == 0) continue;
           // обучение весов (input only)
           if (d == 0)
+          {
             std::transform(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, targetVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+            // ограничение степени выраженности признака
+            std::transform(targetVectorPtr, targetVectorPtr+size_assoc, targetVectorPtr, Trainer::space_threshold_functor);
+          }
           else
+          {
             std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+            // ограничение степени выраженности признака
+            std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, ctxVectorPtr, Trainer::space_threshold_functor);
+          }
         } // for all samples
       } // for all assoc contexts
     }
@@ -717,14 +789,13 @@ private:
       auto&& led = le.derivatives[d];
       float *vector1Ptr = syn0 + led.first * layer1_size + size_dep;
       float *vector2Ptr = syn0 + led.second * layer1_size + size_dep;
-      float f = std::inner_product(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, 0.0);
-      if ( !std::isnan(f) )
+      std::transform(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, neu1e, std::minus<float>());
+      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+size_assoc, neu1e, 0.0) );
+      if ( e_dist > 0.1)
       {
-        f = sigmoid(f);
-        g = (1.0 - f) * alpha * 0.5;
-        if (g == 0) continue;
-        std::transform(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return a + g*b;});
-        std::transform(vector2Ptr, vector2Ptr+size_assoc, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return a + g*b;});
+        std::transform(neu1e, neu1e+size_assoc, neu1e, [this](float a) -> float {return a * alpha * 0.5;});
+        std::transform(vector2Ptr, vector2Ptr+size_assoc, neu1e, vector2Ptr, std::plus<float>());
+        std::transform(vector1Ptr, vector1Ptr+size_assoc, neu1e, vector1Ptr, std::minus<float>());
       }
     } // if derivatives
 
@@ -735,14 +806,13 @@ private:
       float sim = std::get<2>(lera);
       float *vector1Ptr = syn0 + std::get<0>(lera) * layer1_size + size_dep;
       float *vector2Ptr = syn0 + std::get<1>(lera) * layer1_size + size_dep;
-      float f = std::inner_product(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, 0.0);
-      if ( !std::isnan(f) )
+      std::transform(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, neu1e, std::minus<float>());
+      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+size_assoc, neu1e, 0.0) );
+      if ( e_dist > 0.1)
       {
-        f = sigmoid(f);
-        g = (1.0 - f) * alpha * 0.5 * sim;
-        if (g == 0) continue;
-        std::transform(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return a + g*b;});
-        std::transform(vector2Ptr, vector2Ptr+size_assoc, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return a + g*b;});
+        std::transform(neu1e, neu1e+size_assoc, neu1e, [this,sim](float a) -> float {return a * alpha * 0.5 * sim;});
+        std::transform(vector2Ptr, vector2Ptr+size_assoc, neu1e, vector2Ptr, std::plus<float>());
+        std::transform(vector1Ptr, vector1Ptr+size_assoc, neu1e, vector1Ptr, std::minus<float>());
       }
     } // if reliable associatives
 
@@ -799,11 +869,11 @@ private:
     }
     return true;
   } // method-end
-//private:
+private:
 //  size_t agit_n;
 //  size_t agit_v;
-//  std::ofstream* agit_ofs;
-//  std::mutex agit_mut;
+//  size_t gs_id;
+//  size_t be200_id;
 }; // class-decl-end
 
 

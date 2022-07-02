@@ -16,6 +16,7 @@
 #include <cstring>       // for std::strerror
 #include <cmath>
 
+//#include "log.h"
 
 // информация, описывающая рабочий контекст одного потока управления (thread)
 struct ThreadEnvironment
@@ -29,6 +30,7 @@ struct ThreadEnvironment
   size_t deriv_counter;                                // счетчик для выбора обучающих примеров на деривацию с заданной частотой сэмплирования
   size_t ra_counter;                                   // аналогично для надежных ассоциатов
   size_t coid_counter;                                 // аналогично для категороидов
+  size_t rc_counter;                                   // аналогично для надежных категориальных пар
   ThreadEnvironment()
   : fi(nullptr)
   , position_in_sentence(-1)
@@ -37,6 +39,7 @@ struct ThreadEnvironment
   , deriv_counter(0)
   , ra_counter(0)
   , coid_counter(0)
+  , rc_counter(0)
   {
     sentence.reserve(1000);
     sentence_matrix.reserve(1000);
@@ -62,7 +65,8 @@ public:
                           size_t embColumn, bool oov, size_t oovMaxLen,
                           std::shared_ptr<DerivativeVocabulary> derivVocab = nullptr,
                           std::shared_ptr<ReliableAssociativesVocabulary> raVocab = nullptr,
-                          std::shared_ptr< CategoroidsVocabulary > coid_vocab = nullptr)
+                          std::shared_ptr< CategoroidsVocabulary > coid_vocab = nullptr,
+                          std::shared_ptr< CategoroidsVocabulary > rcVocab = nullptr)
   : threads_count( cmdLineParams.getAsInt("-threads") )
   , train_filename( cmdLineParams.getAsString("-train") )
   , words_vocabulary(wordsVocabulary)
@@ -89,6 +93,10 @@ public:
   , coid_rate( cmdLineParams.getAsInt("-ca_rate") )
   , coid_pack( cmdLineParams.getAsInt("-ca_pack") )
   , coid_span( cmdLineParams.getAsFloat("-ca_span") )
+  , rc_vocabulary(rcVocab)
+  , rc_rate( cmdLineParams.getAsInt("-rc_rate") )
+  , rc_pack( cmdLineParams.getAsInt("-rc_pack") )
+  , rc_span( cmdLineParams.getAsFloat("-rc_span") )
   {
     thread_environment.resize(threads_count);
     for (size_t i = 0; i < threads_count; ++i)
@@ -324,6 +332,16 @@ public:
               le.categoroids.push_back( coid_vocababulary->get_random(t_environment.next_random) );
           }
         }
+        if ( rc_vocabulary && !rc_vocabulary->empty() && fraction < rc_span )
+        {
+          if (++t_environment.rc_counter == rc_rate)
+          {
+            t_environment.rc_counter = 0;
+            for (size_t i = 0; i < rc_pack; ++i)
+              le.rcat.push_back( rc_vocabulary->get_random(t_environment.next_random) );
+            //Log::getInstance()(3);
+          }
+        }
 
         t_environment.sentence.push_back(le);
       }
@@ -364,6 +382,8 @@ public:
     const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
     auto t32 = StrConv::To_UTF32(token);
     auto wl = t32.length();
+    if (wl < SFX_SOURCE_WORD_MIN_LEN)
+      return;
     std::string sfx;
     for (size_t i = 0; i < max_oov_sfx; ++i)
     {
@@ -454,6 +474,16 @@ private:
   size_t coid_pack;
   // процент итераций, на которых применяется словарь категороидов
   float coid_span;
+  // словарь надежных категор. пар
+  std::shared_ptr< CategoroidsVocabulary > rc_vocabulary;
+  // частота сэмлпирования из словаря надежных категор. пар
+  size_t rc_rate;
+  // количество пар в сэмле из словаря надежных категор. пар
+  size_t rc_pack;
+  // процент итераций, на которых применяется словарь надежных категор. пар
+  float rc_span;
+  // минимальная длина слова, от которого берутся oov-суффиксы
+  const size_t SFX_SOURCE_WORD_MIN_LEN = 6;
 
   // получение размера файла
   uint64_t get_file_size(const std::string& filename)

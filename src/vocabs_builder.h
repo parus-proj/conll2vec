@@ -330,10 +330,13 @@ private:
       {
         if (wl <= i)
           break;
-        bool isCyr = (RuLets.find(word[wl-i-1]) != std::u32string::npos);
+        std::u32string::value_type letter = word[wl-i-1];
+        bool isCyr = (RuLets.find(letter) != std::u32string::npos);
+        if (letter == U'-' && (sfx == "то" || sfx == "ка"))
+          isCyr = true;
         if (!isCyr)
           break;
-        sfx = StrConv::To_UTF8(std::u32string(1, word[wl-i-1])) + sfx;
+        sfx = StrConv::To_UTF8(std::u32string(1, letter)) + sfx;
         (*vocab)[OOV+sfx] += 1;
       }
     } // for all tokens in sentence
