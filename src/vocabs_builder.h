@@ -139,6 +139,7 @@ public:
     reduce_vocab(vocab_lemma_proper, limit_p);
     save_vocab(vocab_lemma_proper, voc_p_fn);
     std::cout << "Save tokens vocabulary..." << std::endl;
+    erase_toks_stopwords(vocab_token); // todo:  УБРАТЬ! временный доп.фильтр для борьбы с ошибками токенизации
     reduce_vocab(vocab_token, limit_t);
     save_vocab(vocab_token, voc_t_fn, token2lemmas_map, voc_tm_fn);
     if (vocab_oov)
@@ -188,6 +189,29 @@ private:
         stoplist.insert(line);
     }
     std::cout << "  stopwords reduce (main)" << std::endl;
+    auto it = vocab->begin();
+    while (it != vocab->end())    //TODO: в C++20 заменить на std::erase_if (https://en.cppreference.com/w/cpp/container/map/erase_if)
+    {
+      if (stoplist.find(it->first) == stoplist.end())
+        ++it;
+      else
+        it = vocab->erase(it);
+    }
+  } // method-end
+  // проверка, является ли токен стоп-словом для словаря токенов (служит для исправления ошибок токенизации)
+  void erase_toks_stopwords(VocabMappingPtr vocab)
+  {
+    static bool isListLoaded = false;
+    std::set<std::string> stoplist;
+    if (!isListLoaded)
+    {
+      isListLoaded = true;
+      std::ifstream ifs("stopwords.toks");
+      std::string line;
+      while ( std::getline(ifs, line).good() )
+        stoplist.insert(line);
+    }
+    std::cout << "  stopwords reduce (toks)" << std::endl;
     auto it = vocab->begin();
     while (it != vocab->end())    //TODO: в C++20 заменить на std::erase_if (https://en.cppreference.com/w/cpp/container/map/erase_if)
     {

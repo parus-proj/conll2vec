@@ -22,16 +22,16 @@ public:
     if ( !vm.load(model_fn, useTxtFmt) )
       return;
 
-    // 2. Загружаем список стоп-токенов (при наличии)
-    static bool isListLoaded = false;
-    std::set<std::string> stoplist;
-    if (!isListLoaded)
-    {
-      isListLoaded = true;
-      std::ifstream ifs("stopwords.toks");
-      while ( std::getline(ifs, buf).good() )
-        stoplist.insert(buf);
-    }
+//    // 2. Загружаем список стоп-токенов (при наличии)
+//    static bool isListLoaded = false;
+//    std::set<std::string> stoplist;
+//    if (!isListLoaded)
+//    {
+//      isListLoaded = true;
+//      std::ifstream ifs("stopwords.toks");
+//      while ( std::getline(ifs, buf).good() )
+//        stoplist.insert(buf);
+//    }
 
     // 3. Загружаем информацию о токенах (их отображение в леммы)
     std::map<std::string, std::map<size_t, size_t>> t2l_map;
@@ -46,8 +46,8 @@ public:
       //   fail: так нельзя: автотехника = (автотехника, автотехник), банка = (банка, банк)
       //size_t dbl_idx = vm.get_word_idx(token);
       //if ( dbl_idx != vm.vocab.size() ) continue;
-      // если токен из стоп-списка, то пропускаем его
-      if ( stoplist.find(token) != stoplist.end() ) continue;
+//      // если токен из стоп-списка, то пропускаем его
+//      if ( stoplist.find(token) != stoplist.end() ) continue;
       // парсим список лемм
       bool isParseOk = true;
       std::map<size_t, size_t> lcmap;
