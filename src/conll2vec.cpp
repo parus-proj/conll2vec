@@ -206,7 +206,7 @@ int main(int argc, char **argv)
     // к моменту создания "поставщика обучающих примеров" словарь должен быть загружен (в частности, используется cn_sum())
     std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
                                                                                                   (needLoadMainVocab ? v_main : v_proper ),
-                                                                                                  needLoadProperVocab,
+                                                                                                  needLoadProperVocab, false,
                                                                                                   v_dep_ctx, v_assoc_ctx,
                                                                                                   2,
                                                                                                   false, 0,
@@ -214,14 +214,15 @@ int main(int argc, char **argv)
                                                                                                 );
 
     // создаем объект, организующий обучение
-    Trainer trainer( lep, (needLoadMainVocab ? v_main : v_proper ), needLoadProperVocab,
+    Trainer trainer( lep, (needLoadMainVocab ? v_main : v_proper ), needLoadProperVocab, false,
                      v_dep_ctx, v_assoc_ctx,
                      cmdLineParams.getAsInt("-size_d"),
                      cmdLineParams.getAsInt("-size_a"),
                      0,
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
-                     cmdLineParams.getAsInt("-negative"),
+                     cmdLineParams.getAsInt("-negative_d"),
+                     cmdLineParams.getAsInt("-negative_a"),
                      cmdLineParams.getAsInt("-threads") );
 
     // инициализация нейросети
@@ -251,6 +252,10 @@ int main(int argc, char **argv)
     for (size_t i = 0; i < threads_count; ++i)
       threads_vec[i].join();
 
+//    // снижение масштаба
+//    std::cout << std::endl;
+//    trainer.rescale_dep();
+//    trainer.rescale_assoc();
     // сохраняем вычисленные вектора в файл
     if (needLoadMainVocab)
     {
@@ -266,6 +271,7 @@ int main(int argc, char **argv)
         trainer.appendEmbeddings( cmdLineParams.getAsString("-model"), (cmdLineParams.getAsString("-model_fmt") == "txt") );
     }
 
+    trainer.print_training_stat();
     return 0;
   } // if task == train
 
@@ -383,20 +389,21 @@ int main(int argc, char **argv)
     // создание поставщика обучающих примеров
     // к моменту создания "поставщика обучающих примеров" словарь должен быть загружен (в частности, используется cn_sum())
     std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
-                                                                                                  v_toks, false, v_dep_ctx, v_assoc_ctx,
+                                                                                                  v_toks, false, true, v_dep_ctx, v_assoc_ctx,
                                                                                                   1,
                                                                                                   false, 0
                                                                                                 );
 
     // создаем объект, организующий обучение
-    Trainer trainer( lep, v_toks, false,
+    Trainer trainer( lep, v_toks, false, true,
                      v_dep_ctx, v_assoc_ctx,
                      cmdLineParams.getAsInt("-size_d"),
                      cmdLineParams.getAsInt("-size_a"),
                      0,
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
-                     cmdLineParams.getAsInt("-negative"),
+                     cmdLineParams.getAsInt("-negative_d"),
+                     cmdLineParams.getAsInt("-negative_a"),
                      cmdLineParams.getAsInt("-threads") );
 
     // инициализация нейросети
@@ -440,18 +447,19 @@ int main(int argc, char **argv)
     }
     // создание поставщика обучающих примеров
     std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
-                                                                                                  v_toks, false, nullptr, nullptr,
+                                                                                                  v_toks, false, false, nullptr, nullptr,
                                                                                                   1,
                                                                                                   !oovv.empty(), cmdLineParams.getAsInt("-max_oov_sfx")
                                                                                                 );
     // создаем объект, организующий обучение
-    Trainer trainer( lep, v_toks, false, nullptr, nullptr,
+    Trainer trainer( lep, v_toks, false, false, nullptr, nullptr,
                      cmdLineParams.getAsInt("-size_d"),
                      cmdLineParams.getAsInt("-size_a"),
                      cmdLineParams.getAsInt("-size_g"),
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
-                     cmdLineParams.getAsInt("-negative"),
+                     cmdLineParams.getAsInt("-negative_d"),
+                     cmdLineParams.getAsInt("-negative_a"),
                      cmdLineParams.getAsInt("-threads") );
 
     // инициализация нейросети

@@ -30,14 +30,14 @@ echo "TRAINING EMBEDDINGS -- MAIN"
 ./conll2vec -task train -train $TRAIN_FN \
             -vocab_m $VOC_M -backup backup.data -vocab_d $VOC_D -vocab_a $VOC_M -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL -model $MODEL_FN \
             -sample_w 1e-4 -sample_d 1e-4 -sample_a 1e-4 \
-            -size_d $SIZE_DEP -size_a $SIZE_ASSOC -negative 4 -iter 10 -threads $THREADS
+            -size_d $SIZE_DEP -size_a $SIZE_ASSOC -negative_d 4 -negative_a 3 -iter 10 -threads $THREADS
 
 #echo ""
 #echo "TRAINING EMBEDDINGS -- PROPER"
 #./conll2vec -task train -train $TRAIN_FN \
 #            -vocab_p $VOC_P -restore backup.data -vocab_d $VOC_D -vocab_a $VOC_M -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL -model $MODEL_FN \
 #            -sample_w 1e-2 -sample_d 1e-2 -sample_a 1e-4 \
-#            -size_d $SIZE_DEP -size_a $SIZE_ASSOC -negative 4 -iter 10 -threads $THREADS
+#            -size_d $SIZE_DEP -size_a $SIZE_ASSOC -negative_d 4 -negative_a 3 -iter 10 -threads $THREADS
 
 echo ""
 echo "RUN SIMILARITY METER"

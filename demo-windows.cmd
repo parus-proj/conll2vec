@@ -38,11 +38,11 @@ conll2vec -task vocab -train %TRAIN_FN% -vocab_m %VOC_M% -vocab_p %VOC_P% -vocab
 
 echo.
 echo TRAINING EMBEDDINGS -- MAIN
-conll2vec -task train -train %TRAIN_FN% -vocab_m %VOC_M% -backup backup.data -vocab_d %VOC_D% -vocab_a %VOC_M% -model %MODEL_FN% -size_d %SIZE_DEP% -size_a %SIZE_ASSOC% -sample_w 1e-4 -sample_d 1e-4 -sample_a 1e-4 -negative 4 -iter 10 -col_ctx_d %COL_CTX_D% -use_deprel %USE_DEPREL% -threads %THREADS%
+conll2vec -task train -train %TRAIN_FN% -vocab_m %VOC_M% -backup backup.data -vocab_d %VOC_D% -vocab_a %VOC_M% -model %MODEL_FN% -size_d %SIZE_DEP% -size_a %SIZE_ASSOC% -sample_w 1e-4 -sample_d 1e-4 -sample_a 1e-4 -negative_d 4 -negative_a 3 -iter 10 -col_ctx_d %COL_CTX_D% -use_deprel %USE_DEPREL% -threads %THREADS%
 
 rem echo.
 rem echo TRAINING EMBEDDINGS -- PROPER
-rem conll2vec -task train -train %TRAIN_FN% -vocab_p %VOC_P% -restore backup.data -vocab_d %VOC_D% -vocab_a %VOC_M% -model %MODEL_FN% -size_d %SIZE_DEP% -size_a %SIZE_ASSOC% -sample_w 1e-2 -sample_d 1e-2 -sample_a 1e-4 -negative 4 -iter 10 -col_ctx_d %COL_CTX_D% -use_deprel %USE_DEPREL% -threads %THREADS%
+rem conll2vec -task train -train %TRAIN_FN% -vocab_p %VOC_P% -restore backup.data -vocab_d %VOC_D% -vocab_a %VOC_M% -model %MODEL_FN% -size_d %SIZE_DEP% -size_a %SIZE_ASSOC% -sample_w 1e-2 -sample_d 1e-2 -sample_a 1e-4 -negative_d 4 -negative_a 3 -iter 10 -col_ctx_d %COL_CTX_D% -use_deprel %USE_DEPREL% -threads %THREADS%
 
 echo.
 echo RUN SIMILARITY METER

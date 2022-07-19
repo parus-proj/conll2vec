@@ -12,7 +12,7 @@
 #include <iostream>
 #include <fstream>
 
-//#include "log.h"
+#include "log.h"
 
 #ifdef _MSC_VER
   #define posix_memalign(p, a, s) (((*(p)) = _aligned_malloc((s), (a))), *(p) ? 0 : errno)
@@ -22,21 +22,26 @@
 #endif
 
 
-#define EXP_TABLE_SIZE 1000
-#define MAX_EXP 6
-//#define EXP_TABLE_SIZE 5000
-//#define MAX_EXP 30
+//#define EXP_TABLE_SIZE 1000
+//#define MAX_EXP 6
+#define EXP_TABLE_SIZE 2500
+#define MAX_EXP 15
+
+
+// forward decls
+class ThreadsInWorkCounterGuard;
 
 
 // хранит общие параметры и данные для всех потоков
 // реализует логику обучения
 class Trainer
 {
+  friend class ThreadsInWorkCounterGuard;
 public:
   // конструктор
   Trainer( std::shared_ptr< LearningExampleProvider> learning_example_provider,
            std::shared_ptr< CustomVocabulary > words_vocabulary,
-           bool trainProperNames,
+           bool trainProperNames, bool trainTokens,
            std::shared_ptr< CustomVocabulary > dep_contexts_vocabulary,
            std::shared_ptr< CustomVocabulary > assoc_contexts_vocabulary,
            size_t embedding_dep_size,
@@ -44,12 +49,14 @@ public:
            size_t embedding_gramm_size,
            size_t epochs,
            float learning_rate,
-           size_t negative_count,
+           size_t negative_count_d,
+           size_t negative_count_a,
            size_t total_threads_count )
   : lep(learning_example_provider)
   , w_vocabulary(words_vocabulary)
   , w_vocabulary_size(words_vocabulary->size())
   , proper_names(trainProperNames)
+  , toks_train(trainTokens)
   , dep_ctx_vocabulary(dep_contexts_vocabulary)
   , assoc_ctx_vocabulary(assoc_contexts_vocabulary)
   , layer1_size(embedding_dep_size + embedding_assoc_size)
@@ -59,7 +66,8 @@ public:
   , epoch_count(epochs)
   , alpha(learning_rate)
   , starting_alpha(learning_rate)
-  , negative(negative_count)
+  , negative_d(negative_count_d)
+  , negative_a(negative_count_a)
   {
     // предварительный табличный расчет для логистической функции
     expTable = (float *)malloc((EXP_TABLE_SIZE + 1) * sizeof(float));
@@ -77,14 +85,20 @@ public:
     if ( dep_ctx_vocabulary )
       InitUnigramTable(table_dep, dep_ctx_vocabulary);
 
-//agit_n = w_vocabulary->word_to_idx("агитация");
-//agit_v = w_vocabulary->word_to_idx("агитировать");
-////agit_n = w_vocabulary->word_to_idx("атаковать");
-////agit_v = w_vocabulary->word_to_idx("атака");
-//be200_id = w_vocabulary->word_to_idx("бе-200");
-//gs_id = w_vocabulary->word_to_idx("гидросамолет");
-//be200_id = w_vocabulary->word_to_idx("сбербанк");
-//gs_id = w_vocabulary->word_to_idx("банк");
+//dbg_id1 = w_vocabulary->word_to_idx("агитировать");
+//dbg_id2 = w_vocabulary->word_to_idx("агитация");
+//dbg_id1 = w_vocabulary->word_to_idx("атаковать");
+//dbg_id2 = w_vocabulary->word_to_idx("атака");
+//dbg_id1 = w_vocabulary->word_to_idx("гидросамолет");
+//dbg_id2 = w_vocabulary->word_to_idx("бе-200");
+//dbg_id1 = w_vocabulary->word_to_idx("банк");
+//dbg_id2 = w_vocabulary->word_to_idx("сбербанк");
+    dbg_id1 = w_vocabulary->word_to_idx("судно");
+    dbg_id2 = w_vocabulary->word_to_idx("судов");
+    dbg_id3 = w_vocabulary->word_to_idx("суд");
+//    dbg_id1 = w_vocabulary->word_to_idx("президент");
+//    dbg_id2 = w_vocabulary->word_to_idx("президента");
+//    dbg_id3 = w_vocabulary->word_to_idx("премьер-министр");
   }
   // деструктор
   virtual ~Trainer()
@@ -181,6 +195,8 @@ public:
   // обобщенная процедура обучения (точка входа для потоков)
   void train_entry_point( size_t thread_idx )
   {
+    std::unique_ptr<ThreadsInWorkCounterGuard> wth_guard = std::make_unique<ThreadsInWorkCounterGuard>(this);
+
     unsigned long long next_random_ns = thread_idx;
     // выделение памяти для хранения величины ошибки
     float *neu1e = (float *)calloc(layer1_size, sizeof(float));
@@ -212,6 +228,12 @@ public:
           alpha = starting_alpha * (1.0 - fraction);
           if ( alpha < starting_alpha * 0.0001 )
             alpha = starting_alpha * 0.0001;
+          if (dep_se_cnt >= 1000)
+            do_sync_action(thread_idx, &Trainer::rescale_dep);
+          if (ass_se_cnt >= 1000000)
+            do_sync_action(thread_idx, &Trainer::rescale_assoc);
+          if ((upd_ss_cnt == 0 && fraction >= 0.25) || (upd_ss_cnt == 1 && fraction >= 0.5) || (upd_ss_cnt == 2 && fraction >= 0.75))
+            do_sync_action(thread_idx, &Trainer::decrease_subsampling);
         } // if ('checkpoint')
         // читаем очередной обучающий пример
         auto learning_example = lep->get(thread_idx, fraction);
@@ -464,7 +486,7 @@ public:
   // функция восстановления весовых матриц из файла (предполагает, что память уже выделена)
   bool restore(const std::string& filename, bool left = true, bool right= true)
   {
-    // открываем файл модели
+    // открываем файл резервной копии модели
     std::ifstream ifs(filename.c_str(), std::ios::binary);
     if ( !ifs.good() )
     {
@@ -543,12 +565,20 @@ public:
     }
     return true;
   } // method-end
+  // вывод статистики о ходе обучения
+  void print_training_stat() const
+  {
+    std::cout << std::endl << "Training statistics" << std::endl;
+    std::cout << "Dep. sigmoid overflows: " << dep_se_total << std::endl;
+    std::cout << "Assoc. sigmoid overflows: " << ass_se_total << std::endl;
+  }
 
 private:
   std::shared_ptr< LearningExampleProvider > lep;
   std::shared_ptr< CustomVocabulary > w_vocabulary;
   size_t w_vocabulary_size;
   bool proper_names;  // признак того, что выполняется обучение векторных представлений для собственных имен
+  bool toks_train;    // признак того, что тренируются словоформы
   std::shared_ptr< CustomVocabulary > dep_ctx_vocabulary;
   std::shared_ptr< CustomVocabulary > assoc_ctx_vocabulary;
   // размерность скрытого слоя (она же размерность эмбеддинга)
@@ -566,7 +596,8 @@ private:
   // начальный learning rate
   float starting_alpha;
   // количество отрицательных примеров на каждый положительный при оптимизации методом negative sampling
-  size_t negative;
+  size_t negative_d;
+  size_t negative_a;
   // матрицы весов между слоями input-hidden и hidden-output
   float *syn0 = nullptr, *syn1_dep = nullptr, *syn1_assoc = nullptr;
   // табличное представление логистической функции в области определения [-MAX_EXP; +MAX_EXP]
@@ -574,6 +605,13 @@ private:
   // noise distribution for negative sampling
   const size_t table_size = 1e8; // 100 млн.
   int *table_dep = nullptr;
+  // счетчики "ошибок" точности вычисления сигмоиды
+  size_t dep_se_cnt = 0;
+  size_t ass_se_cnt = 0;
+  size_t dep_se_total = 0;
+  size_t ass_se_total = 0;
+  // количество операций изменения subsampling
+  size_t upd_ss_cnt = 0;
 
   // вычисление очередного случайного значения (для случайного выбора векторов в рамках процедуры negative sampling)
   inline void update_random_ns(unsigned long long& next_random_ns)
@@ -626,7 +664,7 @@ private:
     {
       // зануляем текущие значения ошибок (это частная производная ошибки E по выходу скрытого слоя h)
       std::fill(neu1e, neu1e+size_dep, 0.0);
-      for (size_t d = 0; d <= negative; ++d)
+      for (size_t d = 0; d <= negative_d; ++d)
       {
         if (d == 0) // на первой итерации рассматриваем положительный пример (контекст)
         {
@@ -646,6 +684,8 @@ private:
         float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_dep, ctxVectorPtr, 0.0);
         if ( std::isnan(f) ) continue;
         f = sigmoid(f);
+        if (f == -1.0 || f == 1.0)
+          ++dep_se_cnt;
         // вычислим ошибку, умноженную на коэффициент скорости обучения
         g = (label - f) * alpha;
         if (g == 0) continue;
@@ -654,28 +694,46 @@ private:
           std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
         else
         {
-          float g_norm = g / negative;
+          float g_norm = g / negative_d;
           std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g_norm](float a, float b) -> float {return a + g_norm*b;});
         }
         // обучение весов hidden -> output
-        if ( !proper_names )
+        if ( !proper_names && !toks_train )
+        {
           std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+          // ограничиваем значение в векторах контекста
+          // это необходимо для недопущения паралича обучения; sigmoid вычисляется с ограченной точностью, и если
+          // векторное произведение станет слишком большим (маленьким), то sigmoid выдаст +1 (-1), что сделает градиент нулевым на положительном примере
+          std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, ctxVectorPtr, Trainer::space_threshold_functor);
+        }
       } // for all samples
       // обучение весов input -> hidden
       std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
       // ограничение степени выраженности признака
       std::transform(targetVectorPtr, targetVectorPtr+size_dep, targetVectorPtr, Trainer::space_threshold_functor);
-//      if (le.word == gs_id || le.word == be200_id)
-//      {
-//        float *vector1Ptr = syn0 + gs_id * layer1_size;
-//        float *vector2Ptr = syn0 + be200_id * layer1_size;
-//        float dist = std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, 0.0);
-//        dist /= std::sqrt( std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector1Ptr, 0.0) );
-//        dist /= std::sqrt( std::inner_product(vector2Ptr, vector2Ptr+size_dep, vector2Ptr, 0.0) );
-//        auto s = "1\t" + std::to_string(dist);
-//        Log::getInstance()(s);
-//      }
     } // for all dep contexts
+    // DBG-start
+    if (le.word == dbg_id1 || le.word == dbg_id2 || le.word == dbg_id3)
+    {
+      float *vector1Ptr = syn0 + dbg_id1 * layer1_size;
+      float *vector2Ptr = syn0 + dbg_id2 * layer1_size;
+      float dist = std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, 0.0);
+      dist /= std::sqrt( std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector1Ptr, 0.0) );
+      dist /= std::sqrt( std::inner_product(vector2Ptr, vector2Ptr+size_dep, vector2Ptr, 0.0) );
+      auto sp = (le.word == dbg_id2) ? "\t*" : "";
+      auto s = std::to_string(dist) + sp;
+      Log::getInstance()(s);
+//      if (le.word == dbg_id2)
+//      {
+//        std::string bb;
+//        for (auto&& ctx_idx : le.dep_context)
+//          bb += " " + dep_ctx_vocabulary->idx_to_data(ctx_idx).word;
+//        Log::getInstance()(bb);
+//      }
+    }
+    // DBG-end
+    if (toks_train)
+      return;
 
     // обработка "надежных" категориальных пар
     for ( size_t d = 0; d < le.categoroids.size(); ++d )
@@ -705,32 +763,16 @@ private:
       {
         std::transform(neu1e, neu1e+size_dep, neu1e, [this](float a) -> float {return a * alpha;});
         std::transform(vector2Ptr, vector2Ptr+size_dep, neu1e, vector2Ptr, std::plus<float>());
-//        if (lec.first == gs_id && lec.second == be200_id)
-//        {
-//          float dist = std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, 0.0);
-//          dist /= std::sqrt( std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector1Ptr, 0.0) );
-//          dist /= std::sqrt( std::inner_product(vector2Ptr, vector2Ptr+size_dep, vector2Ptr, 0.0) );
-//          auto s = "2\t" + std::to_string(dist) + "\t_\t" + std::to_string(e_dist);
-//          Log::getInstance()(s);
-//        }
       }
-//      else
-//      {
-//        float dist = std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, 0.0);
-//        dist /= std::sqrt( std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector1Ptr, 0.0) );
-//        dist /= std::sqrt( std::inner_product(vector2Ptr, vector2Ptr+size_dep, vector2Ptr, 0.0) );
-//        auto s = "00\t" + std::to_string(dist) + "\t_\t" + std::to_string(e_dist);
-//        Log::getInstance()(s);
-//      }
     } // if reliable categorial pairs
 
     // цикл по ассоциативным контекстам
     targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
-    if (!proper_names)
+    if (!proper_names || toks_train)
     {
       for (auto&& ctx_idx : le.assoc_context)
       {
-        for (size_t d = 0; d <= negative; ++d)
+        for (size_t d = 0; d <= negative_a; ++d)
         {
           if (d == 0) // на первой итерации рассматриваем положительный пример (контекст)
           {
@@ -750,6 +792,8 @@ private:
           float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, 0.0);
           if ( std::isnan(f) ) continue;
           f = sigmoid(f);
+          if (f == -1.0 || f == 1.0)
+            ++ass_se_cnt;
           // вычислим ошибку, умноженную на коэффициент скорости обучения
           g = (label - f) * alpha;
           if (g == 0) continue;
@@ -782,6 +826,30 @@ private:
         std::transform(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, targetVectorPtr, [g](float a, float b) -> float {return a + g*b;});
       } // for all assoc contexts
     }
+//    // DBG-start
+//    if (le.word == dbg_id1 || le.word == dbg_id2 || le.word == dbg_id3)
+//    {
+//      float *vector1Ptr = syn0 + dbg_id1 * layer1_size + size_dep;
+//      float *vector2Ptr = syn0 + dbg_id2 * layer1_size + size_dep;
+//      float dist = std::inner_product(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, 0.0);
+//      dist /= std::sqrt( std::inner_product(vector1Ptr, vector1Ptr+size_assoc, vector1Ptr, 0.0) );
+//      dist /= std::sqrt( std::inner_product(vector2Ptr, vector2Ptr+size_assoc, vector2Ptr, 0.0) );
+//      auto sp = (le.word == dbg_id2) ? "\t*" : "";
+//      auto s = std::to_string(dist) + sp;
+//      Log::getInstance()(s);
+//      if (le.word == dbg_id2)
+//      {
+//        std::string bb;
+//        for (auto&& ctx_idx : le.assoc_context)
+//          bb += " " + w_vocabulary->idx_to_data(ctx_idx).word;
+//        Log::getInstance()(bb);
+//        std::string bbb = std::to_string(le.word);
+//        for (auto&& ctx_idx : le.assoc_context)
+//          bbb += " " + std::to_string(ctx_idx);
+//        Log::getInstance()(bbb);
+//      }
+//    }
+//    // DBG-end
 
     // обработка деривативных пар
     for ( size_t d = 0; d < le.derivatives.size(); ++d )
@@ -827,6 +895,97 @@ private:
   } // method-end
 
 private:
+  // блок полей для управления синхронным (однопоточным) действием
+  std::mutex mtx;
+  std::condition_variable cv1, cv2;
+  const size_t IMPOSSIBLE_THREAD_IDX = 1000000;
+  size_t sync_task_thread = IMPOSSIBLE_THREAD_IDX; // номер потока, взявшегося за выполнение действия (первый прибежавший)
+  bool action_in_progress = false; // признак того, что действие начало выполняться
+  size_t working_threads = 0; // счетчик работающих потоков
+
+  void do_sync_action(size_t thread_idx, std::function<void(Trainer&)> action)
+  {
+    // функция выполняет некое действие action над векторными пространствами в однопоточном режиме (остальные потоки уходят в ожидание)
+    // здесь локализована логика синхронизации, полезная логика реализуется в action
+    // !!!! должна быть гарантия, что к моменту первого вызова этой функции все рабочие потоки уже запустились (корректна величина working_threads)
+    {
+      std::lock_guard<std::mutex> lock(mtx);
+      if (sync_task_thread == IMPOSSIBLE_THREAD_IDX)
+      {
+        sync_task_thread = thread_idx;
+        action_in_progress = true;
+      }
+    }
+    if (thread_idx == sync_task_thread)
+    {
+      // ждем ухода в спячку всех работающих потоков
+      std::unique_lock<std::mutex> cv_lock(mtx);
+      cv1.wait(cv_lock, [this]{return working_threads == 1;});
+      // делаем полезную работу
+      std::cout << std::endl << "Sync action begin" << std::endl;
+      action(const_cast<Trainer&>(*this));
+      std::cout << "Sync action end" << std::endl;
+      // выполняем финализирующие действия и разблокируем все потоки
+      // здесь mtx захвачен (после cv1.wait), можно безопасно работать с управляющими полями
+      sync_task_thread = IMPOSSIBLE_THREAD_IDX;
+      action_in_progress = false;
+      cv2.notify_all();
+    }
+    else
+    {
+      std::unique_lock<std::mutex> cv_lock(mtx);
+      --working_threads;
+      cv1.notify_one();
+      cv2.wait(cv_lock, [this]{return action_in_progress == false;});
+      ++working_threads;
+    }
+  }
+  // масштабирование пространства
+  void rescale_dep()
+  {
+    std::cout << "Dep. rescale" << std::endl;
+    for (size_t a = 0; a < w_vocabulary->size(); ++a)
+      std::transform(syn0+a*layer1_size, syn0+a*layer1_size+size_dep, syn0+a*layer1_size, [](float v) -> float {return v*0.95;});
+    for (size_t a = 0; a < dep_ctx_vocabulary->size(); ++a)
+      std::transform(syn1_dep+a*size_dep, syn1_dep+a*size_dep+size_dep, syn1_dep+a*size_dep, [](float v) -> float {return v*0.99;});
+//    for (size_t a = 0; a < w_vocabulary->size(); ++a)
+//      for (size_t b = 0; b < size_dep; ++b)
+//        if (!std::isnormal(syn0[a*layer1_size+b]))
+//          std::cout << "*";
+//    for (size_t a = 0; a < dep_ctx_vocabulary->size(); ++a)
+//      for (size_t b = 0; b < size_dep; ++b)
+//        if (!std::isnormal(syn1_dep[a*size_dep+b]))
+//          std::cout << "*";
+//    std::cout << std::endl;
+    dep_se_total += dep_se_cnt;
+    dep_se_cnt = 0;
+  }
+  void rescale_assoc()
+  {
+    std::cout << "Assoc. rescale" << std::endl;
+    for (size_t a = 0; a < w_vocabulary->size(); ++a)
+      std::transform(syn0+a*layer1_size+size_dep, syn0+a*layer1_size+size_dep+size_assoc, syn0+a*layer1_size+size_dep, [](float v) -> float {return v*0.95;});
+//    for (size_t a = 0; a < w_vocabulary->size(); ++a)
+//      for (size_t b = size_dep; b < size_dep+size_assoc; ++b)
+//        if (!std::isnormal(syn0[a*layer1_size+b]))
+//          std::cout << "*";
+//    std::cout << std::endl;
+    ass_se_total += ass_se_cnt;
+    ass_se_cnt = 0;
+  }
+  // обновление subsampling-коэффициентов
+  void decrease_subsampling()
+  {
+    ++upd_ss_cnt;
+    std::cout << "Decrease subsampling" << std::endl;
+    lep->update_subsampling_rates(0.5, 0.95, 0.95); // выполняем первым, т.к. InitUnigramTable зависит от уже вычисленных sample_probability в словарях
+    if (table_dep)
+      free(table_dep);
+    if ( dep_ctx_vocabulary )
+      InitUnigramTable(table_dep, dep_ctx_vocabulary);
+  }
+
+private:
   uint64_t train_words = 0;
   uint64_t word_count_actual = 0;
   float fraction = 0.0;
@@ -870,11 +1029,34 @@ private:
     return true;
   } // method-end
 private:
-//  size_t agit_n;
-//  size_t agit_v;
-//  size_t gs_id;
-//  size_t be200_id;
+  size_t dbg_id1;
+  size_t dbg_id2;
+  size_t dbg_id3;
 }; // class-decl-end
+
+
+
+// RAII-класс для scope-обновления счетчика работающих потоков
+class ThreadsInWorkCounterGuard
+{
+public:
+  ThreadsInWorkCounterGuard(Trainer* t)
+  : trainer(t)
+  {
+    std::lock_guard<std::mutex> lock(trainer->mtx);
+    ++trainer->working_threads;
+  }
+  ~ThreadsInWorkCounterGuard()
+  {
+    {
+      std::lock_guard<std::mutex> lock(trainer->mtx);
+      --trainer->working_threads;
+    }
+    trainer->cv1.notify_one();
+  }
+private:
+  Trainer* trainer;
+};
 
 
 #endif /* TRAINER_H_ */

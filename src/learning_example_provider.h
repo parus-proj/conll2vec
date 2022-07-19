@@ -60,7 +60,7 @@ public:
   // конструктор
   LearningExampleProvider(const CommandLineParametersDefs& cmdLineParams,
                           std::shared_ptr<OriginalWord2VecVocabulary> wordsVocabulary,
-                          bool trainProperNames,
+                          bool trainProperNames, bool trainTokens,
                           std::shared_ptr<OriginalWord2VecVocabulary> depCtxVocabulary, std::shared_ptr<OriginalWord2VecVocabulary> assocCtxVocabulary,
                           size_t embColumn, bool oov, size_t oovMaxLen,
                           std::shared_ptr<DerivativeVocabulary> derivVocab = nullptr,
@@ -71,6 +71,7 @@ public:
   , train_filename( cmdLineParams.getAsString("-train") )
   , words_vocabulary(wordsVocabulary)
   , proper_names(trainProperNames)
+  , toks_train(trainTokens)
   , dep_ctx_vocabulary(depCtxVocabulary)
   , assoc_ctx_vocabulary(assocCtxVocabulary)
   , emb_column(embColumn)
@@ -211,6 +212,7 @@ public:
   void get_from_sentence__usual(ThreadEnvironment& t_environment, float fraction)
   {
     auto& sentence_matrix = t_environment.sentence_matrix;
+
     auto sm_size = sentence_matrix.size();
     const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
     // конвертируем conll-таблицу в более удобные структуры
@@ -262,7 +264,10 @@ public:
     {
       for (auto& rec : sentence_matrix)
       {
-        size_t assoc_idx = assoc_ctx_vocabulary->word_to_idx(rec[2]);       // lemma column
+        // обязательно проверяем по словарю ассоциаций, т.к. он фильтруется (в отличие от главного)
+        // но индекс берем из главного (т.к. основной алгортим работает только по первой матрице)
+        std::string avi = (!toks_train) ? rec[2] : rec[1];    // lemma column by default; lower(token) when token training
+        size_t assoc_idx = assoc_ctx_vocabulary->word_to_idx(avi);
         if ( assoc_idx == INVALID_IDX )
           continue;
         // применяем сабсэмплинг к ассоциациям
@@ -419,6 +424,17 @@ public:
   {
     return gcLast;
   }
+  // изменение subsampling-коэффициентов в динамике
+  void update_subsampling_rates(float w_mul = 0.8, float d_mul = 0.8, float a_mul = 0.8)
+  {
+    sample_w *= w_mul; sample_d *= d_mul; sample_a *= a_mul;
+    if ( words_vocabulary )
+      words_vocabulary->sampling_estimation(sample_w);
+    if ( dep_ctx_vocabulary )
+      dep_ctx_vocabulary->sampling_estimation(sample_d);
+    if ( assoc_ctx_vocabulary )
+      assoc_ctx_vocabulary->sampling_estimation(sample_a);
+  }
 private:
   // количество потоков управления (thread), параллельно работающих с поставщиком обучающих примеров
   size_t threads_count = 0;
@@ -433,6 +449,7 @@ private:
   // словари
   std::shared_ptr< OriginalWord2VecVocabulary > words_vocabulary;
   bool proper_names;  // признак того, что выполняется обучение векторных представлений для собственных имен
+  bool toks_train;    // признак того, что тренируются словоформы
   std::shared_ptr< OriginalWord2VecVocabulary > dep_ctx_vocabulary;
   std::shared_ptr< OriginalWord2VecVocabulary > assoc_ctx_vocabulary;
   // номера колонок в conll, откуда считывать данные
