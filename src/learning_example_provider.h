@@ -60,7 +60,7 @@ public:
   // конструктор
   LearningExampleProvider(const CommandLineParametersDefs& cmdLineParams,
                           std::shared_ptr<OriginalWord2VecVocabulary> wordsVocabulary,
-                          bool trainProperNames, bool trainTokens,
+                          bool trainTokens,
                           std::shared_ptr<OriginalWord2VecVocabulary> depCtxVocabulary, std::shared_ptr<OriginalWord2VecVocabulary> assocCtxVocabulary,
                           size_t embColumn, bool oov, size_t oovMaxLen,
                           std::shared_ptr<DerivativeVocabulary> derivVocab = nullptr,
@@ -70,7 +70,6 @@ public:
   : threads_count( cmdLineParams.getAsInt("-threads") )
   , train_filename( cmdLineParams.getAsString("-train") )
   , words_vocabulary(wordsVocabulary)
-  , proper_names(trainProperNames)
   , toks_train(trainTokens)
   , dep_ctx_vocabulary(depCtxVocabulary)
   , assoc_ctx_vocabulary(assocCtxVocabulary)
@@ -183,7 +182,7 @@ public:
           continue;
         // проконтролируем, что номер первого токена равен единице
         try {
-          int tn = std::stoi( sentence_matrix[0][0] );
+          int tn = std::stoi( sentence_matrix[0][Conll::ID] );
           if (tn != 1) continue;
         } catch (...) {
           continue;
@@ -225,20 +224,20 @@ public:
         auto& token = sentence_matrix[i];
         size_t parent_token_no = 0;
         try {
-          parent_token_no = std::stoi(token[6]);
+          parent_token_no = std::stoi(token[Conll::HEAD]);
         } catch (...) {
           parent_token_no = 0; // если конвертирование неудачно, считаем, что нет родителя
         }
         if ( parent_token_no < 1 || parent_token_no > sm_size ) continue;
 
         // рассматриваем контекст с точки зрения родителя в синтаксической связи
-        auto ctx__from_head_viewpoint = ( use_deprel ? token[dep_column] + "<" + token[7] : token[dep_column] );
+        auto ctx__from_head_viewpoint = ( use_deprel ? token[dep_column] + "<" + token[Conll::DEPREL] : token[dep_column] );
         auto ctx__fhvp_idx = dep_ctx_vocabulary->word_to_idx( ctx__from_head_viewpoint );
         if ( ctx__fhvp_idx != INVALID_IDX )
           deps[ parent_token_no - 1 ].push_back( ctx__fhvp_idx );
         // рассматриваем контекст с точки зрения потомка в синтаксической связи
         auto& parent = sentence_matrix[ parent_token_no - 1 ];
-        auto ctx__from_child_viewpoint = (use_deprel ? parent[dep_column] + ">" + token[7] : parent[dep_column] );
+        auto ctx__from_child_viewpoint = (use_deprel ? parent[dep_column] + ">" + token[Conll::DEPREL] : parent[dep_column] );
         auto ctx__fcvp_idx = dep_ctx_vocabulary->word_to_idx( ctx__from_child_viewpoint );
         if ( ctx__fcvp_idx != INVALID_IDX )
           deps[ i ].push_back( ctx__fcvp_idx );
@@ -266,7 +265,7 @@ public:
       {
         // обязательно проверяем по словарю ассоциаций, т.к. он фильтруется (в отличие от главного)
         // но индекс берем из главного (т.к. основной алгортим работает только по первой матрице)
-        std::string avi = (!toks_train) ? rec[2] : rec[1];    // lemma column by default; lower(token) when token training
+        std::string avi = (!toks_train) ? rec[Conll::LEMMA] : rec[Conll::FORM];    // lemma column by default; lower(token) when token training
         size_t assoc_idx = assoc_ctx_vocabulary->word_to_idx(avi);
         if ( assoc_idx == INVALID_IDX )
           continue;
@@ -278,22 +277,16 @@ public:
           if (ran < (t_environment.next_random & 0xFFFF) / (float)65536)
             continue;
         }
-        if (!proper_names)
-        {
-          auto word_idx = words_vocabulary->word_to_idx(rec[emb_column]);
-          if ( word_idx == INVALID_IDX )
-            continue;
-          associations.insert(word_idx);
-        }
-        else
-          associations.insert(assoc_idx);
+        auto word_idx = words_vocabulary->word_to_idx(rec[emb_column]);
+        if ( word_idx == INVALID_IDX )
+          continue;
+        associations.insert(word_idx);
       } // for all words in sentence
     }
     // конвертируем в структуру для итерирования (фильтрация несловарных)
     for (size_t i = 0; i < sm_size; ++i)
     {
       auto word_idx = words_vocabulary->word_to_idx(sentence_matrix[i][emb_column]);
-      //TODO: не учитывается фильтрация по proper? Если "орел" есть в обоих словарях, то он учится и так, и этак. Проверить/исправить.
       if ( word_idx != INVALID_IDX )
       {
         ++t_environment.words_count;
@@ -307,7 +300,6 @@ public:
         LearningExample le;
         le.word = word_idx;
         le.dep_context = deps[i];
-        //std::copy(associations.begin(), associations.end(), std::back_inserter(le.assoc_context));   // текущее слово считаем себе ассоциативным
         std::copy_if( associations.begin(), associations.end(), std::back_inserter(le.assoc_context),
                       [word_idx](const size_t a_idx) {return (a_idx != word_idx);} );                  // текущее слово не считаем себе ассоциативным
         if ( deriv_vocabulary && !deriv_vocabulary->empty() && fraction < deriv_span )
@@ -374,11 +366,11 @@ public:
         }
         LearningExample le;
         le.word = word_idx;
-        msd2vec(le, sentence_matrix[i][5]);  // конструирование грамматического вектора из набора граммем
+        msd2vec(le, sentence_matrix[i][Conll::FEATURES]);  // конструирование грамматического вектора из набора граммем
         t_environment.sentence.push_back(le);
       }
       if (train_oov)
-        try_to_get_oov_suffixes(t_environment, token_str, sentence_matrix[i][5]);
+        try_to_get_oov_suffixes(t_environment, token_str, sentence_matrix[i][Conll::FEATURES]);
     }
   } // method-end
   void try_to_get_oov_suffixes(ThreadEnvironment& t_environment, const std::string& token, const std::string& msd)
@@ -448,7 +440,6 @@ private:
   uint64_t train_words = 0;
   // словари
   std::shared_ptr< OriginalWord2VecVocabulary > words_vocabulary;
-  bool proper_names;  // признак того, что выполняется обучение векторных представлений для собственных имен
   bool toks_train;    // признак того, что тренируются словоформы
   std::shared_ptr< OriginalWord2VecVocabulary > dep_ctx_vocabulary;
   std::shared_ptr< OriginalWord2VecVocabulary > assoc_ctx_vocabulary;

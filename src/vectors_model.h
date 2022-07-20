@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <set>
 #include <fstream>
 #include <iostream>
 
@@ -12,16 +13,27 @@ class VectorsModel
 {
 public:
   // количество слов в модели
-  size_t words_count;
+  size_t words_count = 0;
   // размерность пространства модели
-  size_t emb_size;
+  size_t emb_size = 0;
+  // подпространства и их размерности
+  size_t dep_size = 0;
+  size_t assoc_size = 0;
+  size_t gramm_size = 0;
+  // индексы смещений каждого из подпространств
+  size_t dep_begin = 0, dep_end = 0;
+  size_t assoc_begin = 0, assoc_end = 0;
+  size_t gramm_begin = 0, gramm_end = 0;
   // словарь модели (имеет место соответствие между порядком слов и порядком векторов)
   std::vector<std::string> vocab;
   // векторное пространство
-  float* embeddings;
+  float* embeddings = nullptr;
+public:
+  // индексы лексических единиц, не подлежащих сохранению (для упрощения логики фильтраций)
+  std::set<size_t> do_not_save;
 public:
   // c-tor
-  VectorsModel() : words_count(0), emb_size(0), embeddings(nullptr)
+  VectorsModel()
   {
   }
   // d-tor
@@ -35,16 +47,32 @@ public:
   {
     words_count = 0;
     emb_size = 0;
+    dep_size = 0; assoc_size = 0; gramm_size = 0;
+    dep_begin = 0; dep_end = 0; assoc_begin = 0; assoc_end = 0; gramm_begin = 0; gramm_end = 0;
     vocab.clear();
     if (embeddings)
     {
       free(embeddings);
       embeddings = nullptr;
     }
+    do_not_save.clear();
   } // method-end
-  // функция загрузки
+  // инициалиация размерностей подпространств
+  void setup_subspaces(size_t dep_part, size_t assoc_part, size_t gramm_part)
+  {
+    dep_size = dep_part;
+    assoc_size = assoc_part;
+    gramm_size = gramm_part;
+    dep_begin = 0;
+    dep_end = dep_size;
+    assoc_begin = dep_end;
+    assoc_end = dep_size + assoc_size;
+    gramm_begin = assoc_end;
+    gramm_end = dep_size + assoc_size + gramm_size;
+  }
+  // функция загрузки и импорта
   // выделяет память под хранение векторной модели
-  bool load( const std::string& model_fn, bool useTxtFmt, bool doNormalization = false )
+  bool load( const std::string& model_fn, const std::string& fmt = "c2v", bool doNormalization = false )
   {
     clear();
     // открываем файл модели
@@ -58,14 +86,17 @@ public:
     // считыавем размер матрицы
     ifs >> words_count;
     ifs >> emb_size;
+    if (fmt == "c2v")
+    {
+      ifs >> dep_size >> assoc_size >> gramm_size;
+      setup_subspaces(dep_size, assoc_size, gramm_size);
+    }
     std::getline(ifs,buf); // считываем конец строки
     // выделяем память для эмбеддингов
     embeddings = (float *) malloc( words_count * emb_size * sizeof(float) );
     if (embeddings == nullptr)
     {
-      std::cerr << "Cannot allocate memory: " << (words_count * emb_size * sizeof(float) / 1048576) << " MB" << std::endl;
-      std::cerr << "    Words: " << words_count << std::endl;
-      std::cerr << "    Embedding size: " << emb_size << std::endl;
+      report_alloc_error();
       return false;
     }
     vocab.reserve(words_count);
@@ -75,7 +106,7 @@ public:
       vocab.push_back(buf);
       // читаем вектор
       float* eOffset = embeddings + w*emb_size;
-      if ( !useTxtFmt )
+      if ( fmt != "txt" )
         ifs.read( reinterpret_cast<char*>( eOffset ), sizeof(float)*emb_size );
       else
       {
@@ -98,13 +129,17 @@ public:
     }
     return true;
   } // method-end
-  // сохранение модели
-  void save( const std::string& model_fn, bool useTxtFmt )
+  // функциясохранения и экспорта
+  void save( const std::string& model_fn, const std::string& fmt = "c2v" )
   {
     FILE *fo = fopen(model_fn.c_str(), "wb");
-    fprintf(fo, "%lu %lu\n", words_count, emb_size);
+    if (fmt == "c2v")
+      fprintf(fo, "%lu %lu %lu %lu %lu\n", words_count-do_not_save.size(), emb_size, dep_size, assoc_size, gramm_size);
+    else
+      fprintf(fo, "%lu %lu\n", words_count-do_not_save.size(), emb_size);
     for (size_t a = 0; a < vocab.size(); ++a)
-      VectorsModel::write_embedding(fo, useTxtFmt, vocab[a], &embeddings[a * emb_size], emb_size);
+      if ( do_not_save.find(a) == do_not_save.end() )
+        VectorsModel::write_embedding(fo, vocab[a], &embeddings[a * emb_size], emb_size, (fmt == "txt"));
     fclose(fo);
   } // method-end
   // поиск слова в словаре
@@ -116,6 +151,36 @@ public:
         break;
     return widx;
   } // method-end
+  // слияние моделей
+  bool merge(const VectorsModel& ext)
+  {
+    if (emb_size != ext.emb_size)
+    {
+      std::cerr << "Models merging with different embedding sizes" << std::endl;
+      return false;
+    }
+    size_t new_data_future_offset = words_count * emb_size;
+    // при наличии дубликатов: вектора из новой (вливаемой) модели замещают старые (текущие)
+    // используется, в частности, для безопасного добавления знаков препинания
+    for (auto w : ext.vocab)
+    {
+      size_t vec_idx = get_word_idx(w);
+      if (vec_idx != vocab.size())
+        do_not_save.insert(vec_idx);
+    }
+    // копируем словарь
+    std::copy(ext.vocab.begin(), ext.vocab.end(), std::back_inserter(vocab));
+    words_count = vocab.size();
+    // перевыделяем память и копируем новые эмбеддинги
+    embeddings = (float *) realloc(embeddings, words_count * emb_size * sizeof(float) );
+    if (embeddings == nullptr)
+    {
+      report_alloc_error();
+      return false;
+    }
+    std::copy(ext.embeddings, ext.embeddings + ext.words_count*ext.emb_size, embeddings+new_data_future_offset);
+    return true;
+  }
   // статический метод для порождения случайного вектора, близкого к заданному (память должна быть выделена заранее)
   static void make_embedding_as_neighbour( size_t emb_size, float* base_embedding, float* new_embedding, float distance_factor = 1.0 )
   {
@@ -127,23 +192,23 @@ public:
     }
   } // method-end
   // статический метод записи одного эмбеддинга в файл
-  static void write_embedding( FILE* fo, bool useTxtFmt, const std::string& word, float* embedding, size_t emb_size )
+  static void write_embedding( FILE* fo, const std::string& word, float* embedding, size_t emb_size, bool useTxtFmt = false )
   {
-    write_embedding_slice( fo, useTxtFmt, word, embedding, 0, emb_size );
+    write_embedding_slice( fo, word, embedding, 0, emb_size, useTxtFmt );
   } // method-end
-  static void write_embedding_slice( FILE* fo, bool useTxtFmt, const std::string& word, float* embedding, size_t begin, size_t end )
+  static void write_embedding_slice( FILE* fo, const std::string& word, float* embedding, size_t begin, size_t end, bool useTxtFmt = false )
   {
-    write_embedding__start(fo, useTxtFmt, word);
-    write_embedding__vec(fo, useTxtFmt, embedding, begin, end);
+    write_embedding__start(fo, word, useTxtFmt);
+    write_embedding__vec(fo, embedding, begin, end, useTxtFmt);
     write_embedding__fin(fo);
   } // method-end
-  static void write_embedding__start( FILE* fo, bool useTxtFmt, const std::string& word )
+  static void write_embedding__start( FILE* fo, const std::string& word, bool useTxtFmt = false )
   {
     fprintf(fo, "%s", word.c_str());
     if ( !useTxtFmt )
       fprintf(fo, " ");
   } // method-end
-  static void write_embedding__vec( FILE* fo, bool useTxtFmt, float* embedding, size_t begin, size_t end )
+  static void write_embedding__vec( FILE* fo, float* embedding, size_t begin, size_t end, bool useTxtFmt = false )
   {
     for (size_t b = begin; b < end; ++b)
     {
@@ -157,6 +222,13 @@ public:
   {
     fprintf(fo, "\n");
   } // method-end
+private:
+  void report_alloc_error() const
+  {
+    std::cerr << "Cannot allocate memory: " << (words_count * emb_size * sizeof(float) / 1048576) << " MB" << std::endl;
+    std::cerr << "    Words: " << words_count << std::endl;
+    std::cerr << "    Embedding size: " << emb_size << std::endl;
+  }
 }; // class-decl-end
 
 

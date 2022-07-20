@@ -6,6 +6,21 @@
 #include <algorithm>
 
 
+enum Conll
+{
+  ID = 0,
+  FORM,
+  LEMMA,
+  UPOS,
+  XPOS,
+  FEATURES,
+  HEAD,
+  DEPREL,
+  DEPS,
+  MISC
+};
+
+
 class ConllReader
 {
 public:

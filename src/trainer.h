@@ -41,7 +41,7 @@ public:
   // конструктор
   Trainer( std::shared_ptr< LearningExampleProvider> learning_example_provider,
            std::shared_ptr< CustomVocabulary > words_vocabulary,
-           bool trainProperNames, bool trainTokens,
+           bool trainTokens,
            std::shared_ptr< CustomVocabulary > dep_contexts_vocabulary,
            std::shared_ptr< CustomVocabulary > assoc_contexts_vocabulary,
            size_t embedding_dep_size,
@@ -55,7 +55,6 @@ public:
   : lep(learning_example_provider)
   , w_vocabulary(words_vocabulary)
   , w_vocabulary_size(words_vocabulary->size())
-  , proper_names(trainProperNames)
   , toks_train(trainTokens)
   , dep_ctx_vocabulary(dep_contexts_vocabulary)
   , assoc_ctx_vocabulary(assoc_contexts_vocabulary)
@@ -85,20 +84,9 @@ public:
     if ( dep_ctx_vocabulary )
       InitUnigramTable(table_dep, dep_ctx_vocabulary);
 
-//dbg_id1 = w_vocabulary->word_to_idx("агитировать");
-//dbg_id2 = w_vocabulary->word_to_idx("агитация");
-//dbg_id1 = w_vocabulary->word_to_idx("атаковать");
-//dbg_id2 = w_vocabulary->word_to_idx("атака");
-//dbg_id1 = w_vocabulary->word_to_idx("гидросамолет");
-//dbg_id2 = w_vocabulary->word_to_idx("бе-200");
-//dbg_id1 = w_vocabulary->word_to_idx("банк");
-//dbg_id2 = w_vocabulary->word_to_idx("сбербанк");
-    dbg_id1 = w_vocabulary->word_to_idx("судно");
-    dbg_id2 = w_vocabulary->word_to_idx("судов");
-    dbg_id3 = w_vocabulary->word_to_idx("суд");
-//    dbg_id1 = w_vocabulary->word_to_idx("президент");
-//    dbg_id2 = w_vocabulary->word_to_idx("президента");
-//    dbg_id3 = w_vocabulary->word_to_idx("премьер-министр");
+//    dbg_id1 = w_vocabulary->word_to_idx("судов");
+//    dbg_id2 = w_vocabulary->word_to_idx("судно");
+//    dbg_id3 = w_vocabulary->word_to_idx("суд");
   }
   // деструктор
   virtual ~Trainer()
@@ -128,12 +116,6 @@ public:
       ap = posix_memalign((void **)&syn1_dep, 128, (long long)dep_vocab_size * size_dep * sizeof(float));
       if (syn1_dep == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
     }
-    if ( assoc_ctx_vocabulary && proper_names )
-    {
-      size_t assoc_vocab_size = assoc_ctx_vocabulary->size();
-      ap = posix_memalign((void **)&syn1_assoc, 128, (long long)assoc_vocab_size * size_assoc * sizeof(float));
-      if (syn1_assoc == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
-    }
   } // method-end
   // функция инициализации нейросети
   void init_net()
@@ -160,12 +142,6 @@ public:
     {
       size_t dep_vocab_size = dep_ctx_vocabulary->size();
       std::fill(syn1_dep, syn1_dep+dep_vocab_size*size_dep, 0.0);
-    }
-
-    if ( assoc_ctx_vocabulary && proper_names )
-    {
-      size_t assoc_vocab_size = assoc_ctx_vocabulary->size();
-      std::fill(syn1_assoc, syn1_assoc+assoc_vocab_size*size_assoc, 0.0);
     }
 
     start_learning_tp = std::chrono::steady_clock::now();
@@ -325,7 +301,7 @@ public:
     free(eo);
     free(eh);
   } // method-end: train_entry_point__gramm
-  void saveGrammaticalEmbeddings(const VectorsModel& vm, float g_ratio, const std::string& oov_voc_fn, const std::string& filename, bool useTxtFmt = false) const
+  void saveGrammaticalEmbeddings(const VectorsModel& vm, float g_ratio, const std::string& oov_voc_fn, const std::string& filename) const
   {
     const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
     // создаем грамматическое представление -- заглушку (будем приписывать её словам, для которых такие представления не тренировались)
@@ -342,17 +318,17 @@ public:
       return;
     // дописываем грамм-вектора к семантическим
     FILE *fo = fopen(filename.c_str(), "wb");
-    fprintf(fo, "%lu %lu\n", vm.vocab.size() + (v_oov ? v_oov->size() : 0), vm.emb_size + size_gramm);
+    fprintf(fo, "%lu %lu %lu %lu %lu\n", vm.vocab.size() + (v_oov ? v_oov->size() : 0), vm.emb_size + size_gramm, vm.dep_size, vm.assoc_size, size_gramm);
     for (size_t a = 0; a < vm.vocab.size(); ++a)
     {
-      VectorsModel::write_embedding__start(fo, useTxtFmt, vm.vocab[a]);
-      VectorsModel::write_embedding__vec(fo, useTxtFmt, &vm.embeddings[a*vm.emb_size], 0, vm.emb_size);
+      VectorsModel::write_embedding__start(fo, vm.vocab[a]);
+      VectorsModel::write_embedding__vec(fo, &vm.embeddings[a*vm.emb_size], 0, vm.emb_size);
       size_t tok_idx = w_vocabulary->word_to_idx(vm.vocab[a]);
       if ( tok_idx != INVALID_IDX )
-        VectorsModel::write_embedding__vec(fo, useTxtFmt, &syn0[tok_idx * size_gramm], 0, size_gramm);
+        VectorsModel::write_embedding__vec(fo, &syn0[tok_idx * size_gramm], 0, size_gramm);
       else
       {
-        VectorsModel::write_embedding__vec(fo, useTxtFmt, stub, 0, size_gramm);
+        VectorsModel::write_embedding__vec(fo, stub, 0, size_gramm);
         //std::cout << "stub gramm part for: " << vm.vocab[a] << std::endl;       //todo: это из-за того, что леммы могут не попадать словарь токенов (по частотному порогу)
       }
       VectorsModel::write_embedding__fin(fo);
@@ -367,9 +343,9 @@ public:
       {
         //std::cout << "save: " << v_oov->idx_to_data(a).word << std::endl;
         calc_support_embedding_oov(vm, v_oov->idx_to_data(a).word, support_oov_embedding);
-        VectorsModel::write_embedding__start(fo, useTxtFmt, v_oov->idx_to_data(a).word);
-        VectorsModel::write_embedding__vec(fo, useTxtFmt, support_oov_embedding, 0, vm.emb_size);
-        VectorsModel::write_embedding__vec(fo, useTxtFmt, &syn0[(toks_cnt+a) * size_gramm], 0, size_gramm);
+        VectorsModel::write_embedding__start(fo, v_oov->idx_to_data(a).word);
+        VectorsModel::write_embedding__vec(fo, support_oov_embedding, 0, vm.emb_size);
+        VectorsModel::write_embedding__vec(fo, &syn0[(toks_cnt+a) * size_gramm], 0, size_gramm);
         VectorsModel::write_embedding__fin(fo);
       }
       free(support_oov_embedding);
@@ -379,6 +355,7 @@ public:
   }
   void calc_support_embedding_oov(const VectorsModel& vm, const std::string& oov_rec, float* support_embedding) const
   {
+    // todo: параллелить или эвристика -- затратно
     const std::u32string OOV = U"_OOV_";
     const size_t OOV_PREFIX_LEN = OOV.length();
     const size_t SFX_SOURCE_WORD_MIN_LEN = 6;
@@ -403,20 +380,20 @@ public:
       *(support_embedding + d) = meanValue;
     }
   }
-  void calc_support_embedding( size_t words_count, size_t emb_size, float* embeddings, float* support_embedding ) const
-  {
-    for (size_t d = 0; d < emb_size; ++d)
-    {
-      float lbound = 1e10;
-      for (size_t w = 0; w < words_count; ++w)
-      {
-        float *offs = embeddings + w*emb_size + d;
-        if ( *offs < lbound )
-          lbound = *offs;
-      }
-      *(support_embedding + d) = lbound - 0.01; // добавляем немного, чтобы не растянуть пространство
-    }
-  } // method-end
+//  void calc_support_embedding( size_t words_count, size_t emb_size, float* embeddings, float* support_embedding ) const
+//  {
+//    for (size_t d = 0; d < emb_size; ++d)
+//    {
+//      float lbound = 1e10;
+//      for (size_t w = 0; w < words_count; ++w)
+//      {
+//        float *offs = embeddings + w*emb_size + d;
+//        if ( *offs < lbound )
+//          lbound = *offs;
+//      }
+//      *(support_embedding + d) = lbound - 0.01; // добавляем немного, чтобы не растянуть пространство
+//    }
+//  } // method-end
 //  inline void softmax(float* uVec, size_t sz)
 //  {
 //    float max = std::numeric_limits<float>::min();
@@ -433,33 +410,11 @@ public:
 //      uVec[i] /= sum;
 //  }
   // функция, реализующая сохранение эмбеддингов
-  void saveEmbeddings(const std::string& filename, bool useTxtFmt = false) const
+  void saveEmbeddings(const std::string& filename) const
   {
     FILE *fo = fopen(filename.c_str(), "wb");
-    fprintf(fo, "%lu %lu\n", w_vocabulary->size(), layer1_size);
-    if ( !useTxtFmt )
-      saveEmbeddingsBin_helper(fo, w_vocabulary, syn0, layer1_size);
-    else
-      saveEmbeddingsTxt_helper(fo, w_vocabulary, syn0, layer1_size);
-    fclose(fo);
-  } // method-end
-  // функция добавления эмбеддингов в уже существующую модель
-  void appendEmbeddings(const std::string& filename, bool useTxtFmt = false) const
-  {
-    // загружаем всю модель в память
-    VectorsModel vm;
-    if ( !vm.load(filename, useTxtFmt) )
-      return;
-    if (vm.emb_size != layer1_size) { std::cerr << "Append: Dimensions fail" << std::endl; return; }
-    // сохраняем старую модель, затем текущую
-    FILE *fo = fopen(filename.c_str(), "wb");
-    fprintf(fo, "%lu %lu\n", vm.words_count + w_vocabulary->size(), layer1_size);
-    for (size_t a = 0; a < vm.vocab.size(); ++a)
-      VectorsModel::write_embedding(fo, useTxtFmt, vm.vocab[a], &vm.embeddings[a * vm.emb_size], vm.emb_size);
-    if ( !useTxtFmt )
-      saveEmbeddingsBin_helper(fo, w_vocabulary, syn0, layer1_size);
-    else
-      saveEmbeddingsTxt_helper(fo, w_vocabulary, syn0, layer1_size);
+    fprintf(fo, "%lu %lu %lu %lu %lu\n", w_vocabulary->size(), layer1_size, size_dep, size_assoc, size_gramm);
+    saveEmbeddingsBin_helper(fo, w_vocabulary, syn0, layer1_size);
     fclose(fo);
   } // method-end
   // функция сохранения весовых матриц в файл
@@ -522,26 +477,6 @@ public:
     start_learning_tp = std::chrono::steady_clock::now();
     return true;
   } // method-end
-  // функция восстановления ассоциативной весовой матрицы по векторной модели
-  bool restore_assoc_by_model(const VectorsModel& vm)
-  {
-    if (!assoc_ctx_vocabulary)
-      return true;
-    for (size_t a = 0; a < assoc_ctx_vocabulary->size(); ++a)
-    {
-      auto& aword = assoc_ctx_vocabulary->idx_to_data(a).word;
-      size_t w_idx = vm.get_word_idx(aword);
-      if (w_idx == vm.words_count)
-      {
-        std::cerr << "restore_assoc_by_model: vocabs inconsistency" << std::endl;
-        return false;
-      }
-      float* assoc_offset = vm.embeddings + w_idx * vm.emb_size + size_dep;
-      float* trg_offset = syn1_assoc + a * size_assoc;
-      std::copy(assoc_offset, assoc_offset + size_assoc, trg_offset);
-    }
-    return true;
-  } // method-end
   // функция восстановления левой весовой матрицы из векторной модели
   bool restore_left_matrix_by_model(const VectorsModel& vm)
   {
@@ -577,7 +512,6 @@ private:
   std::shared_ptr< LearningExampleProvider > lep;
   std::shared_ptr< CustomVocabulary > w_vocabulary;
   size_t w_vocabulary_size;
-  bool proper_names;  // признак того, что выполняется обучение векторных представлений для собственных имен
   bool toks_train;    // признак того, что тренируются словоформы
   std::shared_ptr< CustomVocabulary > dep_ctx_vocabulary;
   std::shared_ptr< CustomVocabulary > assoc_ctx_vocabulary;
@@ -698,7 +632,7 @@ private:
           std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g_norm](float a, float b) -> float {return a + g_norm*b;});
         }
         // обучение весов hidden -> output
-        if ( !proper_names && !toks_train )
+        if ( !toks_train )
         {
           std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
           // ограничиваем значение в векторах контекста
@@ -712,26 +646,29 @@ private:
       // ограничение степени выраженности признака
       std::transform(targetVectorPtr, targetVectorPtr+size_dep, targetVectorPtr, Trainer::space_threshold_functor);
     } // for all dep contexts
-    // DBG-start
-    if (le.word == dbg_id1 || le.word == dbg_id2 || le.word == dbg_id3)
-    {
-      float *vector1Ptr = syn0 + dbg_id1 * layer1_size;
-      float *vector2Ptr = syn0 + dbg_id2 * layer1_size;
-      float dist = std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, 0.0);
-      dist /= std::sqrt( std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector1Ptr, 0.0) );
-      dist /= std::sqrt( std::inner_product(vector2Ptr, vector2Ptr+size_dep, vector2Ptr, 0.0) );
-      auto sp = (le.word == dbg_id2) ? "\t*" : "";
-      auto s = std::to_string(dist) + sp;
-      Log::getInstance()(s);
-//      if (le.word == dbg_id2)
-//      {
-//        std::string bb;
-//        for (auto&& ctx_idx : le.dep_context)
-//          bb += " " + dep_ctx_vocabulary->idx_to_data(ctx_idx).word;
-//        Log::getInstance()(bb);
-//      }
-    }
-    // DBG-end
+//    // DBG-start
+//    if (le.word == dbg_id1 || le.word == dbg_id2 || le.word == dbg_id3)
+//    {
+//      float *vector1Ptr = syn0 + dbg_id1 * layer1_size;
+//      float *vector2Ptr = syn0 + dbg_id2 * layer1_size;
+//      float dist = std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, 0.0);
+//      dist /= std::sqrt( std::inner_product(vector1Ptr, vector1Ptr+size_dep, vector1Ptr, 0.0) );
+//      dist /= std::sqrt( std::inner_product(vector2Ptr, vector2Ptr+size_dep, vector2Ptr, 0.0) );
+//      auto sp = (le.word == dbg_id1) ? "\t*" : "";
+//      auto s = std::to_string(dist) + sp;
+//      Log::getInstance()(s);
+////      if (le.word == dbg_id1)
+////      {
+////        std::string bb;
+////        for (auto&& ctx_idx : le.dep_context)
+////          bb += " " + dep_ctx_vocabulary->idx_to_data(ctx_idx).word;
+////        Log::getInstance()(bb);
+////      }
+//    }
+//    // DBG-end
+
+    // при доучивании токенов не трогаем ассоциативную часть
+    // иначе "ассоциативная лексическая семантика" переучивается на "грамматическую/синтаксическую сочетаемость"
     if (toks_train)
       return;
 
@@ -768,88 +705,48 @@ private:
 
     // цикл по ассоциативным контекстам
     targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
-    if (!proper_names || toks_train)
+    for (auto&& ctx_idx : le.assoc_context)
     {
-      for (auto&& ctx_idx : le.assoc_context)
+      for (size_t d = 0; d <= negative_a; ++d)
       {
-        for (size_t d = 0; d <= negative_a; ++d)
+        if (d == 0) // на первой итерации рассматриваем положительный пример (контекст)
         {
-          if (d == 0) // на первой итерации рассматриваем положительный пример (контекст)
-          {
-            selected_ctx = ctx_idx;
-            label = 1;
-          }
-          else // на остальных итерациях рассматриваем отрицательные примеры (случайные контексты из noise distribution)
-          {
-            update_random_ns(next_random_ns);
-            selected_ctx = (next_random_ns >> 16) % w_vocabulary_size; // uniform distribution
-            // отталкиваем даже стоп-слова!
-            label = 0;
-          }
-          // вычисляем смещение вектора, соответствующего очередному положительному/отрицательному примеру
-          float *ctxVectorPtr = syn0 + selected_ctx * layer1_size + size_dep;
-          // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
-          float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, 0.0);
-          if ( std::isnan(f) ) continue;
-          f = sigmoid(f);
-          if (f == -1.0 || f == 1.0)
-            ++ass_se_cnt;
-          // вычислим ошибку, умноженную на коэффициент скорости обучения
-          g = (label - f) * alpha;
-          if (g == 0) continue;
-          // обучение весов (input only)
-          if (d == 0)
-          {
-            std::transform(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, targetVectorPtr, [g](float a, float b) -> float {return a + g*b;});
-            // ограничение степени выраженности признака
-            std::transform(targetVectorPtr, targetVectorPtr+size_assoc, targetVectorPtr, Trainer::space_threshold_functor);
-          }
-          else
-          {
-            std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
-            // ограничение степени выраженности признака
-            std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, ctxVectorPtr, Trainer::space_threshold_functor);
-          }
-        } // for all samples
-      } // for all assoc contexts
-    }
-    else
-    {
-      for (auto&& ctx_idx : le.assoc_context)
-      {
-        float *ctxVectorPtr = syn1_assoc + ctx_idx * size_assoc;
+          selected_ctx = ctx_idx;
+          label = 1;
+        }
+        else // на остальных итерациях рассматриваем отрицательные примеры (случайные контексты из noise distribution)
+        {
+          update_random_ns(next_random_ns);
+          selected_ctx = (next_random_ns >> 16) % w_vocabulary_size; // uniform distribution
+          // отталкиваем даже стоп-слова!
+          label = 0;
+        }
+        // вычисляем смещение вектора, соответствующего очередному положительному/отрицательному примеру
+        float *ctxVectorPtr = syn0 + selected_ctx * layer1_size + size_dep;
+        // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
         float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, 0.0);
         if ( std::isnan(f) ) continue;
         f = sigmoid(f);
-        g = (1.0 - f) * alpha;
+        if (f == -1.0 || f == 1.0)
+          ++ass_se_cnt;
+        // вычислим ошибку, умноженную на коэффициент скорости обучения
+        g = (label - f) * alpha;
         if (g == 0) continue;
-        std::transform(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, targetVectorPtr, [g](float a, float b) -> float {return a + g*b;});
-      } // for all assoc contexts
-    }
-//    // DBG-start
-//    if (le.word == dbg_id1 || le.word == dbg_id2 || le.word == dbg_id3)
-//    {
-//      float *vector1Ptr = syn0 + dbg_id1 * layer1_size + size_dep;
-//      float *vector2Ptr = syn0 + dbg_id2 * layer1_size + size_dep;
-//      float dist = std::inner_product(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, 0.0);
-//      dist /= std::sqrt( std::inner_product(vector1Ptr, vector1Ptr+size_assoc, vector1Ptr, 0.0) );
-//      dist /= std::sqrt( std::inner_product(vector2Ptr, vector2Ptr+size_assoc, vector2Ptr, 0.0) );
-//      auto sp = (le.word == dbg_id2) ? "\t*" : "";
-//      auto s = std::to_string(dist) + sp;
-//      Log::getInstance()(s);
-//      if (le.word == dbg_id2)
-//      {
-//        std::string bb;
-//        for (auto&& ctx_idx : le.assoc_context)
-//          bb += " " + w_vocabulary->idx_to_data(ctx_idx).word;
-//        Log::getInstance()(bb);
-//        std::string bbb = std::to_string(le.word);
-//        for (auto&& ctx_idx : le.assoc_context)
-//          bbb += " " + std::to_string(ctx_idx);
-//        Log::getInstance()(bbb);
-//      }
-//    }
-//    // DBG-end
+        // обучение весов (input only)
+        if (d == 0)
+        {
+          std::transform(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, targetVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+          // ограничение степени выраженности признака
+          std::transform(targetVectorPtr, targetVectorPtr+size_assoc, targetVectorPtr, Trainer::space_threshold_functor);
+        }
+        else
+        {
+          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+          // ограничение степени выраженности признака
+          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, ctxVectorPtr, Trainer::space_threshold_functor);
+        }
+      } // for all samples
+    } // for all assoc contexts
 
     // обработка деривативных пар
     for ( size_t d = 0; d < le.derivatives.size(); ++d )
@@ -948,15 +845,6 @@ private:
       std::transform(syn0+a*layer1_size, syn0+a*layer1_size+size_dep, syn0+a*layer1_size, [](float v) -> float {return v*0.95;});
     for (size_t a = 0; a < dep_ctx_vocabulary->size(); ++a)
       std::transform(syn1_dep+a*size_dep, syn1_dep+a*size_dep+size_dep, syn1_dep+a*size_dep, [](float v) -> float {return v*0.99;});
-//    for (size_t a = 0; a < w_vocabulary->size(); ++a)
-//      for (size_t b = 0; b < size_dep; ++b)
-//        if (!std::isnormal(syn0[a*layer1_size+b]))
-//          std::cout << "*";
-//    for (size_t a = 0; a < dep_ctx_vocabulary->size(); ++a)
-//      for (size_t b = 0; b < size_dep; ++b)
-//        if (!std::isnormal(syn1_dep[a*size_dep+b]))
-//          std::cout << "*";
-//    std::cout << std::endl;
     dep_se_total += dep_se_cnt;
     dep_se_cnt = 0;
   }
@@ -965,11 +853,6 @@ private:
     std::cout << "Assoc. rescale" << std::endl;
     for (size_t a = 0; a < w_vocabulary->size(); ++a)
       std::transform(syn0+a*layer1_size+size_dep, syn0+a*layer1_size+size_dep+size_assoc, syn0+a*layer1_size+size_dep, [](float v) -> float {return v*0.95;});
-//    for (size_t a = 0; a < w_vocabulary->size(); ++a)
-//      for (size_t b = size_dep; b < size_dep+size_assoc; ++b)
-//        if (!std::isnormal(syn0[a*layer1_size+b]))
-//          std::cout << "*";
-//    std::cout << std::endl;
     ass_se_total += ass_se_cnt;
     ass_se_cnt = 0;
   }
@@ -996,12 +879,7 @@ private:
   void saveEmbeddingsBin_helper(FILE *fo, std::shared_ptr< CustomVocabulary > vocabulary, float *weight_matrix, size_t emb_size) const
   {
     for (size_t a = 0; a < vocabulary->size(); ++a)
-      VectorsModel::write_embedding(fo, false, vocabulary->idx_to_data(a).word, &weight_matrix[a * emb_size], emb_size);
-  } // method-end
-  void saveEmbeddingsTxt_helper(FILE *fo, std::shared_ptr< CustomVocabulary > vocabulary, float *weight_matrix, size_t emb_size) const
-  {
-    for (size_t a = 0; a < vocabulary->size(); ++a)
-      VectorsModel::write_embedding(fo, true, vocabulary->idx_to_data(a).word, &weight_matrix[a * emb_size], emb_size);
+      VectorsModel::write_embedding(fo, vocabulary->idx_to_data(a).word, &weight_matrix[a * emb_size], emb_size);
   } // method-end
   void restore__read_sizes(std::ifstream& ifs, size_t& vocab_size, size_t& emb_size)
   {
@@ -1028,10 +906,10 @@ private:
     }
     return true;
   } // method-end
-private:
-  size_t dbg_id1;
-  size_t dbg_id2;
-  size_t dbg_id3;
+//private:
+//  size_t dbg_id1;
+//  size_t dbg_id2;
+//  size_t dbg_id3;
 }; // class-decl-end
 
 

@@ -18,11 +18,11 @@
 class ModelSplitter
 {
 public:
-  static void run( const std::string& model_fn, const std::string& tlm_fn, const std::string& oov_fn, size_t size_g, bool useTxtFmt = false )
+  static void run( const std::string& model_fn, const std::string& tlm_fn, const std::string& oov_fn, size_t size_g )
   {
     // 1. Загружаем модель
     VectorsModel vm;
-    if ( !vm.load(model_fn, useTxtFmt) )
+    if ( !vm.load(model_fn) )
       return;
 
     // 2. Загружаем информацию о токенах (их отображение в леммы)
@@ -152,7 +152,7 @@ public:
     fprintf(stems_fo, "%lu %lu\n", stems2lemma.size(), stem_size);
     for (auto& i : stems2lemma)
     {
-      VectorsModel::write_embedding_slice(stems_fo, useTxtFmt, StrConv::To_UTF8(i.first), &vm.embeddings[i.second * vm.emb_size], 0, stem_size);
+      VectorsModel::write_embedding_slice(stems_fo, StrConv::To_UTF8(i.first), &vm.embeddings[i.second * vm.emb_size], 0, stem_size);
     }
     fclose(stems_fo);
 
@@ -168,7 +168,7 @@ public:
     fprintf(sfx_fo, "%lu %lu\n", sfx_toks.size(), size_g);
     for (auto& i : sfx_toks)
     {
-      VectorsModel::write_embedding_slice(sfx_fo, useTxtFmt, vm.vocab[i], &vm.embeddings[i * vm.emb_size], stem_size, vm.emb_size);
+      VectorsModel::write_embedding_slice(sfx_fo, vm.vocab[i], &vm.embeddings[i * vm.emb_size], stem_size, vm.emb_size);
     }
     fclose(sfx_fo);
 
@@ -179,7 +179,7 @@ public:
     for (size_t a = 0; a < vm.vocab.size(); ++a)
     {
       if ( excl_toks.find(a) != excl_toks.end() || sfx_toks.find(a) != sfx_toks.end() ) continue;
-      VectorsModel::write_embedding(frm_fo, useTxtFmt, vm.vocab[a], &vm.embeddings[a * vm.emb_size], vm.emb_size);
+      VectorsModel::write_embedding(frm_fo, vm.vocab[a], &vm.embeddings[a * vm.emb_size], vm.emb_size);
     }
     fclose(frm_fo);
 

@@ -12,27 +12,27 @@
 class AddPunct
 {
 public:
-  static void run( const std::string& model_fn, bool useTxtFmt = false )
+  static void run( const std::string& model_fn )
   {
     // 1. Загружаем модель
     VectorsModel vm;
-    if ( !vm.load(model_fn, useTxtFmt) )
+    if ( !vm.load(model_fn) )
       return;
 
-    // 2. Добавляем в модель знаки пунктуации
-    const std::set<std::string> puncts = { ".", ",", "!", "?", ":", ";", "…", "...", "--", "—", "–", "‒",
-                                           "'", "ʼ", "ˮ", "\"", "«", "»", "“", "”", "„", "‟", "‘", "’", "‚", "‛",
-                                           "(", ")", "[", "]", "{", "}", "⟨", "⟩" };
-    for (auto p : puncts)
-    {
-      // проверяем наличие вектора для знака препинания в модели (если есть, то затрём его)
-      size_t vec_idx = vm.get_word_idx(p);
-      if (vec_idx != vm.vocab.size())
-        vm.vocab[vec_idx].clear();
-    }
-    // создаём хранилище для новых эмбеддингов
-    std::vector<std::string> new_vocab;
-    float *new_embeddings = (float *) malloc( puncts.size() * vm.emb_size * sizeof(float) );
+    // 2. Порождаем эмбеддинги для знаков пунктуации
+    const std::vector<std::string> puncts = { ".", ",", "!", "?", ";", "…", "...",
+                                              ":", "--", "—", "–", "‒",
+                                              "'", "ʼ", "ˮ", "\"",
+                                              "«", "“", "„", "‘", "‚",
+                                              "»", "”", "‟", "’", "‛",
+                                              "(", "[", "{", "⟨",
+                                              ")", "]", "}", "⟩"
+                                             };
+    VectorsModel pvm;
+    pvm.words_count = puncts.size();
+    pvm.emb_size = vm.emb_size;
+    std::copy(puncts.begin(), puncts.end(), std::back_inserter(pvm.vocab));
+    pvm.embeddings = (float *) malloc( pvm.words_count * pvm.emb_size * sizeof(float) );
     // создаём опорные эмбеддинги
     float *support_embedding = (float *) malloc(vm.emb_size*sizeof(float));
     calc_support_embedding(vm.words_count, vm.emb_size, vm.embeddings, support_embedding);
@@ -53,55 +53,32 @@ public:
     VectorsModel::make_embedding_as_neighbour(vm.emb_size, bracket_se, lbracket_se, 3);
     VectorsModel::make_embedding_as_neighbour(vm.emb_size, bracket_se, rbracket_se, 3);
     // создаём эбмеддинги для знаков препинания
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, dot_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back(".");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, dot_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("!");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, dot_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("?");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, dot_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back(";");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, dot_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("…");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, dot_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("...");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, dot_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back(",");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, dash_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back(":");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, dash_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("--");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, dash_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("—");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, dash_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("–");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, dash_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("‒");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, quote_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("'");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, quote_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("ʼ");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, quote_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("ˮ");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, quote_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("\"");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, lquote_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("«");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, rquote_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("»");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, lquote_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("“");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, rquote_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("”");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, lquote_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("„");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, rquote_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("‟");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, lquote_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("‘");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, rquote_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("’");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, lquote_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("‚");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, rquote_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("‛");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, lbracket_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("(");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, rbracket_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back(")");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, lbracket_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("[");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, rbracket_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("]");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, lbracket_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("{");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, rbracket_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("}");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, lbracket_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("⟨");
-    VectorsModel::make_embedding_as_neighbour(vm.emb_size, rbracket_se, new_embeddings + vm.emb_size * new_vocab.size()); new_vocab.push_back("⟩");
-
-
-    // 3. Сохраняем модель, расширенную знаками пунктуации
-    size_t old_vocab_size = std::count_if(vm.vocab.begin(), vm.vocab.end(), [](const std::string& item) {return !item.empty();});
-    FILE *fo = fopen(model_fn.c_str(), "wb");
-    fprintf(fo, "%lu %lu\n", old_vocab_size+new_vocab.size(), vm.emb_size);
-    for (size_t a = 0; a < vm.vocab.size(); ++a)
+    for (size_t i = 0; i < puncts.size(); ++i)
     {
-      if ( vm.vocab[a].empty() )
-        continue;
-      VectorsModel::write_embedding(fo, useTxtFmt, vm.vocab[a], &vm.embeddings[a * vm.emb_size], vm.emb_size);
+      const std::string& p = puncts[i];
+      float* base = nullptr;
+      if ( p == "." || p == "," || p == "!" || p == "?" || p == ";" || p == "…" || p == "..." )
+        base = dot_se;
+      else if ( p == ":" || p == "--" || p == "—" || p == "–" || p == "‒" )
+        base = dash_se;
+      else if ( p == "'" || p == "ʼ" || p == "ˮ" || p == "\"" )
+        base = quote_se;
+      else if ( p == "«" || p == "“" || p == "„" || p == "‘" || p == "‚" )
+        base = lquote_se;
+      else if ( p == "»" || p == "”" || p == "‟" || p == "’" || p == "‛" )
+        base = rquote_se;
+      else if ( p == "(" || p == "[" || p == "{" || p == "⟨" )
+        base = lbracket_se;
+      else if ( p == ")" || p == "]" || p == "}" || p == "⟩" )
+        base = rbracket_se;
+      VectorsModel::make_embedding_as_neighbour(vm.emb_size, base, pvm.embeddings + pvm.emb_size * i);
     }
-    for (size_t a = 0; a < new_vocab.size(); ++a)
-      VectorsModel::write_embedding(fo, useTxtFmt, new_vocab[a], &new_embeddings[a * vm.emb_size ], vm.emb_size);
-    fclose(fo);
+
+
+    // 3. Расширяем модель знаками пунктуации и сохраняем её
+    bool merge_ok = vm.merge(pvm);
+    if (merge_ok)
+      vm.save(model_fn);
 
   } // method-end
 

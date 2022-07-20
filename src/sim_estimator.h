@@ -29,18 +29,15 @@ public:
     cdGrammOnly
   };
 public:
-  SimilarityEstimator(size_t dep_part, size_t assoc_part, size_t gramm_part, float assoc_ratio)
-  : dep_size(dep_part)
-  , assoc_size(assoc_part)
-  , gramm_size(gramm_part)
-  , a_ratio_sqr(assoc_ratio*assoc_ratio)
-  , cmp_dims(cdAll)
+  SimilarityEstimator(float assoc_ratio)
+  : cmp_dims(cdAll)
   , cmp_mode(cmWord)
+  , a_ratio_sqr(assoc_ratio*assoc_ratio)
   {
   }
-  bool load_model(const std::string& model_fn, bool useTxtFmt = false)
+  bool load_model(const std::string& model_fn)
   {
-    return vm.load(model_fn, useTxtFmt, true);
+    return vm.load(model_fn, "c2v", false);
   } // method-end
   void run()
   {
@@ -140,11 +137,6 @@ public:
     return &vm;
   }
 private:
-  size_t dep_size;
-  size_t assoc_size;
-  size_t gramm_size;
-  // вклад ассоциативной части вектора в оценку близости (относительно категориальной части)
-  float a_ratio_sqr;
   // контейнер векторной модели
   VectorsModel vm;
   // измерения для сравнения
@@ -155,6 +147,8 @@ private:
     cmWord,     // вывод соседей указанного слова
     cmPair      // оценка сходства между парой слов
   } cmp_mode;
+  // вклад ассоциативной части вектора в оценку близости (относительно категориальной части)
+  float a_ratio_sqr;
 
   void shortest()
   {
@@ -172,10 +166,10 @@ private:
     size_t s_dim = 0, f_dim = 0;
     switch (cmp_dims)
     {
-    case cdAll: s_dim = 0; f_dim = dep_size + assoc_size + gramm_size; break;
-    case cdDepOnly: s_dim = 0; f_dim = dep_size; break;
-    case cdAssocOnly: s_dim = dep_size; f_dim = dep_size + assoc_size; break;
-    case cdGrammOnly: s_dim = dep_size + assoc_size; f_dim = dep_size + assoc_size + gramm_size; break;
+    case cdAll:       s_dim = 0; f_dim = vm.emb_size; break;
+    case cdDepOnly:   s_dim = vm.dep_begin; f_dim = vm.dep_end; break;
+    case cdAssocOnly: s_dim = vm.assoc_begin; f_dim = vm.assoc_end; break;
+    case cdGrammOnly: s_dim = vm.gramm_begin; f_dim = vm.gramm_end; break;
     }
     for (size_t i = 0; i < vm.words_count; ++i)
     {
@@ -196,8 +190,6 @@ private:
   float cosine_measure(float* w1_Offset, float* w2_Offset, CmpDims dims)
   {
     float result = 0;
-    size_t assoc_begin = dep_size;
-    size_t gramm_begin = dep_size + assoc_size;
     switch ( dims )
     {
     case cdAll       : //result = std::inner_product(w1_Offset, w1_Offset+vm.emb_size, w2_Offset, 0.0); break;
@@ -205,13 +197,13 @@ private:
                          float l1 = 0, l2 = 0;
                          for (size_t i = 0; i < vm.emb_size; ++i)
                          {
-                           if (i < assoc_begin)
+                           if (i < vm.assoc_begin)
                            {
                              result += w1_Offset[i]*w2_Offset[i];
                              l1 += w1_Offset[i]*w1_Offset[i];
                              l2 += w2_Offset[i]*w2_Offset[i];
                            }
-                           else if (i < gramm_begin)
+                           else if (i < vm.gramm_begin)
                            {
                              result += w1_Offset[i]*w2_Offset[i] * a_ratio_sqr;
                              l1 += w1_Offset[i]*w1_Offset[i] * a_ratio_sqr;
@@ -228,28 +220,24 @@ private:
                        }
                        break;
     case cdDepOnly   : {
-                         if (dep_size == 0) return 0;
-                         result = std::inner_product(w1_Offset, w1_Offset+dep_size, w2_Offset, 0.0);
-                         result /= std::sqrt( std::inner_product(w1_Offset, w1_Offset+dep_size, w1_Offset, 0.0) );
-                         result /= std::sqrt( std::inner_product(w2_Offset, w2_Offset+dep_size, w2_Offset, 0.0) );
+                         if (vm.dep_size == 0) return 0;
+                         result = std::inner_product(w1_Offset+vm.dep_begin, w1_Offset+vm.dep_end, w2_Offset+vm.dep_begin, 0.0);
+                         result /= std::sqrt( std::inner_product(w1_Offset+vm.dep_begin, w1_Offset+vm.dep_end, w1_Offset+vm.dep_begin, 0.0) );
+                         result /= std::sqrt( std::inner_product(w2_Offset+vm.dep_begin, w2_Offset+vm.dep_end, w2_Offset+vm.dep_begin, 0.0) );
                        }
                        break;
     case cdAssocOnly : {
-                         if (assoc_size == 0) return 0;
-                         float* w1_Offset_fit = w1_Offset + assoc_begin;
-                         float* w2_Offset_fit = w2_Offset + assoc_begin;
-                         result = std::inner_product(w1_Offset_fit, w1_Offset_fit+assoc_size, w2_Offset_fit, 0.0);
-                         result /= std::sqrt( std::inner_product(w1_Offset_fit, w1_Offset_fit+assoc_size, w1_Offset_fit, 0.0) );
-                         result /= std::sqrt( std::inner_product(w2_Offset_fit, w2_Offset_fit+assoc_size, w2_Offset_fit, 0.0) );
+                         if (vm.assoc_size == 0) return 0;
+                         result = std::inner_product(w1_Offset+vm.assoc_begin, w1_Offset+vm.assoc_end, w2_Offset+vm.assoc_begin, 0.0);
+                         result /= std::sqrt( std::inner_product(w1_Offset+vm.assoc_begin, w1_Offset+vm.assoc_end, w1_Offset+vm.assoc_begin, 0.0) );
+                         result /= std::sqrt( std::inner_product(w2_Offset+vm.assoc_begin, w2_Offset+vm.assoc_end, w2_Offset+vm.assoc_begin, 0.0) );
                        }
                        break;
     case cdGrammOnly : {
-                         if (gramm_size == 0) return 0;
-                         float* w1_Offset_fit = w1_Offset + gramm_begin;
-                         float* w2_Offset_fit = w2_Offset + gramm_begin;
-                         result = std::inner_product(w1_Offset_fit, w1_Offset_fit+gramm_size, w2_Offset_fit, 0.0);
-                         result /= std::sqrt( std::inner_product(w1_Offset_fit, w1_Offset_fit+gramm_size, w1_Offset_fit, 0.0) );
-                         result /= std::sqrt( std::inner_product(w2_Offset_fit, w2_Offset_fit+gramm_size, w2_Offset_fit, 0.0) );
+                         if (vm.gramm_size == 0) return 0;
+                         result = std::inner_product(w1_Offset+vm.gramm_begin, w1_Offset+vm.gramm_end, w2_Offset+vm.gramm_begin, 0.0);
+                         result /= std::sqrt( std::inner_product(w1_Offset+vm.gramm_begin, w1_Offset+vm.gramm_end, w1_Offset+vm.gramm_begin, 0.0) );
+                         result /= std::sqrt( std::inner_product(w2_Offset+vm.gramm_begin, w2_Offset+vm.gramm_end, w2_Offset+vm.gramm_begin, 0.0) );
                        }
                        break;
     }

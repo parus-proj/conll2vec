@@ -13,27 +13,17 @@
 class AddToks
 {
 public:
-  static void run( const std::string& model_fn, const std::string& tlm_fn, bool useTxtFmt = false )
+  static void run( const std::string& model_fn, const std::string& tlm_fn )
   {
     std::string buf;
 
     // 1. Загружаем модель (с леммами)
     VectorsModel vm;
-    if ( !vm.load(model_fn, useTxtFmt) )
+    if ( !vm.load(model_fn) )
       return;
 
-//    // 2. Загружаем список стоп-токенов (при наличии)
-//    static bool isListLoaded = false;
-//    std::set<std::string> stoplist;
-//    if (!isListLoaded)
-//    {
-//      isListLoaded = true;
-//      std::ifstream ifs("stopwords.toks");
-//      while ( std::getline(ifs, buf).good() )
-//        stoplist.insert(buf);
-//    }
 
-    // 3. Загружаем информацию о токенах (их отображение в леммы)
+    // 2. Загружаем информацию о токенах (их отображение в леммы)
     std::map<std::string, std::map<size_t, size_t>> t2l_map;
     std::ifstream t2l_ifs( tlm_fn.c_str() );
     while ( std::getline(t2l_ifs, buf).good() )
@@ -46,8 +36,6 @@ public:
       //   fail: так нельзя: автотехника = (автотехника, автотехник), банка = (банка, банк)
       //size_t dbl_idx = vm.get_word_idx(token);
       //if ( dbl_idx != vm.vocab.size() ) continue;
-//      // если токен из стоп-списка, то пропускаем его
-//      if ( stoplist.find(token) != stoplist.end() ) continue;
       // парсим список лемм
       bool isParseOk = true;
       std::map<size_t, size_t> lcmap;
@@ -69,7 +57,7 @@ public:
       t2l_map[token] = lcmap;
     }
 
-    // 4. Добавляем токены в модель
+    // 3. Добавляем токены в модель
     //    (за векторное представление токена принимается взвешенное среднее векторов его лемм)
     // сначала выделим память
     float *new_embeddings = (float *) malloc( t2l_map.size() * vm.emb_size * sizeof(float) );
@@ -99,7 +87,7 @@ public:
       neOffset += vm.emb_size;
     }
 
-    // 5. Сохраняем модель, расширенную токенами
+    // 4. Сохраняем модель, расширенную токенами
     // т.к. теперь учитываем банка = (банка, банк) (см.выше), нельзя сохранять такие леммы (дублирование возникает), надо сохранять соответствующие токены
     // посчитаем, сколько нам надо отфильтровать
     size_t saving_lemmas_cnt = 0;
@@ -108,14 +96,14 @@ public:
         ++saving_lemmas_cnt;
     // сохраняем леммы (включая служебные: @num@, знаки пунктуации; их нет в мэппинге для токенов, но они важны)
     FILE *fo = fopen(model_fn.c_str(), "wb");
-    fprintf(fo, "%lu %lu\n", saving_lemmas_cnt+t2l_map.size(), vm.emb_size);
+    fprintf(fo, "%lu %lu %lu %lu %lu\n", saving_lemmas_cnt+t2l_map.size(), vm.emb_size, vm.dep_size, vm.assoc_size, (long unsigned int)0);
     for (size_t a = 0; a < vm.vocab.size(); ++a)
       if (t2l_map.find(vm.vocab[a]) == t2l_map.end())
-          VectorsModel::write_embedding(fo, useTxtFmt, vm.vocab[a], &vm.embeddings[a * vm.emb_size], vm.emb_size);
+          VectorsModel::write_embedding(fo, vm.vocab[a], &vm.embeddings[a * vm.emb_size], vm.emb_size);
     neOffset = new_embeddings;
     for (auto& token : t2l_map)
     {
-      VectorsModel::write_embedding(fo, useTxtFmt, token.first, neOffset, vm.emb_size);
+      VectorsModel::write_embedding(fo, token.first, neOffset, vm.emb_size);
       neOffset += vm.emb_size;
     }
     fclose(fo);
