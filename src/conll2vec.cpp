@@ -290,11 +290,6 @@ int main(int argc, char **argv)
       std::cerr << "-vocab_d parameter must be defined." << std::endl;
       return -1;
     }
-//    if ( !cmdLineParams.isDefined("-vocab_l") && vm.assoc_size > 0 )
-//    {
-//      std::cerr << "-vocab_l parameter must be defined." << std::endl;
-//      return -1;
-//    }
 
     SimpleProfiler global_profiler;
 
@@ -315,7 +310,7 @@ int main(int argc, char **argv)
 //    {
 //      v_assoc_ctx = std::make_shared<OriginalWord2VecVocabulary>();
 //      v_assoc_ctx->init_stoplist("stopwords.assoc");
-//      if ( !v_assoc_ctx->load( cmdLineParams.getAsString("-vocab_l") ) )
+//      if ( !v_assoc_ctx->load( cmdLineParams.getAsString("-vocab_t") ) )
 //        return -1;
 //    }
 
