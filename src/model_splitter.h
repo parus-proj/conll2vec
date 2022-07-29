@@ -84,6 +84,7 @@ public:
     // 5. Пытаемся разделить словоформы каждой леммы на основу и суффикс.
     //    Если количество словоформ достаточное (для надежного решения) и все они делятся, то делим.
     std::map<std::u32string, size_t> stems2lemma;
+    std::set<std::u32string> invalid_common_prefixes;
     for (auto& i : l2t_map)
     {
       const auto& toks = i.second;
@@ -110,7 +111,7 @@ public:
       if (common_prefix.length() < 5) continue;
 //      std::cout << "     " << StrConv::To_UTF8(common_prefix) << std::endl;
       bool all_found = true;
-      for (size_t j = 1; j < toks.size(); ++j)
+      for (size_t j = 0; j < toks.size(); ++j)
       {
         auto token_suffix = toks[j].substr(common_prefix.length());
         if (token_suffix.empty()) continue;
@@ -125,10 +126,16 @@ public:
 //      std::cout << "     all sfx found" << std::endl;
       // Смотрим, не породились ли дубликаты псевдооснов (их надо исключить)
       // долг - долгий, способ - способный (способен), обратиться - обратить, признаться - признать, поезд - поездка (поездок), подход - подходить и т.п.
+      if ( invalid_common_prefixes.find(common_prefix) != invalid_common_prefixes.end() )
+      {
+//        std::cout << "     dbl stem: " << StrConv::To_UTF8(common_prefix) << std::endl;
+        continue;
+      }
       auto dIt = stems2lemma.find(common_prefix);
       if (dIt != stems2lemma.end())
       {
 //        std::cout << "     dbl stem: " << StrConv::To_UTF8(common_prefix) << std::endl;
+        invalid_common_prefixes.insert(common_prefix);
         stems2lemma.erase(dIt);
         continue;
       }
@@ -149,20 +156,23 @@ public:
     size_t stem_size = vm.emb_size - size_g;
     std::string stems_model_fn = model_fn + ".stems";
     FILE *stems_fo = fopen(stems_model_fn.c_str(), "wb");
-    fprintf(stems_fo, "%lu %lu\n", stems2lemma.size(), stem_size);
+    fprintf(stems_fo, "%lu %lu\n", stems2lemma.size()+sfxs.size(), stem_size);
     for (auto& i : stems2lemma)
     {
       VectorsModel::write_embedding_slice(stems_fo, StrConv::To_UTF8(i.first), &vm.embeddings[i.second * vm.emb_size], 0, stem_size);
     }
+    std::set<size_t> sfx_toks;
+    for ( auto& i : sfxs)
+    {
+      auto oovstr = std::string("_OOV_")+StrConv::To_UTF8(i);
+      auto oovidx = vm.get_word_idx( oovstr );
+      VectorsModel::write_embedding_slice(stems_fo, oovstr, &vm.embeddings[oovidx * vm.emb_size], 0, stem_size);
+      sfx_toks.insert(oovidx);
+      excl_toks.insert(oovidx);
+    }
     fclose(stems_fo);
 
     // 8. Сохраняем вектора суффиксов
-    std::set<size_t> sfx_toks;
-    for (size_t a = 0; a < vm.vocab.size(); ++a)
-    {
-      if (vm.vocab[a].find("_OOV_") == 0)
-        sfx_toks.insert(a);
-    }
     std::string sfx_model_fn = model_fn + ".sfx";
     FILE *sfx_fo = fopen(sfx_model_fn.c_str(), "wb");
     fprintf(sfx_fo, "%lu %lu\n", sfx_toks.size(), size_g);
@@ -175,10 +185,10 @@ public:
     // 9. Сохраняем вектора оставшихся полных слов
     std::string forms_model_fn = model_fn + ".forms";
     FILE *frm_fo = fopen(forms_model_fn.c_str(), "wb");
-    fprintf(frm_fo, "%lu %lu\n", vm.vocab.size()-excl_toks.size()-sfx_toks.size(), vm.emb_size);
+    fprintf(frm_fo, "%lu %lu\n", vm.vocab.size()-excl_toks.size(), vm.emb_size);
     for (size_t a = 0; a < vm.vocab.size(); ++a)
     {
-      if ( excl_toks.find(a) != excl_toks.end() || sfx_toks.find(a) != sfx_toks.end() ) continue;
+      if ( excl_toks.find(a) != excl_toks.end() ) continue;
       VectorsModel::write_embedding(frm_fo, vm.vocab[a], &vm.embeddings[a * vm.emb_size], vm.emb_size);
     }
     fclose(frm_fo);
