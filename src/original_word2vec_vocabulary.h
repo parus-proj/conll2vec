@@ -2,6 +2,7 @@
 #define ORIGINAL_WORD2VEC_VOCABULARY_H_
 
 #include "vocabulary.h"
+#include "vectors_model.h"
 
 #include <string>
 #include <vector>
@@ -51,6 +52,8 @@ public:
         std::cerr << "Invalid record: " << buf << std::endl;
         return false;
       }
+      if ( !whitelist.empty() && whitelist.find(vocabulary_record_components[0]) == whitelist.end() )
+        continue;
       if ( stoplist.find(vocabulary_record_components[0]) != stoplist.end() )
         continue;
       vocabulary_hash[vocabulary_record_components[0]] = vocabulary.size(); // сразу строим хэш-отображение для поиска индекса слова в словаре по слову (строке)
@@ -82,11 +85,22 @@ public:
       stoplist.insert(line);
 
   } // method-end
+  // инициализация белого списка
+  void init_whitelist(const VectorsModel& vm)
+  {
+    std::copy(vm.vocab.begin(), vm.vocab.end(), std::inserter(whitelist, whitelist.begin()));
+  }
+  void reset_whitelist()
+  {
+    whitelist.clear();
+  }
 private:
   // хэш-отображение слов в их индексы в словаре (для быстрого поиска)
   std::unordered_map<std::string, size_t> vocabulary_hash;
   // список стоп-слов для словаря (используется при загрузке)
   std::set<std::string> stoplist;
+  // белый список для словаря (используется при загрузке)
+  std::set<std::string> whitelist;
 };
 
 #endif /* ORIGINAL_WORD2VEC_VOCABULARY_H_ */

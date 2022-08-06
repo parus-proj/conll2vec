@@ -296,7 +296,8 @@ int main(int argc, char **argv)
     // загрузка словарей
     std::shared_ptr< OriginalWord2VecVocabulary > v_toks, v_dep_ctx, v_assoc_ctx;
     v_toks = std::make_shared<OriginalWord2VecVocabulary>();
-    if ( !v_toks->load( cmdLineParams.getAsString("-vocab_t") ) )
+    v_toks->init_whitelist(vm);
+    if ( !v_toks->load( cmdLineParams.getAsString("-vocab_t") ) ) // загружаем только те токены, которые уже есть в модели (см. init_whitelist)
       return -1;
     bool needLoadDepCtxVocab = (vm.dep_size > 0);
 //    bool needLoadAssocCtxVocab = (vm.assoc_size > 0);
@@ -320,7 +321,6 @@ int main(int argc, char **argv)
                                                                                                   v_toks, true, v_dep_ctx, v_assoc_ctx,
                                                                                                   1, false, 0
                                                                                                 );
-
     // создаем объект, организующий обучение
     Trainer trainer( lep, v_toks, true, v_dep_ctx, v_assoc_ctx,
                      vm.dep_size, vm.assoc_size, 0,
@@ -347,7 +347,7 @@ int main(int argc, char **argv)
       threads_vec[i].join();
 
     // сохраняем вычисленные вектора в файл
-    trainer.saveEmbeddings( cmdLineParams.getAsString("-model") );
+    trainer.saveEmbeddings( cmdLineParams.getAsString("-model"), &vm );
     return 0;
   } // if task == toks_train
 
@@ -360,12 +360,14 @@ int main(int argc, char **argv)
       return -1;
     // загрузим словарь токенов
     std::shared_ptr< OriginalWord2VecVocabulary > v_toks = std::make_shared<OriginalWord2VecVocabulary>();
+    v_toks->init_whitelist(vm);
     if ( !v_toks->load( cmdLineParams.getAsString("-vocab_t") ) )
       return -1;
     // если работаем со словарем суффиксов, то догружаем его в словарь токенов
     std::string oovv = cmdLineParams.getAsString("-vocab_o");
     if (!oovv.empty())
     {
+      v_toks->reset_whitelist();
       if ( !v_toks->load(oovv) )
         return -1;
     }
@@ -388,17 +390,24 @@ int main(int argc, char **argv)
 
     size_t threads_count = cmdLineParams.getAsInt("-threads");
     // запускаем потоки, осуществляющие обучение
-    std::vector<std::thread> threads_vec;
-    threads_vec.reserve(threads_count);
-    for (size_t i = 0; i < threads_count; ++i)
-      threads_vec.emplace_back(&Trainer::train_entry_point__gramm, &trainer, i);
-    // ждем завершения обучения
-    for (size_t i = 0; i < threads_count; ++i)
-      threads_vec[i].join();
+    {
+      SimpleProfiler train_profiler;
+      std::vector<std::thread> threads_vec;
+      threads_vec.reserve(threads_count);
+      for (size_t i = 0; i < threads_count; ++i)
+        threads_vec.emplace_back(&Trainer::train_entry_point__gramm, &trainer, i);
+      // ждем завершения обучения
+      for (size_t i = 0; i < threads_count; ++i)
+        threads_vec[i].join();
+      std::cout << std::endl << "Training finished.";
+    }
 
     // сохраняем вычисленные вектора в файл
-    trainer.saveGrammaticalEmbeddings( vm, cmdLineParams.getAsFloat("-g_ratio"), oovv, cmdLineParams.getAsString("-model") );
-
+    {
+      SimpleProfiler saving_profiler;
+      trainer.saveGrammaticalEmbeddings( vm, cmdLineParams.getAsFloat("-g_ratio"), oovv, cmdLineParams.getAsString("-model") );
+      std::cout << "Embeddings saving finished.";
+    }
     return 0;
   } // if task == toks_gramm
 

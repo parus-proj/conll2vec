@@ -5,6 +5,7 @@
 #include "vocabulary.h"
 #include "original_word2vec_vocabulary.h"
 #include "vectors_model.h"
+#include "special_toks.h"
 
 #include <memory>
 #include <string>
@@ -317,6 +318,7 @@ public:
     if ( v_oov && !v_oov->load( oov_voc_fn ) ) // fatal
       return;
     // дописываем грамм-вектора к семантическим
+    size_t quasiNumIdx = w_vocabulary->word_to_idx("одиннадцать");
     FILE *fo = fopen(filename.c_str(), "wb");
     fprintf(fo, "%lu %lu %lu %lu %lu\n", vm.vocab.size() + (v_oov ? v_oov->size() : 0), vm.emb_size + size_gramm, vm.dep_size, vm.assoc_size, size_gramm);
     for (size_t a = 0; a < vm.vocab.size(); ++a)
@@ -328,8 +330,11 @@ public:
         VectorsModel::write_embedding__vec(fo, &syn0[tok_idx * size_gramm], 0, size_gramm);
       else
       {
-        VectorsModel::write_embedding__vec(fo, stub, 0, size_gramm);
-        //std::cout << "stub gramm part for: " << vm.vocab[a] << std::endl;       //todo: это из-за того, что леммы могут не попадать словарь токенов (по частотному порогу)
+        if ( vm.vocab[a] == "@num@" && quasiNumIdx != vm.vocab.size() )
+          VectorsModel::write_embedding__vec(fo, &syn0[quasiNumIdx * size_gramm], 0, size_gramm);
+        else
+          VectorsModel::write_embedding__vec(fo, stub, 0, size_gramm);
+        //std::cout << "stub gramm part for: " << vm.vocab[a] << std::endl;       //todo: это из-за того, что леммы могут не попадать словарь токенов (по частотному порогу), а еще @num@ и пунктуация
       }
       VectorsModel::write_embedding__fin(fo);
     }
@@ -339,10 +344,18 @@ public:
       float *support_oov_embedding = (float *) malloc(vm.emb_size*sizeof(float));
       //calc_support_embedding(vm.words_count, vm.emb_size, vm.embeddings, support_oov_embedding);
       auto toks_cnt = w_vocabulary->size() - v_oov->size();
+      std::map<std::u32string, size_t> vm_vocab_spec;  // сконвертированный в u32string и частично фильтрованный vm.vocab (для оптимизации calc_support_embedding_oov)
+      const size_t SFX_SOURCE_WORD_MIN_LEN = 6;
+      for (size_t a = 0; a < vm.vocab.size(); ++a)
+      {
+        auto w32s = StrConv::To_UTF32(vm.vocab[a]);
+        if (w32s.length() >= SFX_SOURCE_WORD_MIN_LEN )
+          vm_vocab_spec[w32s] = a;
+      }
       for (size_t a = 0; a < v_oov->size(); ++a)
       {
         //std::cout << "save: " << v_oov->idx_to_data(a).word << std::endl;
-        calc_support_embedding_oov(vm, v_oov->idx_to_data(a).word, support_oov_embedding);
+        calc_support_embedding_oov(vm, vm_vocab_spec, v_oov->idx_to_data(a).word, support_oov_embedding);
         VectorsModel::write_embedding__start(fo, v_oov->idx_to_data(a).word);
         VectorsModel::write_embedding__vec(fo, support_oov_embedding, 0, vm.emb_size);
         VectorsModel::write_embedding__vec(fo, &syn0[(toks_cnt+a) * size_gramm], 0, size_gramm);
@@ -353,29 +366,26 @@ public:
     fclose(fo);
     free(stub);
   }
-  void calc_support_embedding_oov(const VectorsModel& vm, const std::string& oov_rec, float* support_embedding) const
+  void calc_support_embedding_oov(const VectorsModel& vm, const std::map<std::u32string, size_t>& vm_vocab_spec, const std::string& oov_rec, float* support_embedding) const
   {
-    // todo: параллелить или эвристика -- затратно
     const std::u32string OOV = U"_OOV_";
     const size_t OOV_PREFIX_LEN = OOV.length();
-    const size_t SFX_SOURCE_WORD_MIN_LEN = 6;
     auto sfx = StrConv::To_UTF32(oov_rec).substr(OOV_PREFIX_LEN);
+    std::map<std::u32string, size_t> vm_vocab_short;
+    std::copy_if( vm_vocab_spec.begin(), vm_vocab_spec.end(), std::inserter(vm_vocab_short, vm_vocab_short.begin()),
+                  [sfx](const std::pair<std::u32string, size_t>& v) { return v.first.rfind(sfx) == (v.first.length()-sfx.length()); }
+                );
     for (size_t d = 0; d < vm.emb_size; ++d)
     {
       // воспользуемся методом Уэлфорда для вычисления среднего (чтобы избежать рисков переполнения при суммировании)
       // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
       float meanValue = 0;
       size_t mvc = 1;
-      float* offset = vm.embeddings + d;
-      for (size_t w = 0; w < vm.words_count; ++w)
+      for (auto& vm_rec : vm_vocab_short)
       {
-        auto w_rec = StrConv::To_UTF32(vm.vocab[w]);
-        if (w_rec.length() >= SFX_SOURCE_WORD_MIN_LEN && w_rec.rfind(sfx) == w_rec.length()-sfx.length())
-        {
-          meanValue += ((*offset) - meanValue) / mvc;
-          ++mvc;
-        }
-        offset += vm.emb_size;
+        float* offset = vm.embeddings + vm_rec.second*vm.emb_size + d;
+        meanValue += ((*offset) - meanValue) / mvc;
+        ++mvc;
       }
       *(support_embedding + d) = meanValue;
     }
@@ -410,10 +420,28 @@ public:
 //      uVec[i] /= sum;
 //  }
   // функция, реализующая сохранение эмбеддингов
-  void saveEmbeddings(const std::string& filename) const
+  void saveEmbeddings(const std::string& filename, const VectorsModel* vm = nullptr) const
   {
     FILE *fo = fopen(filename.c_str(), "wb");
-    fprintf(fo, "%lu %lu %lu %lu %lu\n", w_vocabulary->size(), layer1_size, size_dep, size_assoc, size_gramm);
+    size_t saving_vocab_size = w_vocabulary->size();
+    if (toks_train && vm)
+    {
+      size_t specials_cnt = 0;
+      for ( auto w : SPECIAL_TOKS )
+        if ( vm->get_word_idx(w) != vm->vocab.size() )
+          ++specials_cnt;
+      saving_vocab_size += specials_cnt;
+    }
+    fprintf(fo, "%lu %lu %lu %lu %lu\n", saving_vocab_size, layer1_size, size_dep, size_assoc, size_gramm);
+    if (toks_train && vm)
+    {
+      for ( auto w : SPECIAL_TOKS )
+      {
+        size_t swidx = vm->get_word_idx(w);
+        if ( swidx != vm->vocab.size() )
+          VectorsModel::write_embedding(fo, w, &vm->embeddings[swidx * layer1_size], layer1_size);
+      }
+    }
     saveEmbeddingsBin_helper(fo, w_vocabulary, syn0, layer1_size);
     fclose(fo);
   } // method-end

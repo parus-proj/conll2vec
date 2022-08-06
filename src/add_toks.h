@@ -3,6 +3,7 @@
 
 #include "vectors_model.h"
 #include "str_conv.h"
+#include "special_toks.h"
 
 #include <memory>
 #include <string>
@@ -87,25 +88,46 @@ public:
       neOffset += vm.emb_size;
     }
 
-    // 4. Сохраняем модель, расширенную токенами
-    // т.к. теперь учитываем банка = (банка, банк) (см.выше), нельзя сохранять такие леммы (дублирование возникает), надо сохранять соответствующие токены
-    // посчитаем, сколько нам надо отфильтровать
-    size_t saving_lemmas_cnt = 0;
-    for (auto& r : vm.vocab)
-      if (t2l_map.find(r) == t2l_map.end())
-        ++saving_lemmas_cnt;
-    // сохраняем леммы (включая служебные: @num@, знаки пунктуации; их нет в мэппинге для токенов, но они важны)
+//    // 4. Сохраняем модель, расширенную токенами
+//    // т.к. теперь учитываем банка = (банка, банк) (см.выше), нельзя сохранять такие леммы (дублирование возникает), надо сохранять соответствующие токены
+//    // посчитаем, сколько нам надо отфильтровать
+//    size_t saving_lemmas_cnt = 0;
+//    for (auto& r : vm.vocab)
+//      if (t2l_map.find(r) == t2l_map.end())
+//        ++saving_lemmas_cnt;
+//    // сохраняем леммы (включая служебные: @num@, знаки пунктуации; их нет в мэппинге для токенов, но они важны)
+//    FILE *fo = fopen(model_fn.c_str(), "wb");
+//    fprintf(fo, "%lu %lu %lu %lu %lu\n", saving_lemmas_cnt+t2l_map.size(), vm.emb_size, vm.dep_size, vm.assoc_size, (long unsigned int)0);
+//    for (size_t a = 0; a < vm.vocab.size(); ++a)
+//      if (t2l_map.find(vm.vocab[a]) == t2l_map.end())
+//          VectorsModel::write_embedding(fo, vm.vocab[a], &vm.embeddings[a * vm.emb_size], vm.emb_size);
+//    neOffset = new_embeddings;
+//    for (auto& token : t2l_map)
+//    {
+//      VectorsModel::write_embedding(fo, token.first, neOffset, vm.emb_size);
+//      neOffset += vm.emb_size;
+//    }
+
+    // 4. Сохраняем модель токенов и специальные единицы
+    size_t specials_cnt = 0;
+    for ( auto w : SPECIAL_TOKS )
+      if ( vm.get_word_idx(w) != vm.vocab.size() )
+        ++specials_cnt;
     FILE *fo = fopen(model_fn.c_str(), "wb");
-    fprintf(fo, "%lu %lu %lu %lu %lu\n", saving_lemmas_cnt+t2l_map.size(), vm.emb_size, vm.dep_size, vm.assoc_size, (long unsigned int)0);
-    for (size_t a = 0; a < vm.vocab.size(); ++a)
-      if (t2l_map.find(vm.vocab[a]) == t2l_map.end())
-          VectorsModel::write_embedding(fo, vm.vocab[a], &vm.embeddings[a * vm.emb_size], vm.emb_size);
+    fprintf(fo, "%lu %lu %lu %lu %lu\n", t2l_map.size() + specials_cnt, vm.emb_size, vm.dep_size, vm.assoc_size, (long unsigned int)0);
+    for ( auto w : SPECIAL_TOKS )
+    {
+      auto widx = vm.get_word_idx(w);
+      if ( widx != vm.vocab.size() )
+        VectorsModel::write_embedding(fo, w, &vm.embeddings[vm.get_word_idx(w) * vm.emb_size], vm.emb_size);
+    }
     neOffset = new_embeddings;
     for (auto& token : t2l_map)
     {
       VectorsModel::write_embedding(fo, token.first, neOffset, vm.emb_size);
       neOffset += vm.emb_size;
     }
+
     fclose(fo);
   } // method-end
 
