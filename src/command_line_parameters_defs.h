@@ -25,7 +25,7 @@ public:
         {"-min-count_t",  {"Min frequency in Tokens vocabulary", "50", std::nullopt}},
         {"-min-count_d",  {"Min frequency in Dependency vocabulary", "50", std::nullopt}},
         {"-min-count_o",  {"Min frequency in OOV vocabulary", "10000", std::nullopt}},
-        {"-exclude_nums", {"Exclude digital numbers when building tokens vocabulary", "0", std::nullopt}},
+        {"-exclude_nums", {"Exclude digital numbers while fitting", "0", std::nullopt}},
         {"-max_oov_sfx",  {"Maximal suffix length in OOV vocabulary", "5", std::nullopt}},
         {"-col_ctx_d",    {"Dependency contexts vocabulary column (in conll)", "3", std::nullopt}},
         {"-use_deprel",   {"Include DEPREL field in dependency context", "1", std::nullopt}},

@@ -222,6 +222,7 @@ public:
       for (size_t i = 0; i < sm_size; ++i)
       {
         auto& token = sentence_matrix[i];
+        if ( token[Conll::DEPREL] == "_" ) continue;
         size_t parent_token_no = 0;
         try {
           parent_token_no = std::stoi(token[Conll::HEAD]);

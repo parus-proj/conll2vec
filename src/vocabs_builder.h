@@ -57,7 +57,7 @@ private:
 class VocabsBuilder
 {
 private:
-  typedef std::vector< std::vector<std::string> > SentenceMatrix;
+  typedef ConllReader::SentenceMatrix SentenceMatrix;
   typedef std::unordered_map<std::string, uint64_t> VocabMapping;
   typedef std::shared_ptr<VocabMapping> VocabMappingPtr;
   typedef std::unordered_map<std::string, std::map<std::string, size_t>> Token2LemmasMap;
@@ -69,7 +69,7 @@ public:
                     const std::string& voc_l_fn, const std::string& voc_t_fn,
                     const std::string& voc_tm_fn, const std::string& voc_oov_fn, const std::string& voc_d_fn,
                     size_t limit_l, size_t limit_t, size_t limit_o, size_t limit_d,
-                    size_t ctx_vocabulary_column_d, bool use_deprel, bool excludeNumsFromToks, size_t max_oov_sfx,
+                    size_t ctx_vocabulary_column_d, bool use_deprel, /*bool excludeNumsFromToks,*/ size_t max_oov_sfx,
                     const std::string& categoroids_vocab_fn)
   {
 
@@ -117,7 +117,7 @@ public:
         continue;
       apply_patches(sentence_matrix); // todo: УБРАТЬ!  временный дополнительный корректор для борьбы с "грязными данными" в результатах лемматизации
       process_sentence_lemmas(vocab_lemma, sentence_matrix);
-      process_sentence_tokens(vocab_token, token2lemmas_map, excludeNumsFromToks, sentence_matrix);
+      process_sentence_tokens(vocab_token, token2lemmas_map, /*excludeNumsFromToks,*/ sentence_matrix);
       if (vocab_oov)
         process_sentence_oov(vocab_oov, sentence_matrix, max_oov_sfx);
       process_sentence_dep_ctx(vocab_dep, sentence_matrix, ctx_vocabulary_column_d, use_deprel);
@@ -270,7 +270,7 @@ private:
         ++it->second;
     }
   } // method-end
-  void process_sentence_tokens(VocabMappingPtr vocab, Token2LemmasMapPtr token2lemmas_map, bool excludeNumsFromToks, const SentenceMatrix& sentence)
+  void process_sentence_tokens(VocabMappingPtr vocab, Token2LemmasMapPtr token2lemmas_map, /*bool excludeNumsFromToks,*/ const SentenceMatrix& sentence)
   {
     for ( auto& token : sentence )
     {
@@ -278,8 +278,8 @@ private:
         continue;
       if ( token[Conll::FORM] == "_" || token[Conll::LEMMA] == "_" )   // символ отсутствия значения в conll
         continue;
-      if ( excludeNumsFromToks && isNumeric(token[Conll::LEMMA]) )
-        continue;
+//      if ( excludeNumsFromToks && isNumeric(token[Conll::LEMMA]) )          // @num@:@num@ и т.п.
+//        continue;
       auto word = token[Conll::FORM];
 
       auto it = vocab->find( word );

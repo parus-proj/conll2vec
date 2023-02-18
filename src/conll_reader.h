@@ -1,6 +1,8 @@
 #ifndef CONLL_READER_H_
 #define CONLL_READER_H_
 
+#include "str_conv.h"
+
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -24,6 +26,12 @@ enum Conll
 class ConllReader
 {
 public:
+  typedef std::vector< std::vector<std::string> > SentenceMatrix;
+  typedef std::vector< std::vector<std::u32string> > u32SentenceMatrix;
+private:
+  static constexpr size_t FIELDS_COUNT = 10;
+  static constexpr size_t DELIM_COUNT = FIELDS_COUNT - 1;
+public:
   // чтение строки
   static void read_line(FILE *f, std::string& result)
   {
@@ -41,7 +49,7 @@ public:
     }
   } // method-end
   // чтение предложения
-  static bool read_sentence(FILE *f, std::vector< std::vector<std::string> >& result)
+  static bool read_sentence(FILE *f, SentenceMatrix& result)
   {
     result.clear();
     bool status = true;
@@ -60,9 +68,9 @@ public:
       // согласно принципам кодирования https://ru.wikipedia.org/wiki/UTF-8, никакой другой символ не может содержать в себе байт 0x09
       // поэтому поиск соответствующего байта является безопасным split-алгоритмом
       size_t delimiters_count = std::count(line.begin(), line.end(), '\t');
-      if ( delimiters_count != 9 ) // должно быть 10 полей, т.е. 9 разделителей
+      if ( delimiters_count != DELIM_COUNT ) // должно быть 10 полей, т.е. 9 разделителей
         status = false;
-      result.emplace_back(delimiters_count+1);
+      result.emplace_back( std::vector<std::string>(FIELDS_COUNT) );
       auto& last_token = result.back();
       size_t fieldStartPos = 0;
       size_t idx = 0;
@@ -81,6 +89,22 @@ public:
         }
       } // tab split loop
     } // lines read loop
+  } // method-end
+  // чтение предложения с конвертацией строк к u32string
+  static bool read_sentence_u32(FILE *f, u32SentenceMatrix& result)
+  {
+    result.clear();
+    SentenceMatrix sentence_matrix;
+    if ( !ConllReader::read_sentence(f, sentence_matrix) ) return false;
+    result.reserve( sentence_matrix.size() );
+    for (const auto& t : sentence_matrix)
+    {
+      result.emplace_back( std::vector<std::u32string>(FIELDS_COUNT) );
+      auto& last_token = result.back();
+      for (size_t i = 0; i < FIELDS_COUNT; ++i)
+        last_token[i] = StrConv::To_UTF32(t[i]);
+    }
+    return true;
   } // method-end
 };
 

@@ -3,6 +3,7 @@
 
 #include "conll_reader.h"
 #include "str_conv.h"
+#include "numificator.h"
 
 #include <string>
 #include <cstring>       // for std::strerror
@@ -14,11 +15,11 @@
 class FitParus
 {
 private:
-  typedef std::vector< std::vector<std::string> > SentenceMatrix;
-  typedef std::vector< std::vector<std::u32string> > u32SentenceMatrix;
+  typedef ConllReader::SentenceMatrix SentenceMatrix;
+  typedef ConllReader::u32SentenceMatrix u32SentenceMatrix;
 public:
-  FitParus()
-  : target_column(10)
+  FitParus(bool excl_nums)
+  : exclude_nums(excl_nums)
   {
   }
   // функция запуска преобразования conll-файла
@@ -47,23 +48,13 @@ public:
     u32SentenceMatrix u32_sentence_matrix;
     while ( !feof(conll_file) )
     {
-      bool succ = ConllReader::read_sentence(conll_file, sentence_matrix);
+      bool succ = ConllReader::read_sentence_u32(conll_file, u32_sentence_matrix);
       if (!succ)
         continue;
-      if (sentence_matrix.size() == 0)
+      if (u32_sentence_matrix.size() == 0)
         continue;
-//      if ( !is_token_no_sequence_valid(sentence_matrix) )
+//      if ( !is_token_no_sequence_valid(u32_sentence_matrix) )
 //        continue;
-      // конвертируем строки в utf-32
-      u32_sentence_matrix.clear();
-      for (auto& t : sentence_matrix)
-      {
-        u32_sentence_matrix.emplace_back(std::vector<std::u32string>());
-        auto& last_token = u32_sentence_matrix.back();
-        last_token.reserve(10);
-        for (auto& f : t)
-          last_token.push_back( StrConv::To_UTF32(f) );
-      }
       // выполняем преобразование
       process_sentence(u32_sentence_matrix);
       // конвертируем строки в utf-8
@@ -83,8 +74,8 @@ public:
       fclose(conll_file);
   } // method-end
 private:
-  // номер conll-колонки, куда записывается результат оптимизации синтаксического контекста
-  size_t target_column;
+  // замещать ли цифровые последовательности на @num@ согласно логике "нумификатора"?
+  bool exclude_nums = false;
   // сохранение предложения
   void save_sentence(std::ofstream& ofs, const SentenceMatrix& data)
   {
@@ -96,7 +87,7 @@ private:
     ofs << '\n';
   } // method-end
 //  // проверка корректности нумерации токенов в предложении
-//  bool is_token_no_sequence_valid(const SentenceMatrix& data)
+//  bool is_token_no_sequence_valid(const u32SentenceMatrix& data)
 //  {
 //    size_t pre_tn = 0;
 //    for (auto& t : data)
@@ -117,8 +108,9 @@ private:
     process_punc(data);
     // неизвестные леммы замещаем на символ подчеркивания (они игнорируются при построении словарей)
     process_unknonw(data);
-    // обобщение токенов, содержащих числовые величины
-    process_nums(data);
+    // денумификация -- обобщение токенов и лемм, содержащих числовые величины
+    if ( exclude_nums )
+      process_nums(data);
     // фильтрация синтаксических отношений, не заслуживающих внимания
     reltypes_filter(data);
     // поглощение предлогов
@@ -167,7 +159,6 @@ private:
   void process_nums(u32SentenceMatrix& data)
   {
     // превращаем числа в @num@
-//    const std::u32string CARD = U"@card@";
     const std::u32string NUM  = U"@num@";
     const std::u32string Digs = U"0123456789";
     const std::u32string RuLets = U"АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЬЫЪЭЮЯабвгдеёжзийклмнопрстуфхцчшщьыъэюя";
@@ -177,39 +168,15 @@ private:
       auto& lemma = t[2];
       auto& synrel = t[7];
       if (synrel == U"PUNC") continue;
-//      // если лемма=@card@ или токен состоит только из цифр, то лемму заменяем на @num@
-//      if ( lemma == CARD || token.find_first_not_of(Digs) == std::u32string::npos )
-//      {
-//        lemma = NUM;
-//        continue;
-//      }
-//      // превращаем 10:10 в @num@:@num@
-//      size_t colonPos = token.find(U":");
-//      if (colonPos != std::u32string::npos)
-//      {
-//        std::u32string firstPart  = token.substr(0, colonPos);
-//        std::u32string secondPart = token.substr(colonPos+1);
-//        if ( firstPart.find_first_not_of(Digs) == std::u32string::npos )
-//          if ( secondPart.find_first_not_of(Digs) == std::u32string::npos )
-//          {
-//            lemma = NUM+U":"+NUM;
-//            continue;
-//          }
-//      }
-      // превращаем слова вида 15-летие в @num@-летие
-      size_t hyphenPos = token.find(U"-");
-      if (hyphenPos != std::u32string::npos)
+      const std::set<std::u32string> SPECIAL_TOKS = { U"@num@", U"@num@,@num@", U"@num@:@num@", U"@num@-@num@", U"@num@--@num@", U"@num@‒@num@", U"@num@–@num@", U"@num@—@num@" };
+      if ( SPECIAL_TOKS.find(lemma) != SPECIAL_TOKS.end() )
       {
-        std::u32string firstPart = token.substr(0, hyphenPos);
-        std::u32string secondPart = token.substr(hyphenPos+1);
-        if ( firstPart.find_first_not_of(Digs) == std::u32string::npos )
-          if ( secondPart.find_first_not_of(RuLets) == std::u32string::npos )
-          {
-            size_t lemmaHp = lemma.find(U"-");
-            if (lemmaHp != std::u32string::npos)
-              lemma = NUM + lemma.substr(lemmaHp);
-          }
+        token = lemma;
+        continue;
       }
+      // превращаем слова вида 15-летие в @num@-летие
+      token = Numificator::process(token);
+      lemma = Numificator::process(lemma);
     } // for all tokens in sentence
   } // method-end
   void reltypes_filter(u32SentenceMatrix& data)
@@ -230,7 +197,7 @@ private:
     {
       if ( permissible_reltypes.find(t[7]) == permissible_reltypes.end() )
       {
-        t[6] = U"0";
+        //t[6] = U"0";  // сохраняем для сборки некоторых mwe
         t[7] = U"_";
       }
     }
@@ -246,9 +213,9 @@ private:
         if ( prepos_token_no < 1 || prepos_token_no > data.size() )
           continue;
         auto& prepos_token = data[ prepos_token_no - 1  ];
-        if (prepos_token[7] == U"сочин" || prepos_token[7] == U"соч-союзн")
+        if (prepos_token[7] == U"сочин" || prepos_token[7] == U"соч-союзн" || prepos_token[7] == U"_")
         {
-          t[6] = U"0";
+          //t[6] = U"0";
           t[7] = U"_";
         }
         else
@@ -256,8 +223,6 @@ private:
           t[6] = prepos_token[6];
           t[7] = prepos_token[7];
         }
-        // prepos_token[6] =  U"0";
-        // prepos_token[7] =  U"_";
         prepos_token[6] =  t[0];
         prepos_token[7] =  U"ud_prepos";
       }
@@ -450,9 +415,9 @@ private:
       std::u32string key = prepos_token[2] + U"__" + case_code;
       auto it = COMPRESSOR.find(key);
       if ( it == COMPRESSOR.end() ) continue;
-      if (prepos_token[7] == U"сочин" || prepos_token[7] == U"соч-союзн")
+      if (prepos_token[7] == U"сочин" || prepos_token[7] == U"соч-союзн" || prepos_token[7] == U"_")
       {
-        t[6] = U"0";
+        //t[6] = U"0";
         t[7] = U"_";
       }
       else
@@ -564,7 +529,7 @@ private:
       auto& head_t = data[head_token_idx];
       if (head_t[2] != U"и" || head_t[7] != U"сочин") // другое не интересно
       {
-        t[6] = U"0";
+        //t[6] = U"0";
         t[7] = U"_";
         continue;
       }
@@ -578,7 +543,7 @@ private:
       bool good_item = t[5].length() > 0 && (t[5][0] == U'N' || t[5][0] == U'A');
       if (!good_item)
       {
-        t[6] = U"0";
+        //t[6] = U"0";
         t[7] = U"_";
         continue;
       }
@@ -586,14 +551,14 @@ private:
       size_t chain_head_idx = find_coord_head(data, current_token_idx);
       if (chain_head_idx == std::numeric_limits<size_t>::max())
       {
-        t[6] = U"0";
+        //t[6] = U"0";
         t[7] = U"_";
         continue;
       }
       auto& head_t = data[chain_head_idx];
       if (head_t[7] == U"аппоз")
       {
-        t[6] = U"0";
+        //t[6] = U"0";
         t[7] = U"_";
         continue;
       }
