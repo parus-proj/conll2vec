@@ -528,6 +528,29 @@ public:
     }
     return true;
   } // method-end
+  // функция усреднения векторов в векторном пространстве в соответствии с заданным списком
+  // усреденный вектор записывается по идексу, соответствующему первому элементу списка
+  void vectors_weighted_collapsing(const std::vector< std::vector< std::pair<size_t, float> > >& collapsing_info)
+  {
+    // выделение памяти для среднего вектора
+    float *avg = (float *)calloc(layer1_size, sizeof(float));
+    for (auto& group : collapsing_info)
+    {
+      std::fill(avg, avg+layer1_size, 0.0);
+      for (auto& vec : group)
+      {
+        size_t idx = vec.first;
+        float weight = vec.second;
+        float *offset = syn0 + idx*layer1_size;
+        for (size_t d = 0; d < layer1_size; ++d)
+          *(avg+d) += *(offset+d) * weight;
+      }
+      float *offset = syn0 + group.front().first * layer1_size;
+      std::copy(avg, avg+layer1_size, offset);
+    }
+    free(avg);
+  } // method-end
+
   // вывод статистики о ходе обучения
   void print_training_stat() const
   {

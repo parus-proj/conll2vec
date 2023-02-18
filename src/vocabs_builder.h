@@ -4,6 +4,8 @@
 #include "conll_reader.h"
 #include "str_conv.h"
 #include "categoroid_vocab.h"
+#include "mwe_vocabulary.h"
+#include "original_word2vec_vocabulary.h"
 
 #include <memory>
 #include <string>
@@ -70,7 +72,7 @@ public:
                     const std::string& voc_tm_fn, const std::string& voc_oov_fn, const std::string& voc_d_fn,
                     size_t limit_l, size_t limit_t, size_t limit_o, size_t limit_d,
                     size_t ctx_vocabulary_column_d, bool use_deprel, /*bool excludeNumsFromToks,*/ size_t max_oov_sfx,
-                    const std::string& categoroids_vocab_fn)
+                    const std::string& categoroids_vocab_fn, const std::string& mwe_fn)
   {
 
     // загружаем справочник категороидов (при наличии)
@@ -85,6 +87,21 @@ public:
       }
     }
 
+    // Проход 1: строим главный словарь (включая словосочетания)
+
+    bool succ = build_main_vocab_only(conll_fn, mwe_fn, voc_l_fn, limit_l, coid_vocab);
+    if ( !succ ) return false;
+
+    // Проход2: строим остальные словари уже с учётом того, какие именно словосочетания преодолели частотный порог основного словаря
+
+    // создаём справочник словосочетаний
+    std::shared_ptr< OriginalWord2VecVocabulary > v_main = std::make_shared<OriginalWord2VecVocabulary>();
+    if ( !v_main->load(voc_l_fn) )
+      return false;
+    std::shared_ptr< MweVocabulary > v_mwe = std::make_shared<MweVocabulary>();
+    if ( !v_mwe->load(mwe_fn, v_main) )
+      return false;
+
     // открываем файл с тренировочными данными
     FILE *conll_file = fopen(conll_fn.c_str(), "rb");
     if ( conll_file == nullptr )
@@ -94,7 +111,6 @@ public:
     }
 
     // создаем контейнеры для словарей
-    VocabMappingPtr vocab_lemma = std::make_shared<VocabMapping>();
     VocabMappingPtr vocab_token = std::make_shared<VocabMapping>();
     Token2LemmasMapPtr token2lemmas_map = std::make_shared<Token2LemmasMap>();
     VocabMappingPtr vocab_oov = (voc_oov_fn.empty()) ? nullptr : std::make_shared<VocabMapping>();
@@ -116,7 +132,7 @@ public:
       if (sentence_matrix.size() == 0)
         continue;
       apply_patches(sentence_matrix); // todo: УБРАТЬ!  временный дополнительный корректор для борьбы с "грязными данными" в результатах лемматизации
-      process_sentence_lemmas(vocab_lemma, sentence_matrix);
+      v_mwe->put_phrases_into_sentence(sentence_matrix);
       process_sentence_tokens(vocab_token, token2lemmas_map, /*excludeNumsFromToks,*/ sentence_matrix);
       if (vocab_oov)
         process_sentence_oov(vocab_oov, sentence_matrix, max_oov_sfx);
@@ -126,9 +142,6 @@ public:
     std::cout << std::endl;
     stat.output_stat();
     // сохраняем словари в файлах
-    std::cout << "Save lemmas main vocabulary..." << std::endl;
-    reduce_vocab(vocab_lemma, limit_l, coid_vocab);
-    save_vocab(vocab_lemma, voc_l_fn);
     std::cout << "Save tokens vocabulary..." << std::endl;
     erase_toks_stopwords(vocab_token); // todo:  УБРАТЬ! временный доп.фильтр для борьбы с ошибками токенизации
     reduce_vocab(vocab_token, limit_t);
@@ -150,6 +163,51 @@ private:
   const std::string OOV = "_OOV_";
   // минимальная длина слова, от которого берутся oov-суффиксы
   const size_t SFX_SOURCE_WORD_MIN_LEN = 6;
+  // функция построения и сохранения главного словаря
+  // выполняется отдельно, т.к. необходимо выяснить частоты словосочетаний (какие из них преодолевают частотный порог главного словаря и будут преобразовываться)
+  bool build_main_vocab_only(const std::string& conll_fn, const std::string& mwe_fn, const std::string& voc_l_fn, size_t limit_l, CategoroidsVocabularyPtr coid_vocab)
+  {
+    // создаём справочник словосочетаний
+    std::shared_ptr< MweVocabulary > v_mwe = std::make_shared<MweVocabulary>();
+    if ( !v_mwe->load(mwe_fn) )
+      return false;
+    // открываем файл с тренировочными данными
+    FILE *conll_file = fopen(conll_fn.c_str(), "rb");
+    if ( conll_file == nullptr )
+    {
+      std::cerr << "Train-file open: error: " << std::strerror(errno) << std::endl;
+      return false;
+    }
+    // создаем контейнер для словаря
+    VocabMappingPtr vocab_lemma = std::make_shared<VocabMapping>();
+    // в цикле читаем предложения из CoNLL-файла и извлекаем из них информацию для словаря
+    SentenceMatrix sentence_matrix;
+    sentence_matrix.reserve(5000);
+    StatHelper stat;
+    while ( !feof(conll_file) )
+    {
+      bool succ = ConllReader::read_sentence(conll_file, sentence_matrix);
+      stat.calc_sentence(sentence_matrix.size());
+      if (!succ)
+      {
+        stat.inc_sr_fils();
+        continue;
+      }
+      if (sentence_matrix.size() == 0)
+        continue;
+      apply_patches(sentence_matrix); // todo: УБРАТЬ!  временный дополнительный корректор для борьбы с "грязными данными" в результатах лемматизации
+      v_mwe->put_phrases_into_sentence(sentence_matrix);
+      process_sentence_lemmas(vocab_lemma, sentence_matrix);
+    }
+    fclose(conll_file);
+    std::cout << std::endl;
+    stat.output_stat();
+    // сохраняем словарь в файл
+    std::cout << "Save lemmas main vocabulary..." << std::endl;
+    reduce_vocab(vocab_lemma, limit_l, coid_vocab);
+    save_vocab(vocab_lemma, voc_l_fn);
+    return true;
+  } // method-end
   // проверка, является ли токен числовой конструкцией
   bool isNumeric(const std::string& lemma)
   {

@@ -3,6 +3,7 @@
 
 #include "conll_reader.h"
 #include "original_word2vec_vocabulary.h"
+#include "mwe_vocabulary.h"
 #include "derive_vocab.h"
 #include "ra_vocab.h"
 #include "categoroid_vocab.h"
@@ -62,6 +63,7 @@ public:
                           std::shared_ptr<OriginalWord2VecVocabulary> wordsVocabulary,
                           bool trainTokens,
                           std::shared_ptr<OriginalWord2VecVocabulary> depCtxVocabulary, std::shared_ptr<OriginalWord2VecVocabulary> assocCtxVocabulary,
+                          std::shared_ptr<MweVocabulary> mweVocabulary,
                           size_t embColumn, bool oov, size_t oovMaxLen,
                           std::shared_ptr<DerivativeVocabulary> derivVocab = nullptr,
                           std::shared_ptr<ReliableAssociativesVocabulary> raVocab = nullptr,
@@ -73,6 +75,7 @@ public:
   , toks_train(trainTokens)
   , dep_ctx_vocabulary(depCtxVocabulary)
   , assoc_ctx_vocabulary(assocCtxVocabulary)
+  , mwe_vocabulary(mweVocabulary)
   , emb_column(embColumn)
   , dep_column( cmdLineParams.getAsInt("-col_ctx_d") - 1 )
   , use_deprel( cmdLineParams.getAsInt("-use_deprel") == 1 )
@@ -211,6 +214,12 @@ public:
   void get_from_sentence__usual(ThreadEnvironment& t_environment, float fraction)
   {
     auto& sentence_matrix = t_environment.sentence_matrix;
+
+    // добавим в предложение фразы (преобразуя sentence_matrix)
+    if (mwe_vocabulary)
+    {
+      mwe_vocabulary->put_phrases_into_sentence(sentence_matrix);
+    }
 
     auto sm_size = sentence_matrix.size();
     const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
@@ -444,6 +453,7 @@ private:
   bool toks_train;    // признак того, что тренируются словоформы
   std::shared_ptr< OriginalWord2VecVocabulary > dep_ctx_vocabulary;
   std::shared_ptr< OriginalWord2VecVocabulary > assoc_ctx_vocabulary;
+  std::shared_ptr< MweVocabulary > mwe_vocabulary;
   // номера колонок в conll, откуда считывать данные
   size_t emb_column;
   size_t dep_column;

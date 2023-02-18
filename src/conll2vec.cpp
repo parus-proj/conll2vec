@@ -3,6 +3,7 @@
 #include "fit_parus.h"
 #include "vocabs_builder.h"
 #include "original_word2vec_vocabulary.h"
+#include "mwe_vocabulary.h"
 #include "learning_example_provider.h"
 #include "trainer.h"
 #include "sim_estimator.h"
@@ -91,7 +92,7 @@ int main(int argc, char **argv)
                                  cmdLineParams.getAsInt("-min-count_l"), cmdLineParams.getAsInt("-min-count_t"),
                                  cmdLineParams.getAsInt("-min-count_o"), cmdLineParams.getAsInt("-min-count_d"),
                                  cmdLineParams.getAsInt("-col_ctx_d") - 1, (cmdLineParams.getAsInt("-use_deprel") == 1), /*(cmdLineParams.getAsInt("-exclude_nums") == 1),*/
-                                 cmdLineParams.getAsInt("-max_oov_sfx"), cmdLineParams.getAsString("-ca_vocab")
+                                 cmdLineParams.getAsInt("-max_oov_sfx"), cmdLineParams.getAsString("-ca_vocab"), "mwe.list"
                                );
     return ( succ ? 0 : -1 );
   }
@@ -124,8 +125,12 @@ int main(int argc, char **argv)
 
     // загрузка словарей
     std::shared_ptr< OriginalWord2VecVocabulary > v_main, v_dep_ctx, v_assoc_ctx;
+    std::shared_ptr< MweVocabulary > v_mwe;
     v_main = std::make_shared<OriginalWord2VecVocabulary>();
     if ( !v_main->load( cmdLineParams.getAsString("-vocab_l") ) )
+      return -1;
+    v_mwe = std::make_shared<MweVocabulary>( );
+    if ( !v_mwe->load("mwe.list", v_main) )
       return -1;
     bool needLoadDepCtxVocab = (cmdLineParams.getAsInt("-size_d") > 0);
     bool needLoadAssocCtxVocab = (cmdLineParams.getAsInt("-size_a") > 0);
@@ -174,7 +179,7 @@ int main(int argc, char **argv)
     // создание поставщика обучающих примеров
     // к моменту создания "поставщика обучающих примеров" словарь должен быть загружен (в частности, используется cn_sum())
     std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
-                                                                                                  v_main, false, v_dep_ctx, v_assoc_ctx,
+                                                                                                  v_main, false, v_dep_ctx, v_assoc_ctx, v_mwe,
                                                                                                   2, false, 0,
                                                                                                   deriv_vocab, ra_vocab, coid_vocab, rc_vocab
                                                                                                 );
@@ -203,6 +208,12 @@ int main(int argc, char **argv)
     // ждем завершения обучения
     for (size_t i = 0; i < threads_count; ++i)
       threads_vec[i].join();
+
+    // вычисление взвешенного среднего между вектором слова и векторами связанных с ним временных словосочетаний (для которых данное слово является синтакс. вершиной)
+    std::vector< std::vector< std::pair<size_t, float> > > collapsing_info;
+    v_mwe->process_transient(v_main, collapsing_info);
+    trainer.vectors_weighted_collapsing(collapsing_info);
+    // TODO: сделать удаление временных словосочетаний из модели
 
     // сохраняем вычисленные вектора в файл
     if (cmdLineParams.isDefined("-model"))
@@ -318,7 +329,7 @@ int main(int argc, char **argv)
     // создание поставщика обучающих примеров
     // к моменту создания "поставщика обучающих примеров" словарь должен быть загружен (в частности, используется cn_sum())
     std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
-                                                                                                  v_toks, true, v_dep_ctx, v_assoc_ctx,
+                                                                                                  v_toks, true, v_dep_ctx, v_assoc_ctx, nullptr,
                                                                                                   1, false, 0
                                                                                                 );
     // создаем объект, организующий обучение
@@ -373,7 +384,7 @@ int main(int argc, char **argv)
     }
     // создание поставщика обучающих примеров
     std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
-                                                                                                  v_toks, false, nullptr, nullptr,
+                                                                                                  v_toks, false, nullptr, nullptr, nullptr,
                                                                                                   1, !oovv.empty(), cmdLineParams.getAsInt("-max_oov_sfx")
                                                                                                 );
     // создаем объект, организующий обучение
