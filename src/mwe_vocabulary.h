@@ -22,12 +22,11 @@ public:
   std::vector< std::shared_ptr<TreeNode> > children;  // синтаксические потомки узла
   std::shared_ptr<TreeNode> head;                     // синтаксический предок узла
   bool out_of_match;                                  // если true, то узел служит только для целей распознавания словосочетания и не подлежит замещению
-  bool tok_match;                                     // сопоставлять по полю токена (не леммы)
+  std::optional<std::string> tok_match;               // сопоставлять по полю токена (а не только леммы)
   std::string word;
   TreeNode(const std::string& word_str, std::shared_ptr<TreeNode> parent_ptr)
   : parent_tmp(parent_ptr)
   , out_of_match(true)
-  , tok_match(false)
   , word(word_str)
   {
   }
@@ -408,7 +407,10 @@ private:
       {
         if (inside_node_constraint)
         {
-          currNode->tok_match = tok.length() > 0 && tok[0] == 't';
+          if ( tok.length() > 0 && tok[0] == 't' )
+            currNode->tok_match = tok.substr(1);
+          else
+            std::cerr << "mwe: invalid constrain: " << str << std::endl;
         }
         else
         {
@@ -471,12 +473,12 @@ private:
       size_t actual_token_no = std::get<0>(need_to_match.front());
       std::shared_ptr<TreeNode> tree_node = std::get<1>(need_to_match.front());
       bool search_up = std::get<2>(need_to_match.front());
-      size_t text_field_idx = tree_node->tok_match ? 1 : 2;
       need_to_match.pop();
       if (search_up)
       {
-        int syn_head = std::stoi(sentence_matrix[actual_token_no][6]) - 1;
-        if (syn_head < 0 || sentence_matrix[syn_head][text_field_idx] != tree_node->word)
+        int syn_head = std::stoi(sentence_matrix[actual_token_no][Conll::HEAD]) - 1;
+        if ( syn_head < 0 || sentence_matrix[syn_head][Conll::LEMMA] != tree_node->word
+             || (tree_node->tok_match && sentence_matrix[syn_head][Conll::FORM] != tree_node->tok_match.value()) )
         {
           match_result.clear();
           return false;
@@ -491,7 +493,8 @@ private:
         if ( deps_it == deps.end() ) { match_result.clear(); return false; } // у того, кто должен быть родителем, нет потомков вообще
         bool found = false;
         for (auto d : deps_it->second)
-          if (sentence_matrix[d][text_field_idx] == tree_node->word) // нашли зависимое
+          if ( sentence_matrix[d][Conll::LEMMA] == tree_node->word
+               && (!tree_node->tok_match || sentence_matrix[d][Conll::FORM] == tree_node->tok_match.value()) ) // нашли зависимое
           {
             add_match_query(d, tree_node);
             if ( !tree_node->out_of_match )
