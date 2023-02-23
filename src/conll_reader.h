@@ -34,8 +34,9 @@ private:
   static constexpr size_t DELIM_COUNT = FIELDS_COUNT - 1;
 public:
   // конструктор
-  ConllReader(const std::string& fn)
+  ConllReader(const std::string& fn, bool use_sv = false)
   : filename(fn)
+  , use_sentence_validators(use_sv)
   {
     buf = new char[BUF_SIZE];
   }
@@ -115,16 +116,12 @@ public:
       if ( ferror(f) ) return false; // больше нет возможности читать
       if ( !read_sentence_internal(result) ) continue; // невалидные предложения пропускаем
       if ( result.empty() ) continue; // пустые предложения пропускаем
-      // проконтролируем, что номер первого токена равен единице
-      try {
-        int tn = std::stoi( result[0][Conll::ID] );
-        if (tn != 1) continue;
-      } catch (...) {
-        continue;
+      if ( use_sentence_validators )
+      {
+        // проконтролируем нумерацию токенов
+        if ( !is_token_no_sequence_valid(result) )
+          continue;
       }
-      // проконтролируем нумерацию токенов
-      if ( !is_token_no_sequence_valid(result) )
-        continue;
       return true;
     }
   }
@@ -157,6 +154,9 @@ private:
   size_t idx_in_buf = BUF_SIZE;
   // значимое количество символов в буфере для чтения
   size_t real_buf_len = BUF_SIZE;
+  // выполнять ли дополнительные проверки корректности входных данных
+  bool use_sentence_validators = false;
+
 
   // получение размера файла
   uint64_t get_file_size()

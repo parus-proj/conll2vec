@@ -26,7 +26,7 @@ public:
   void run(const std::string& input_fn, const std::string& output_fn)
   {
     // открываем файл с тренировочными данными
-    ConllReader cr(input_fn);
+    ConllReader cr(input_fn, true);
     if ( !cr.init() )
     {
       std::cerr << "Train-file open error: " << input_fn << std::endl;
