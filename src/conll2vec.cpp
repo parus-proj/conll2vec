@@ -85,6 +85,7 @@ int main(int argc, char **argv)
   // если поставлена задача построения словарей
   if (task == "vocab")
   {
+    SimpleProfiler global_profiler;
     VocabsBuilder vb;
     bool succ = vb.build_vocabs( cmdLineParams.getAsString("-train"),
                                  cmdLineParams.getAsString("-vocab_l"), cmdLineParams.getAsString("-vocab_t"),
@@ -94,6 +95,7 @@ int main(int argc, char **argv)
                                  cmdLineParams.getAsInt("-col_ctx_d") - 1, (cmdLineParams.getAsInt("-use_deprel") == 1), /*(cmdLineParams.getAsInt("-exclude_nums") == 1),*/
                                  cmdLineParams.getAsInt("-max_oov_sfx"), cmdLineParams.getAsString("-ca_vocab"), "mwe.list"
                                );
+    std::cout << '\n' << "Vocab building: "; // profiler str prefix
     return ( succ ? 0 : -1 );
   }
 

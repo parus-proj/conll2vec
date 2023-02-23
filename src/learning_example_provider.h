@@ -22,7 +22,7 @@
 // информация, описывающая рабочий контекст одного потока управления (thread)
 struct ThreadEnvironment
 {
-  FILE* fi;                                            // хэндлер файла, содержащего обучающее множество (открывается с позиции, рассчитанной для данного потока управления).
+  std::unique_ptr<ConllReader> cr;
   std::vector< LearningExample > sentence;             // последнее считанное предложение
   int position_in_sentence;                            // текущая позиция в предложении
   unsigned long long next_random;                      // поле для вычисления случайных величин
@@ -33,7 +33,7 @@ struct ThreadEnvironment
   size_t coid_counter;                                 // аналогично для категороидов
   size_t rc_counter;                                   // аналогично для надежных категориальных пар
   ThreadEnvironment()
-  : fi(nullptr)
+  : cr(nullptr)
   , position_in_sentence(-1)
   , next_random(0)
   , words_count(0)
@@ -113,13 +113,8 @@ public:
       dep_ctx_vocabulary->sampling_estimation(sample_d);
     if ( assoc_ctx_vocabulary )
       assoc_ctx_vocabulary->sampling_estimation(sample_a);
-    try
-    {
-      train_file_size = get_file_size(train_filename);
-    } catch (const std::runtime_error& e) {
-      std::cerr << "LearningExampleProvider can't get file size for: " << train_filename << "\n  " << e.what() << std::endl;
-      train_file_size = 0;
-    }
+    for (size_t i = 0; i < threads_count; ++i)
+      thread_environment[i].cr = std::make_unique<ConllReader>(train_filename);
   } // constructor-end
   // деструктор
   ~LearningExampleProvider()
@@ -129,25 +124,11 @@ public:
   bool epoch_prepare(size_t threadIndex)
   {
     auto& t_environment = thread_environment[threadIndex];
-    if (train_file_size == 0)
-      return false;
-    t_environment.fi = fopen(train_filename.c_str(), "rb");
-    if ( t_environment.fi == nullptr )
+    if ( !t_environment.cr->init_multithread(threadIndex, threads_count) )
     {
-      std::cerr << "LearningExampleProvider: epoch prepare error: " << std::strerror(errno) << std::endl;
+      std::cerr << "LearningExampleProvider: epoch prepare error" << std::endl;
       return false;
     }
-    int succ = fseek(t_environment.fi, train_file_size / threads_count * threadIndex, SEEK_SET);
-    if (succ != 0)
-    {
-      std::cerr << "LearningExampleProvider: epoch prepare error: " << std::strerror(errno) << std::endl;
-      return false;
-    }
-    // т.к. после смещения мы типично не оказываемся в начале предложения, выполним выравнивание на начало предложения
-    std::vector< std::vector<std::string> > stub;
-    ConllReader::read_sentence(t_environment.fi, stub); // один read_sentence не гарантирует выход на начало предложения, т.к. fseek может поставить нас прямо на перевод строки в конце очередного токена, что распознается, как пустая строка
-    stub.clear();
-    ConllReader::read_sentence(t_environment.fi, stub);
     t_environment.sentence.clear();
     t_environment.position_in_sentence = 0;
     t_environment.words_count = 0;
@@ -157,8 +138,7 @@ public:
   bool epoch_unprepare(size_t threadIndex)
   {
     auto& t_environment = thread_environment[threadIndex];
-    fclose( t_environment.fi );
-    t_environment.fi = nullptr;
+    t_environment.cr->fin();
     return true;
   } // method-end
   // получение очередного обучающего примера
@@ -171,25 +151,11 @@ public:
       t_environment.position_in_sentence = 0;
       if ( t_environment.words_count > train_words / threads_count ) // не настал ли конец эпохи?
         return std::nullopt;
-      while (true)
+      auto& sentence_matrix = t_environment.sentence_matrix;
+      while ( t_environment.cr->read_sentence(t_environment.sentence_matrix) )
       {
-        auto& sentence_matrix = t_environment.sentence_matrix;
-        sentence_matrix.clear();
-        bool succ = ConllReader::read_sentence(t_environment.fi, sentence_matrix);
-        if ( feof(t_environment.fi) ) // не настал ли конец эпохи?
+        if ( sentence_matrix.empty() ) // не настал ли конец эпохи?
           return std::nullopt;
-        if ( !succ )
-          continue;
-        auto sm_size = sentence_matrix.size();
-        if (sm_size == 0)
-          continue;
-        // проконтролируем, что номер первого токена равен единице
-        try {
-          int tn = std::stoi( sentence_matrix[0][Conll::ID] );
-          if (tn != 1) continue;
-        } catch (...) {
-          continue;
-        }
 
         if (!gramm)
           get_from_sentence__usual(t_environment, fraction);
@@ -444,8 +410,6 @@ private:
   std::vector<ThreadEnvironment> thread_environment;
   // имя файла, содержащего обучающее множество (conll)
   std::string train_filename;
-  // размер тренировочного файла
-  uint64_t train_file_size = 0;
   // количество слов в обучающем множестве (приблизительно, т.к. могло быть подрезание по порогу частоты при построении словаря)
   uint64_t train_words = 0;
   // словари
@@ -504,15 +468,6 @@ private:
   // минимальная длина слова, от которого берутся oov-суффиксы
   const size_t SFX_SOURCE_WORD_MIN_LEN = 6;
 
-  // получение размера файла
-  uint64_t get_file_size(const std::string& filename)
-  {
-    // TODO: в будущем использовать std::experimental::filesystem::file_size
-    std::ifstream ifs(filename, std::ios::binary|std::ios::ate);
-    if ( !ifs.good() )
-        throw std::runtime_error(std::strerror(errno));
-    return ifs.tellg();
-  } // method-end
 //  // быстрый конвертер строки в число (без какого-либо контроля корректности)
 //  unsigned int string2uint_ultrafast(const std::string& value)
 //  {

@@ -21,7 +21,7 @@ class StatHelper
 public:
   void calc_sentence(size_t cnt)
   {
-    tokens_processed += cnt; // статистику ведём и по некорректным предложениям
+    tokens_processed += cnt;
     tokens_dbg_counter += cnt;
     if (tokens_dbg_counter >= 100000)
     {
@@ -35,20 +35,13 @@ public:
     if (cnt > 0)
       sentence_processed++;
   }
-  void inc_sr_fils()
-  {
-    ++sr_fails_cnt;
-  }
   void output_stat()
   {
-    if ( sr_fails_cnt > 0)
-      std::cerr << "Sentence reading fails count: " << sr_fails_cnt << std::endl;
     std::cout << "Sentences count: " << sentence_processed << std::endl;
     std::cout << "Tokens count: " << tokens_processed << std::endl;
     std::cout << std::endl;
   }
 private:
-  uint64_t sr_fails_cnt = 0;    // количество ошибок чтения предложений (предложений, содержащих хотя бы одну некорректную запись)
   uint64_t sentence_processed = 0;
   uint64_t tokens_processed = 0;
   size_t   tokens_dbg_counter = 0;
@@ -103,10 +96,10 @@ public:
       return false;
 
     // открываем файл с тренировочными данными
-    FILE *conll_file = fopen(conll_fn.c_str(), "rb");
-    if ( conll_file == nullptr )
+    ConllReader cr(conll_fn);
+    if ( !cr.init() )
     {
-      std::cerr << "Train-file open: error: " << std::strerror(errno) << std::endl;
+      std::cerr << "Train-file open error: " << conll_fn << std::endl;
       return false;
     }
 
@@ -120,25 +113,17 @@ public:
     SentenceMatrix sentence_matrix;
     sentence_matrix.reserve(5000);
     StatHelper stat;
-    while ( !feof(conll_file) )
+    while ( cr.read_sentence(sentence_matrix) )
     {
-      bool succ = ConllReader::read_sentence(conll_file, sentence_matrix);
       stat.calc_sentence(sentence_matrix.size());
-      if (!succ)
-      {
-        stat.inc_sr_fils();
-        continue;
-      }
-      if (sentence_matrix.size() == 0)
-        continue;
-      apply_patches(sentence_matrix); // todo: УБРАТЬ!  временный дополнительный корректор для борьбы с "грязными данными" в результатах лемматизации
+//      apply_patches(sentence_matrix); // todo: УБРАТЬ!  временный дополнительный корректор для борьбы с "грязными данными" в результатах лемматизации
       v_mwe->put_phrases_into_sentence(sentence_matrix);
       process_sentence_tokens(vocab_token, token2lemmas_map, /*excludeNumsFromToks,*/ sentence_matrix);
       if (vocab_oov)
         process_sentence_oov(vocab_oov, sentence_matrix, max_oov_sfx);
       process_sentence_dep_ctx(vocab_dep, sentence_matrix, ctx_vocabulary_column_d, use_deprel);
     }
-    fclose(conll_file);
+    cr.fin();
     std::cout << std::endl;
     stat.output_stat();
     // сохраняем словари в файлах
@@ -172,10 +157,10 @@ private:
     if ( !v_mwe->load(mwe_fn) )
       return false;
     // открываем файл с тренировочными данными
-    FILE *conll_file = fopen(conll_fn.c_str(), "rb");
-    if ( conll_file == nullptr )
+    ConllReader cr(conll_fn);
+    if ( !cr.init() )
     {
-      std::cerr << "Train-file open: error: " << std::strerror(errno) << std::endl;
+      std::cerr << "Train-file open: error: " << conll_fn << std::endl;
       return false;
     }
     // создаем контейнер для словаря
@@ -184,22 +169,14 @@ private:
     SentenceMatrix sentence_matrix;
     sentence_matrix.reserve(5000);
     StatHelper stat;
-    while ( !feof(conll_file) )
+    while ( cr.read_sentence(sentence_matrix) )
     {
-      bool succ = ConllReader::read_sentence(conll_file, sentence_matrix);
       stat.calc_sentence(sentence_matrix.size());
-      if (!succ)
-      {
-        stat.inc_sr_fils();
-        continue;
-      }
-      if (sentence_matrix.size() == 0)
-        continue;
-      apply_patches(sentence_matrix); // todo: УБРАТЬ!  временный дополнительный корректор для борьбы с "грязными данными" в результатах лемматизации
+//      apply_patches(sentence_matrix); // todo: УБРАТЬ!  временный дополнительный корректор для борьбы с "грязными данными" в результатах лемматизации
       v_mwe->put_phrases_into_sentence(sentence_matrix);
       process_sentence_lemmas(vocab_lemma, sentence_matrix);
     }
-    fclose(conll_file);
+    cr.fin();
     std::cout << std::endl;
     stat.output_stat();
     // сохраняем словарь в файл
@@ -296,22 +273,22 @@ private:
         it = oov_vocab->erase(it);
     }
   } // method-end
-  bool is_punct__patch(const std::string& word)
-  {
-    const std::set<std::string> puncts = { ".", ",", "!", "?", ":", ";", "…", "...", "--", "—", "–", "‒",
-                                           "'", "ʼ", "ˮ", "\"", "«", "»", "“", "”", "„", "‟", "‘", "’", "‚", "‛",
-                                           "(", ")", "[", "]", "{", "}", "⟨", "⟩" };
-    if ( puncts.find(word) != puncts.end() )
-      return true;
-    else
-      return false;
-  }
-  void apply_patches(SentenceMatrix& sentence)
-  {
-    for ( auto& token : sentence )
-      if ( is_punct__patch(token[Conll::LEMMA]) )
-        token[Conll::DEPREL] = "PUNC";
-  } // method-end
+//  bool is_punct__patch(const std::string& word)
+//  {
+//    const std::set<std::string> puncts = { ".", ",", "!", "?", ":", ";", "…", "...", "--", "—", "–", "‒",
+//                                           "'", "ʼ", "ˮ", "\"", "«", "»", "“", "”", "„", "‟", "‘", "’", "‚", "‛",
+//                                           "(", ")", "[", "]", "{", "}", "⟨", "⟩" };
+//    if ( puncts.find(word) != puncts.end() )
+//      return true;
+//    else
+//      return false;
+//  }
+//  void apply_patches(SentenceMatrix& sentence)
+//  {
+//    for ( auto& token : sentence )
+//      if ( is_punct__patch(token[Conll::LEMMA]) )
+//        token[Conll::DEPREL] = "PUNC";
+//  } // method-end
   void process_sentence_lemmas(VocabMappingPtr vocab, const SentenceMatrix& sentence)
   {
     for ( auto& token : sentence )

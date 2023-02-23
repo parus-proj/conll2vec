@@ -26,14 +26,10 @@ public:
   void run(const std::string& input_fn, const std::string& output_fn)
   {
     // открываем файл с тренировочными данными
-    FILE *conll_file = nullptr;
-    if ( input_fn == "stdin" )
-      conll_file = stdin;
-    else
-      conll_file = fopen(input_fn.c_str(), "r");
-    if ( conll_file == nullptr )
+    ConllReader cr(input_fn);
+    if ( !cr.init() )
     {
-      std::cerr << "Train-file open: error: " << std::strerror(errno) << std::endl;
+      std::cerr << "Train-file open error: " << input_fn << std::endl;
       return;
     }
     // открываем файл для сохранения результатов
@@ -46,15 +42,8 @@ public:
     // в цикле читаем предложения из CoNLL-файла, преобразуем их и сохраняем в результирующий файл
     SentenceMatrix sentence_matrix;
     u32SentenceMatrix u32_sentence_matrix;
-    while ( !feof(conll_file) )
+    while ( cr.read_sentence_u32(u32_sentence_matrix) )
     {
-      bool succ = ConllReader::read_sentence_u32(conll_file, u32_sentence_matrix);
-      if (!succ)
-        continue;
-      if (u32_sentence_matrix.size() == 0)
-        continue;
-//      if ( !is_token_no_sequence_valid(u32_sentence_matrix) )
-//        continue;
       // выполняем преобразование
       process_sentence(u32_sentence_matrix);
       // конвертируем строки в utf-8
@@ -71,9 +60,13 @@ public:
       save_sentence(ofs, sentence_matrix);
     }
     if ( input_fn != "stdin" )
-      fclose(conll_file);
+      cr.fin();
   } // method-end
 private:
+  // множество знаков пунктуации
+  const std::set<std::u32string> PUNCT_SET = { U".", U",", U"!", U"?", U":", U";", U"…", U"...", U"--", U"—", U"–", U"‒",
+                                               U"'", U"ʼ", U"ˮ", U"\"", U"«", U"»", U"“", U"”", U"„", U"‟", U"‘", U"’", U"‚", U"‛",
+                                               U"(", U")", U"[", U"]", U"{", U"}", U"⟨", U"⟩" };
   // замещать ли цифровые последовательности на @num@ согласно логике "нумификатора"?
   bool exclude_nums = false;
   // сохранение предложения
@@ -86,19 +79,6 @@ private:
     }
     ofs << '\n';
   } // method-end
-//  // проверка корректности нумерации токенов в предложении
-//  bool is_token_no_sequence_valid(const u32SentenceMatrix& data)
-//  {
-//    size_t pre_tn = 0;
-//    for (auto& t : data)
-//    {
-//      size_t tn = 0;
-//      try { tn = std::stoi(t[0]); } catch (...) { return false; }
-//      if (tn != pre_tn+1) return false;
-//      pre_tn = tn;
-//    }
-//    return true;
-//  }
   // функция обработки отдельного предложения
   void process_sentence(u32SentenceMatrix& data)
   {
@@ -134,26 +114,27 @@ private:
   void tokens_to_lower(u32SentenceMatrix& data)
   {
     for (auto& t : data)
-      t[1] = StrConv::toLower(t[1]);
+      t[Conll::FORM] = StrConv::toLower(t[Conll::FORM]);
   } // method-end
   // исправление типа синтаксической связи у знаков пунктуации
   void process_punc(u32SentenceMatrix& data)
   {
-    std::set<std::u32string> puncts = { U".", U",", U"!", U"?", U":", U";", U"…", U"...", U"--", U"—", U"–", U"‒",
-                                        U"'", U"ʼ", U"ˮ", U"\"", U"«", U"»", U"“", U"”", U"„", U"‟", U"‘", U"’", U"‚", U"‛",
-                                        U"(", U")", U"[", U"]", U"{", U"}", U"⟨", U"⟩" };
     for (auto& t : data)
     {
-      if ( puncts.find(t[1]) != puncts.end() )
-        t[7] = U"PUNC";
+      if ( PUNCT_SET.find(t[Conll::FORM]) != PUNCT_SET.end() )
+        t[Conll::DEPREL] = U"PUNC";
     }
   } // method-end
   // неизвестные леммы замещаем на символ подчеркивания (они игнорируются при построении словарей)
   void process_unknonw(u32SentenceMatrix& data)
   {
     for (auto& t : data)
-      if ( t[2] == U"<unknown>" || t[2] == U"@card@" )
-        t[2] = U"_";
+    {
+      if ( t[Conll::LEMMA] == U"<unknown>" || t[Conll::LEMMA] == U"@card@" )
+        t[Conll::LEMMA] = U"_";
+      if ( PUNCT_SET.find(t[Conll::LEMMA]) != PUNCT_SET.end() && PUNCT_SET.find(t[Conll::FORM]) == PUNCT_SET.end() )
+        t[Conll::LEMMA] = U"_";
+    }
   }
   // обобщение токенов, содержащих числовые величины
   void process_nums(u32SentenceMatrix& data)
@@ -164,9 +145,9 @@ private:
     const std::u32string RuLets = U"АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЬЫЪЭЮЯабвгдеёжзийклмнопрстуфхцчшщьыъэюя";
     for (auto& t : data)
     {
-      auto& token = t[1];
-      auto& lemma = t[2];
-      auto& synrel = t[7];
+      auto& token = t[Conll::FORM];
+      auto& lemma = t[Conll::LEMMA];
+      auto& synrel = t[Conll::DEPREL];
       if (synrel == U"PUNC") continue;
       const std::set<std::u32string> SPECIAL_TOKS = { U"@num@", U"@num@,@num@", U"@num@:@num@", U"@num@-@num@", U"@num@--@num@", U"@num@‒@num@", U"@num@–@num@", U"@num@—@num@" };
       if ( SPECIAL_TOKS.find(lemma) != SPECIAL_TOKS.end() )
@@ -195,10 +176,10 @@ private:
       };
     for (auto& t : data)
     {
-      if ( permissible_reltypes.find(t[7]) == permissible_reltypes.end() )
+      if ( permissible_reltypes.find(t[Conll::DEPREL]) == permissible_reltypes.end() )
       {
-        //t[6] = U"0";  // сохраняем для сборки некоторых mwe
-        t[7] = U"_";
+        // t[Conll::HEAD] = U"0";  // сохраняем для сборки некоторых mwe
+        t[Conll::DEPREL] = U"_";
       }
     }
   } // method-end
@@ -207,24 +188,24 @@ private:
   {
     for (auto& t : data)
     {
-      if ( t[7] == U"предл" )
+      if ( t[Conll::DEPREL] == U"предл" )
       {
-        size_t prepos_token_no = std::stoi( StrConv::To_UTF8(t[6]) );
+        size_t prepos_token_no = std::stoi( StrConv::To_UTF8(t[Conll::HEAD]) );
         if ( prepos_token_no < 1 || prepos_token_no > data.size() )
           continue;
         auto& prepos_token = data[ prepos_token_no - 1  ];
-        if (prepos_token[7] == U"сочин" || prepos_token[7] == U"соч-союзн" || prepos_token[7] == U"_")
+        if (prepos_token[Conll::DEPREL] == U"сочин" || prepos_token[Conll::DEPREL] == U"соч-союзн" || prepos_token[Conll::DEPREL] == U"_")
         {
-          //t[6] = U"0";
-          t[7] = U"_";
+          //t[Conll::HEAD] = U"0";
+          t[Conll::DEPREL] = U"_";
         }
         else
         {
-          t[6] = prepos_token[6];
-          t[7] = prepos_token[7];
+          t[Conll::HEAD] = prepos_token[Conll::HEAD];
+          t[Conll::DEPREL] = prepos_token[Conll::DEPREL];
         }
-        prepos_token[6] =  t[0];
-        prepos_token[7] =  U"ud_prepos";
+        prepos_token[Conll::HEAD] =  t[Conll::ID];
+        prepos_token[Conll::DEPREL] =  U"ud_prepos";
       }
     }
   } // method-end
@@ -407,26 +388,26 @@ private:
     };
     for (auto& t : data)
     {
-      if ( t[7] != U"предл" || t[5].length() == 0 || t[5][0] != U'N' ) continue;
-      size_t prepos_token_no = std::stoi( StrConv::To_UTF8(t[6]) );
+      if ( t[Conll::DEPREL] != U"предл" || t[5].length() == 0 || t[5][0] != U'N' ) continue;
+      size_t prepos_token_no = std::stoi( StrConv::To_UTF8(t[Conll::HEAD]) );
       if ( prepos_token_no < 1 || prepos_token_no > data.size() ) continue;
       auto& prepos_token = data[ prepos_token_no - 1  ];
       std::u32string case_code = (t[5].length() > 4) ? std::u32string(1, t[5][4]) : U"-";
-      std::u32string key = prepos_token[2] + U"__" + case_code;
+      std::u32string key = prepos_token[Conll::LEMMA] + U"__" + case_code;
       auto it = COMPRESSOR.find(key);
       if ( it == COMPRESSOR.end() ) continue;
-      if (prepos_token[7] == U"сочин" || prepos_token[7] == U"соч-союзн" || prepos_token[7] == U"_")
+      if (prepos_token[Conll::DEPREL] == U"сочин" || prepos_token[Conll::DEPREL] == U"соч-союзн" || prepos_token[Conll::DEPREL] == U"_")
       {
-        //t[6] = U"0";
-        t[7] = U"_";
+        //t[Conll::HEAD] = U"0";
+        t[Conll::DEPREL] = U"_";
       }
       else
       {
-        t[6] = prepos_token[6];
-        t[7] = it->second;
+        t[Conll::HEAD] = prepos_token[Conll::HEAD];
+        t[Conll::DEPREL] = it->second;
       }
-      prepos_token[6] =  t[0];
-      prepos_token[7] =  U"ud_prepos";
+      prepos_token[Conll::HEAD] =  t[Conll::ID];
+      prepos_token[Conll::DEPREL] =  U"ud_prepos";
     }
   } // method-end
   // преобразование комплетивов
@@ -436,10 +417,10 @@ private:
     {
       if ( t[5].length() > 0 && t[5][0] == U'N' )
       {
-        if ( t[7] == U"2-компл" || t[7] == U"3-компл" || t[7] == U"4-компл" )
+        if ( t[Conll::DEPREL] == U"2-компл" || t[Conll::DEPREL] == U"3-компл" || t[Conll::DEPREL] == U"4-компл" )
         {
           std::u32string::value_type case_code = (t[5].length() > 4) ? t[5][4] : U'-';
-          t[7] = U"компл-" + std::u32string(1, case_code);
+          t[Conll::DEPREL] = U"компл-" + std::u32string(1, case_code);
         }
       }
     }
@@ -449,16 +430,16 @@ private:
   {
     for (auto& t : data)
     {
-      if ( t[7] == U"присвяз" )
+      if ( t[Conll::DEPREL] == U"присвяз" )
       {
-        size_t predicate_token_no = find_child(data, t[6], U"предик");
+        size_t predicate_token_no = find_child(data, t[Conll::HEAD], U"предик");
         if ( predicate_token_no == 0 )
           continue;
         auto& predicate_token = data[ predicate_token_no - 1 ];
         if ( t[5].length() > 0 && (t[5][0] == U'N' || t[5][0] == U'A') && predicate_token[5].length() > 0 && predicate_token[5][0] == U'N' )
-          predicate_token[6] = t[0];
-        // t[6] = U"0";
-        // t[7] = U"_";
+          predicate_token[Conll::HEAD] = t[Conll::ID];
+        // t[Conll::HEAD] = U"0";
+        // t[Conll::DEPREL] = U"_";
       }
     }
   } // method-end
@@ -467,16 +448,16 @@ private:
   {
     for (auto& t : data)
     {
-      if ( t[7] == U"аналит" && t[2] != U"бы" && t[2] != U"б" )
+      if ( t[Conll::DEPREL] == U"аналит" && t[Conll::LEMMA] != U"бы" && t[Conll::LEMMA] != U"б" )
       {
         // всех потомков глагола-связки перевесим на содержательный глагол
         for (auto& ti : data)
         {
-          if ( ti[6] == t[6] && ti[0] != t[0] && ti[7] != U"присвяз" )
-            ti[6] = t[0];
+          if ( ti[Conll::HEAD] == t[Conll::HEAD] && ti[Conll::ID] != t[Conll::ID] && ti[Conll::DEPREL] != U"присвяз" )
+            ti[Conll::HEAD] = t[Conll::ID];
         }
-        //t[6] = U"0";
-        //t[7] = U"_";
+        //t[Conll::HEAD] = U"0";
+        //t[Conll::DEPREL] = U"_";
       }
     }
   } // method-end
@@ -485,30 +466,30 @@ private:
   {
     for (auto& t : data)
     {
-      if ( t[7] == U"пасс-анал" ) // преобразование пассивно-аналитической конструкции
+      if ( t[Conll::DEPREL] == U"пасс-анал" ) // преобразование пассивно-аналитической конструкции
       {
         // всех потомков глагола-связки перевесим на содержательный глагол
         for (auto& ti : data)
         {
-          if ( ti[6] == t[6] && ti[0] != t[0] && ti[7] != U"присвяз" )
+          if ( ti[Conll::HEAD] == t[Conll::HEAD] && ti[Conll::ID] != t[Conll::ID] && ti[Conll::DEPREL] != U"присвяз" )
           {
-            ti[6] = t[0];
-            if ( ti[7] == U"предик" )
-              ti[7] = U"предик-пасс";
+            ti[Conll::HEAD] = t[Conll::ID];
+            if ( ti[Conll::DEPREL] == U"предик" )
+              ti[Conll::DEPREL] = U"предик-пасс";
           }
         }
-        //t[6] = U"0";
-        //t[7] = U"_";
+        //t[Conll::HEAD] = U"0";
+        //t[Conll::DEPREL] = U"_";
       }
-      if ( t[7] == U"предик" )
+      if ( t[Conll::DEPREL] == U"предик" )
       {
-        size_t head_token_no = std::stoi( StrConv::To_UTF8(t[6]) );
+        size_t head_token_no = std::stoi( StrConv::To_UTF8(t[Conll::HEAD]) );
         if ( head_token_no < 1 || head_token_no > data.size() )
           continue;
         auto& head_token = data[ head_token_no - 1  ];
         auto& head_msd = head_token[5];
-        if ( head_msd.length() >= 8 && head_msd[0] == U'V' && head_msd[2] == U'p' && head_msd[7] == U'p' ) // причастие в пассивном залоге
-          t[7] = U"предик-пасс";
+        if ( head_msd.length() >= 8 && head_msd[0] == U'V' && head_msd[2] == U'p' && head_msd[Conll::DEPREL] == U'p' ) // причастие в пассивном залоге
+          t[Conll::DEPREL] = U"предик-пасс";
       }
     } // for all tokens in sentence
   } // method-end
@@ -518,63 +499,63 @@ private:
     // сначала перебросим соч-союзн мимо союза
     for (auto& t : data)
     {
-      if (t[7] != U"соч-союзн") continue;
-      if (t[6] == U"0")
+      if (t[Conll::DEPREL] != U"соч-союзн") continue;
+      if (t[Conll::HEAD] == U"0")
       {
         // invalid record
-        t[7] = U"_";
+        t[Conll::DEPREL] = U"_";
         continue;
       }
-      size_t head_token_idx = std::stoi( StrConv::To_UTF8(t[6]) ) - 1;
+      size_t head_token_idx = std::stoi( StrConv::To_UTF8(t[Conll::HEAD]) ) - 1;
       auto& head_t = data[head_token_idx];
-      if (head_t[2] != U"и" || head_t[7] != U"сочин") // другое не интересно
+      if (head_t[Conll::LEMMA] != U"и" || head_t[Conll::DEPREL] != U"сочин") // другое не интересно
       {
-        //t[6] = U"0";
-        t[7] = U"_";
+        //t[Conll::HEAD] = U"0";
+        t[Conll::DEPREL] = U"_";
         continue;
       }
-      t[6] = head_t[6];
-      t[7] = head_t[7];
+      t[Conll::HEAD] = head_t[Conll::HEAD];
+      t[Conll::DEPREL] = head_t[Conll::DEPREL];
     }
     // теперь для сочиненных поставим такую же связь, что и для головы цепочки
     for (auto& t : data)
     {
-      if (t[7] != U"сочин") continue;
+      if (t[Conll::DEPREL] != U"сочин") continue;
       bool good_item = t[5].length() > 0 && (t[5][0] == U'N' || t[5][0] == U'A');
       if (!good_item)
       {
-        //t[6] = U"0";
-        t[7] = U"_";
+        //t[Conll::HEAD] = U"0";
+        t[Conll::DEPREL] = U"_";
         continue;
       }
-      size_t current_token_idx = std::stoi( StrConv::To_UTF8(t[0]) ) - 1;
+      size_t current_token_idx = std::stoi( StrConv::To_UTF8(t[Conll::ID]) ) - 1;
       size_t chain_head_idx = find_coord_head(data, current_token_idx);
       if (chain_head_idx == std::numeric_limits<size_t>::max())
       {
-        //t[6] = U"0";
-        t[7] = U"_";
+        //t[Conll::HEAD] = U"0";
+        t[Conll::DEPREL] = U"_";
         continue;
       }
       auto& head_t = data[chain_head_idx];
-      if (head_t[7] == U"аппоз")
+      if (head_t[Conll::DEPREL] == U"аппоз")
       {
-        //t[6] = U"0";
-        t[7] = U"_";
+        //t[Conll::HEAD] = U"0";
+        t[Conll::DEPREL] = U"_";
         continue;
       }
-      t[6] = head_t[6];
-      t[7] = head_t[7];
+      t[Conll::HEAD] = head_t[Conll::HEAD];
+      t[Conll::DEPREL] = head_t[Conll::DEPREL];
     }
   }
   // поиск начала сочинительной цепочки
   size_t find_coord_head(const u32SentenceMatrix& data, size_t current_token_idx)
   {
     auto& t = data[current_token_idx];
-    if (t[7] != U"сочин")
+    if (t[Conll::DEPREL] != U"сочин")
       return current_token_idx;
-    if (t[6] == U"0")
+    if (t[Conll::HEAD] == U"0")
       return std::numeric_limits<size_t>::max(); // invalid record
-    size_t head_token_idx = std::stoi( StrConv::To_UTF8(t[6]) ) - 1;
+    size_t head_token_idx = std::stoi( StrConv::To_UTF8(t[Conll::HEAD]) ) - 1;
     return find_coord_head(data, head_token_idx);
   }
   // поиск первого потомка с заданным типом отношения к родителю
@@ -582,8 +563,8 @@ private:
   {
     for (auto& t : data)
     {
-      if ( t[6] == node_no && t[7] == rel_type )
-        return std::stoi( StrConv::To_UTF8(t[0]) );
+      if ( t[Conll::HEAD] == node_no && t[Conll::DEPREL] == rel_type )
+        return std::stoi( StrConv::To_UTF8(t[Conll::ID]) );
     }
     return 0;
   } // method-end
