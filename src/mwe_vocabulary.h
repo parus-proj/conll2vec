@@ -321,7 +321,7 @@ std::cout << "  " << t->str << ", " << ((float)phrase_cn/(float)total_sum) << st
   } // method-end
 
 
-  void dbg_print_mwe_lists()
+  void dbg_print_mwe_lists() const
   {
     std::cout << std::endl;
     for (auto& mwe : mwes)

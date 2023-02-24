@@ -13,7 +13,11 @@
 #include <vector>
 #include <unordered_map>
 #include <set>
+#include <array>
 #include <fstream>
+#include <thread>
+#include <atomic>
+#include <chrono>
 
 // Класс, хранящий данные по чтению обучающих данных и выводящий прогресс-сообщения
 class StatHelper
@@ -48,6 +52,48 @@ private:
 };
 
 
+// Класс циклического буфера для предложений
+class SmCyclicBuf
+{
+public:
+  SmCyclicBuf()
+  {
+    for (auto i : buf)
+      i.reserve(2000);
+  }
+  bool can_read() const
+  {
+    return read_idx != write_idx;
+  }
+  bool can_write() const
+  {
+    return next(write_idx) != read_idx;
+  }
+  void push(ConllReader::SentenceMatrix& sm)
+  {
+    buf[write_idx].swap(sm);
+    write_idx = next(write_idx);
+  }
+  void pop(ConllReader::SentenceMatrix& sm)
+  {
+    sm.swap(buf[read_idx]);
+    read_idx = next(read_idx);
+  }
+private:
+  static constexpr size_t BUF_SIZE = 10;
+  std::array<ConllReader::SentenceMatrix, BUF_SIZE> buf;
+  size_t read_idx = 0;
+  size_t write_idx = 0;
+  size_t next(const size_t idx) const
+  {
+    size_t result = idx + 1;
+    if (result == BUF_SIZE)
+      result = 0;
+    return result;
+  }
+}; // class-decl-end
+
+
 // Класс, обеспечивающие создание словарей (-task vocab)
 class VocabsBuilder
 {
@@ -64,15 +110,22 @@ public:
                     const std::string& voc_l_fn, const std::string& voc_t_fn,
                     const std::string& voc_tm_fn, const std::string& voc_oov_fn, const std::string& voc_d_fn,
                     size_t limit_l, size_t limit_t, size_t limit_o, size_t limit_d,
-                    size_t ctx_vocabulary_column_d, bool use_deprel, /*bool excludeNumsFromToks,*/ size_t max_oov_sfx,
-                    const std::string& categoroids_vocab_fn, const std::string& mwe_fn)
+                    size_t ctx_vocabulary_column_d, bool use_deprel, size_t max_oov_sfx,
+                    const std::string& categoroids_vocab_fn, const std::string& mwe_fn,
+                    size_t threads_cnt)
   {
 
+    // создаем контейнеры для словарей
+    vocab_lemma = std::make_shared<VocabMapping>();
+    vocab_token = std::make_shared<VocabMapping>();
+    token2lemmas_map = std::make_shared<Token2LemmasMap>();
+    vocab_oov = ( voc_oov_fn.empty() ) ? nullptr : std::make_shared<VocabMapping>();
+    vocab_dep = std::make_shared<VocabMapping>();
+    coid_vocab = ( categoroids_vocab_fn.empty() ) ? nullptr : std::make_shared<CategoroidsVocabulary>();
+
     // загружаем справочник категороидов (при наличии)
-    CategoroidsVocabularyPtr coid_vocab;
-    if ( !categoroids_vocab_fn.empty() )
+    if ( coid_vocab )
     {
-      coid_vocab = std::make_shared<CategoroidsVocabulary>();
       if ( !coid_vocab->load_words_list(categoroids_vocab_fn) )
       {
         std::cerr << "Categoroids-file loading error." << std::endl;
@@ -80,50 +133,223 @@ public:
       }
     }
 
-    // Проход 1: строим главный словарь (включая словосочетания)
+    // ПРОХОД 1: строим главный словарь (включая словосочетания)
 
-    bool succ = build_main_vocab_only(conll_fn, mwe_fn, voc_l_fn, limit_l, coid_vocab);
+    // создаём и загружаем справочник словосочетаний
+    v_mwe = std::make_shared<MweVocabulary>();
+        if ( !v_mwe->load(mwe_fn) )
+          return false;
+
+    bool succ = build_main_vocab_only(conll_fn, voc_l_fn, limit_l, threads_cnt-1);
     if ( !succ ) return false;
 
-    // Проход2: строим остальные словари уже с учётом того, какие именно словосочетания преодолели частотный порог основного словаря
+    // ПРОХОД 2: строим остальные словари уже с учётом того, какие именно словосочетания преодолели частотный порог основного словаря
 
-    // создаём справочник словосочетаний
-    std::shared_ptr< OriginalWord2VecVocabulary > v_main = std::make_shared<OriginalWord2VecVocabulary>();
-    if ( !v_main->load(voc_l_fn) )
+    // пересоздаём и загружаем справочник словосочетаний (с фильтрацией по основному словарю)
+    std::shared_ptr< OriginalWord2VecVocabulary > v_lemmas = std::make_shared<OriginalWord2VecVocabulary>();
+    if ( !v_lemmas->load(voc_l_fn) )
       return false;
-    std::shared_ptr< MweVocabulary > v_mwe = std::make_shared<MweVocabulary>();
-    if ( !v_mwe->load(mwe_fn, v_main) )
+    v_mwe = std::make_shared<MweVocabulary>();
+    if ( !v_mwe->load(mwe_fn, v_lemmas) )
       return false;
 
-    // открываем файл с тренировочными данными
-    ConllReader cr(conll_fn);
-    if ( !cr.init() )
-    {
-      std::cerr << "Train-file open error: " << conll_fn << std::endl;
-      return false;
-    }
+    succ = build_other_vocab_only( conll_fn, voc_t_fn, voc_tm_fn, voc_oov_fn, voc_d_fn,
+                                   limit_t, limit_o, limit_d,
+                                   ctx_vocabulary_column_d, use_deprel, max_oov_sfx, threads_cnt-1 );
+    if ( !succ ) return false;
 
-    // создаем контейнеры для словарей
-    VocabMappingPtr vocab_token = std::make_shared<VocabMapping>();
-    Token2LemmasMapPtr token2lemmas_map = std::make_shared<Token2LemmasMap>();
-    VocabMappingPtr vocab_oov = (voc_oov_fn.empty()) ? nullptr : std::make_shared<VocabMapping>();
-    VocabMappingPtr vocab_dep = std::make_shared<VocabMapping>();
+    return true;
+  } // method-end
+private:
+  // маркер oov-слова
+  const std::string OOV = "_OOV_";
+  // минимальная длина слова, от которого берутся oov-суффиксы
+  const size_t SFX_SOURCE_WORD_MIN_LEN = 6;
+  // указатели на словари
+  VocabMappingPtr vocab_lemma;
+  VocabMappingPtr vocab_token;
+  Token2LemmasMapPtr token2lemmas_map;
+  VocabMappingPtr vocab_oov;
+  VocabMappingPtr vocab_dep;
+  std::shared_ptr< MweVocabulary > v_mwe;
+  CategoroidsVocabularyPtr coid_vocab;
 
-    // в цикле читаем предложения из CoNLL-файла и извлекаем из них информацию для словарей
-    SentenceMatrix sentence_matrix;
-    sentence_matrix.reserve(5000);
+  // функция построения и сохранения главного словаря
+  // выполняется отдельно, т.к. необходимо выяснить частоты словосочетаний (какие из них преодолевают частотный порог главного словаря и будут преобразовываться)
+  bool build_main_vocab_only(const std::string& conll_fn, const std::string& voc_l_fn, size_t limit_l, size_t workers_cnt)
+  {
+    // в цикле читаем предложения из CoNLL-файла и извлекаем из них информацию для словаря
     StatHelper stat;
-    while ( cr.read_sentence(sentence_matrix) )
-    {
-      stat.calc_sentence(sentence_matrix.size());
-//      apply_patches(sentence_matrix); // todo: УБРАТЬ!  временный дополнительный корректор для борьбы с "грязными данными" в результатах лемматизации
-      v_mwe->put_phrases_into_sentence(sentence_matrix);
-      process_sentence_tokens(vocab_token, token2lemmas_map, /*excludeNumsFromToks,*/ sentence_matrix);
-      if (vocab_oov)
-        process_sentence_oov(vocab_oov, sentence_matrix, max_oov_sfx);
-      process_sentence_dep_ctx(vocab_dep, sentence_matrix, ctx_vocabulary_column_d, use_deprel);
-    }
-    cr.fin();
+    SmCyclicBuf cyclic_buf;
+    std::mutex mtx, vocab_mtx;
+    std::atomic_bool end_of_data = false;
+    std::atomic_bool status = true;
+
+    auto reading_thread_func = [&] ()
+        {
+          // открываем файл с тренировочными данными
+          ConllReader cr(conll_fn);
+          if ( !cr.init() )
+          {
+            std::cerr << "Train-file open: error: " << conll_fn << std::endl;
+            status = false;
+            end_of_data = true;
+            return;
+          }
+          // читаем и помещаем в циклический буфер (очередь на обработку)
+          SentenceMatrix sentence_matrix;
+          sentence_matrix.reserve(2000);
+          while ( cr.read_sentence(sentence_matrix) )
+          {
+            stat.calc_sentence( sentence_matrix.size() );
+            while ( true )
+            {
+              mtx.lock();
+              if ( !cyclic_buf.can_write() )
+              {
+                mtx.unlock();
+                std::this_thread::sleep_for(std::chrono::microseconds(1));
+                continue;
+              }
+              cyclic_buf.push(sentence_matrix);
+              mtx.unlock();
+              break;
+            }
+          }
+          cr.fin();
+          end_of_data = true;
+        }; // func-end
+
+    auto writing_thread_func = [&] ()
+        {
+          SentenceMatrix sentence_matrix;
+          sentence_matrix.reserve(2000);
+          while ( true )
+          {
+            mtx.lock();
+            if ( !cyclic_buf.can_read() )
+            {
+              mtx.unlock();
+              if ( end_of_data )
+                break;
+              else {
+                std::this_thread::sleep_for(std::chrono::microseconds(1));
+                continue;
+              }
+            }
+            cyclic_buf.pop( sentence_matrix );
+            mtx.unlock();
+            v_mwe->put_phrases_into_sentence(sentence_matrix);
+            process_sentence_lemmas(vocab_lemma, sentence_matrix, vocab_mtx);
+          }
+        };
+
+    std::thread reading_thread(reading_thread_func);
+    std::vector<std::thread> threads_vec;
+    threads_vec.reserve(workers_cnt);
+    for (size_t i = 0; i < workers_cnt; ++i)
+      threads_vec.emplace_back(writing_thread_func);
+
+    reading_thread.join();
+    for (size_t i = 0; i < workers_cnt; ++i)
+      threads_vec[i].join();
+
+    // выводим стат.данные
+    std::cout << std::endl;
+    stat.output_stat();
+    // сохраняем словарь в файл
+    std::cout << "Save lemmas vocabulary..." << std::endl;
+    reduce_vocab(vocab_lemma, limit_l, coid_vocab);
+    save_vocab(vocab_lemma, voc_l_fn);
+    return status;
+  } // method-end
+
+  // функция построения и сохранения остальных словарей
+  bool build_other_vocab_only( const std::string& conll_fn,
+                               const std::string& voc_t_fn, const std::string& voc_tm_fn, const std::string& voc_oov_fn, const std::string& voc_d_fn,
+                               size_t limit_t, size_t limit_o, size_t limit_d,
+                               size_t ctx_vocabulary_column_d, bool use_deprel, size_t max_oov_sfx, size_t workers_cnt)
+  {
+    // в цикле читаем предложения из CoNLL-файла и извлекаем из них информацию для словаря
+    StatHelper stat;
+    SmCyclicBuf cyclic_buf;
+    std::mutex mtx, tok_vocab_mtx, oov_vocab_mtx, dep_ctx_vocab_mtx;
+    std::atomic_bool end_of_data = false;
+    std::atomic_bool status = true;
+
+    auto reading_thread_func = [&] ()
+        {
+          // открываем файл с тренировочными данными
+          ConllReader cr(conll_fn);
+          if ( !cr.init() )
+          {
+            std::cerr << "Train-file open: error: " << conll_fn << std::endl;
+            status = false;
+            end_of_data = true;
+            return;
+          }
+          // читаем и помещаем в циклический буфер (очередь на обработку)
+          SentenceMatrix sentence_matrix;
+          sentence_matrix.reserve(2000);
+          while ( cr.read_sentence(sentence_matrix) )
+          {
+            stat.calc_sentence( sentence_matrix.size() );
+            while ( true )
+            {
+              mtx.lock();
+              if ( !cyclic_buf.can_write() )
+              {
+                mtx.unlock();
+                std::this_thread::sleep_for(std::chrono::microseconds(1));
+                continue;
+              }
+              cyclic_buf.push(sentence_matrix);
+              mtx.unlock();
+              break;
+            }
+          }
+          cr.fin();
+          end_of_data = true;
+        }; // func-end
+
+    auto writing_thread_func = [&] ()
+        {
+          SentenceMatrix sentence_matrix;
+          sentence_matrix.reserve(2000);
+          while ( true )
+          {
+            mtx.lock();
+            if ( !cyclic_buf.can_read() )
+            {
+              mtx.unlock();
+              if ( end_of_data )
+                break;
+              else {
+                std::this_thread::sleep_for(std::chrono::microseconds(1));
+                continue;
+              }
+            }
+            cyclic_buf.pop( sentence_matrix );
+            mtx.unlock();
+            v_mwe->put_phrases_into_sentence(sentence_matrix);
+            process_sentence_tokens(vocab_token, token2lemmas_map, sentence_matrix, tok_vocab_mtx);
+            if (vocab_oov)
+              process_sentence_oov(vocab_oov, sentence_matrix, max_oov_sfx, oov_vocab_mtx);
+            process_sentence_dep_ctx(vocab_dep, sentence_matrix, ctx_vocabulary_column_d, use_deprel, dep_ctx_vocab_mtx);
+          }
+        };
+
+    std::thread reading_thread(reading_thread_func);
+    std::vector<std::thread> threads_vec;
+    threads_vec.reserve(workers_cnt);
+    for (size_t i = 0; i < workers_cnt; ++i)
+      threads_vec.emplace_back(writing_thread_func);
+
+    reading_thread.join();
+    for (size_t i = 0; i < workers_cnt; ++i)
+      threads_vec[i].join();
+
+    // выводим стат.данные
     std::cout << std::endl;
     stat.output_stat();
     // сохраняем словари в файлах
@@ -141,50 +367,9 @@ public:
     std::cout << "Save dependency contexts vocabulary..." << std::endl;
     reduce_vocab(vocab_dep, limit_d);
     save_vocab(vocab_dep, voc_d_fn);
-    return true;
+    return status;
   } // method-end
-private:
-  // маркер oov-слова
-  const std::string OOV = "_OOV_";
-  // минимальная длина слова, от которого берутся oov-суффиксы
-  const size_t SFX_SOURCE_WORD_MIN_LEN = 6;
-  // функция построения и сохранения главного словаря
-  // выполняется отдельно, т.к. необходимо выяснить частоты словосочетаний (какие из них преодолевают частотный порог главного словаря и будут преобразовываться)
-  bool build_main_vocab_only(const std::string& conll_fn, const std::string& mwe_fn, const std::string& voc_l_fn, size_t limit_l, CategoroidsVocabularyPtr coid_vocab)
-  {
-    // создаём справочник словосочетаний
-    std::shared_ptr< MweVocabulary > v_mwe = std::make_shared<MweVocabulary>();
-    if ( !v_mwe->load(mwe_fn) )
-      return false;
-    // открываем файл с тренировочными данными
-    ConllReader cr(conll_fn);
-    if ( !cr.init() )
-    {
-      std::cerr << "Train-file open: error: " << conll_fn << std::endl;
-      return false;
-    }
-    // создаем контейнер для словаря
-    VocabMappingPtr vocab_lemma = std::make_shared<VocabMapping>();
-    // в цикле читаем предложения из CoNLL-файла и извлекаем из них информацию для словаря
-    SentenceMatrix sentence_matrix;
-    sentence_matrix.reserve(5000);
-    StatHelper stat;
-    while ( cr.read_sentence(sentence_matrix) )
-    {
-      stat.calc_sentence(sentence_matrix.size());
-//      apply_patches(sentence_matrix); // todo: УБРАТЬ!  временный дополнительный корректор для борьбы с "грязными данными" в результатах лемматизации
-      v_mwe->put_phrases_into_sentence(sentence_matrix);
-      process_sentence_lemmas(vocab_lemma, sentence_matrix);
-    }
-    cr.fin();
-    std::cout << std::endl;
-    stat.output_stat();
-    // сохраняем словарь в файл
-    std::cout << "Save lemmas main vocabulary..." << std::endl;
-    reduce_vocab(vocab_lemma, limit_l, coid_vocab);
-    save_vocab(vocab_lemma, voc_l_fn);
-    return true;
-  } // method-end
+
   // проверка, является ли токен числовой конструкцией
   bool isNumeric(const std::string& lemma)
   {
@@ -273,23 +458,7 @@ private:
         it = oov_vocab->erase(it);
     }
   } // method-end
-//  bool is_punct__patch(const std::string& word)
-//  {
-//    const std::set<std::string> puncts = { ".", ",", "!", "?", ":", ";", "…", "...", "--", "—", "–", "‒",
-//                                           "'", "ʼ", "ˮ", "\"", "«", "»", "“", "”", "„", "‟", "‘", "’", "‚", "‛",
-//                                           "(", ")", "[", "]", "{", "}", "⟨", "⟩" };
-//    if ( puncts.find(word) != puncts.end() )
-//      return true;
-//    else
-//      return false;
-//  }
-//  void apply_patches(SentenceMatrix& sentence)
-//  {
-//    for ( auto& token : sentence )
-//      if ( is_punct__patch(token[Conll::LEMMA]) )
-//        token[Conll::DEPREL] = "PUNC";
-//  } // method-end
-  void process_sentence_lemmas(VocabMappingPtr vocab, const SentenceMatrix& sentence)
+  void process_sentence_lemmas(VocabMappingPtr vocab, const SentenceMatrix& sentence, std::mutex& vocab_mtx)
   {
     for ( auto& token : sentence )
     {
@@ -298,14 +467,17 @@ private:
       if ( token[Conll::LEMMA] == "_" ) // символ отсутствия значения в conll
         continue;
       auto& word = token[Conll::LEMMA];
-      auto it = vocab->find( word );
-      if (it == vocab->end())
-        (*vocab)[word] = 1;
-      else
-        ++it->second;
-    }
+      {
+        const std::lock_guard<std::mutex> lock(vocab_mtx);
+        auto it = vocab->find( word );
+        if (it == vocab->end())
+          (*vocab)[word] = 1;
+        else
+          ++it->second;
+      } // lock scope end
+    } // for all tokens
   } // method-end
-  void process_sentence_tokens(VocabMappingPtr vocab, Token2LemmasMapPtr token2lemmas_map, /*bool excludeNumsFromToks,*/ const SentenceMatrix& sentence)
+  void process_sentence_tokens(VocabMappingPtr vocab, Token2LemmasMapPtr token2lemmas_map, const SentenceMatrix& sentence, std::mutex& vocab_mtx)
   {
     for ( auto& token : sentence )
     {
@@ -313,24 +485,24 @@ private:
         continue;
       if ( token[Conll::FORM] == "_" || token[Conll::LEMMA] == "_" )   // символ отсутствия значения в conll
         continue;
-//      if ( excludeNumsFromToks && isNumeric(token[Conll::LEMMA]) )          // @num@:@num@ и т.п.
-//        continue;
       auto word = token[Conll::FORM];
+      {
+        const std::lock_guard<std::mutex> lock(vocab_mtx);
+        auto it = vocab->find( word );
+        if (it == vocab->end())
+          (*vocab)[word] = 1;
+        else
+          ++it->second;
 
-      auto it = vocab->find( word );
-      if (it == vocab->end())
-        (*vocab)[word] = 1;
-      else
-        ++it->second;
-
-      auto itt = (*token2lemmas_map)[word].find( token[Conll::LEMMA] );
-      if ( itt == (*token2lemmas_map)[word].end() )
-        (*token2lemmas_map)[word][token[Conll::LEMMA]] = 1;
-      else
-        ++itt->second;
-    }
+        auto itt = (*token2lemmas_map)[word].find( token[Conll::LEMMA] );
+        if ( itt == (*token2lemmas_map)[word].end() )
+          (*token2lemmas_map)[word][token[Conll::LEMMA]] = 1;
+        else
+          ++itt->second;
+      } // lock scope end
+    } // for all tokens
   } // method-end
-  void process_sentence_oov(VocabMappingPtr vocab, const SentenceMatrix& sentence, size_t max_oov_sfx)
+  void process_sentence_oov(VocabMappingPtr vocab, const SentenceMatrix& sentence, size_t max_oov_sfx, std::mutex& vocab_mtx)
   {
     for ( auto& token : sentence )
     {
@@ -349,6 +521,7 @@ private:
       // вариант "первая буква, последняя цифра"
       if ( RuLets.find(word.front()) != std::u32string::npos && Digs.find(word.back()) != std::u32string::npos )
       {
+        const std::lock_guard<std::mutex> lock(vocab_mtx);
         (*vocab)[OOV+"LD_"] += 1;
         continue;
       }
@@ -367,11 +540,12 @@ private:
         if (!isCyr)
           break;
         sfx = StrConv::To_UTF8(std::u32string(1, letter)) + sfx;
+        const std::lock_guard<std::mutex> lock(vocab_mtx);
         (*vocab)[OOV+sfx] += 1;
       }
     } // for all tokens in sentence
   } // method-end
-  void process_sentence_dep_ctx(VocabMappingPtr vocab, const SentenceMatrix& sentence, size_t column, bool use_deprel)
+  void process_sentence_dep_ctx(VocabMappingPtr vocab, const SentenceMatrix& sentence, size_t column, bool use_deprel, std::mutex& vocab_mtx)
   {
     for (auto& token : sentence)
     {
@@ -395,20 +569,23 @@ private:
         if ( parent[column] == "_" ) // символ отсутствия значения в conll
           continue;
 
-        // рассматриваем контекст с точки зрения родителя в синтаксической связи
-        auto ctx__from_head_viewpoint = token[column] + "<" + token[Conll::DEPREL];
-        auto it_h = vocab->find( ctx__from_head_viewpoint );
-        if (it_h == vocab->end())
-          (*vocab)[ctx__from_head_viewpoint] = 1;
-        else
-          ++it_h->second;
-        // рассматриваем контекст с точки зрения потомка в синтаксической связи
-        auto ctx__from_child_viewpoint = parent[column] + ">" + token[Conll::DEPREL];
-        auto it_c = vocab->find( ctx__from_child_viewpoint );
-        if (it_c == vocab->end())
-          (*vocab)[ctx__from_child_viewpoint] = 1;
-        else
-          ++it_c->second;
+        {
+          const std::lock_guard<std::mutex> lock(vocab_mtx);
+          // рассматриваем контекст с точки зрения родителя в синтаксической связи
+          auto ctx__from_head_viewpoint = token[column] + "<" + token[Conll::DEPREL];
+          auto it_h = vocab->find( ctx__from_head_viewpoint );
+          if (it_h == vocab->end())
+            (*vocab)[ctx__from_head_viewpoint] = 1;
+          else
+            ++it_h->second;
+          // рассматриваем контекст с точки зрения потомка в синтаксической связи
+          auto ctx__from_child_viewpoint = parent[column] + ">" + token[Conll::DEPREL];
+          auto it_c = vocab->find( ctx__from_child_viewpoint );
+          if (it_c == vocab->end())
+            (*vocab)[ctx__from_child_viewpoint] = 1;
+          else
+            ++it_c->second;
+        } // lock scope end
       }
       else
       {
@@ -417,13 +594,16 @@ private:
         if ( token[column] == "_" ) // символ отсутствия значения в conll
           continue;
         auto& word = token[column];
-        auto it = vocab->find( word );
-        if (it == vocab->end())
-          (*vocab)[word] = 1;
-        else
-          ++it->second;
+        {
+          const std::lock_guard<std::mutex> lock(vocab_mtx);
+          auto it = vocab->find( word );
+          if (it == vocab->end())
+            (*vocab)[word] = 1;
+          else
+            ++it->second;
+        } // lock scope end
       } // if ( use_depre ) then ... else ...
-    }
+    } // for all tokens
   } // method-end
   // редукция и сохранение словаря в файл
   void save_vocab(VocabMappingPtr vocab, const std::string& file_name, Token2LemmasMapPtr t2l = nullptr, const std::string& tlm_fn = std::string())
