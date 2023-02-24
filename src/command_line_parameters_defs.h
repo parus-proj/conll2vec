@@ -17,7 +17,7 @@ public:
         {"-vocab_t",      {"Tokens vocabulary <file>", std::nullopt, std::nullopt}},
         {"-tl_map",       {"Tokens-lemmas mapping <file>", "tl.map", std::nullopt}},
         {"-vocab_o",      {"OOV items vocabulary <file>", std::nullopt, std::nullopt}},
-//        {"-vocab_e",      {"Expressions vocabulary <file>", std::nullopt, std::nullopt}},
+        {"-vocab_e",      {"Expressions vocabulary <file>", "mwe.list", std::nullopt}},
         {"-vocab_d",      {"Dependency contexts vocabulary <file>", std::nullopt, std::nullopt}},
         {"-backup",       {"Save neural network weights to <file>", std::nullopt, std::nullopt}},
         {"-restore",      {"Restore neural network weights from <file>", std::nullopt, std::nullopt}},

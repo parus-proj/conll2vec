@@ -93,7 +93,7 @@ int main(int argc, char **argv)
                                  cmdLineParams.getAsInt("-min-count_l"), cmdLineParams.getAsInt("-min-count_t"),
                                  cmdLineParams.getAsInt("-min-count_o"), cmdLineParams.getAsInt("-min-count_d"),
                                  cmdLineParams.getAsInt("-col_ctx_d") - 1, (cmdLineParams.getAsInt("-use_deprel") == 1),
-                                 cmdLineParams.getAsInt("-max_oov_sfx"), cmdLineParams.getAsString("-ca_vocab"), "mwe.list",
+                                 cmdLineParams.getAsInt("-max_oov_sfx"), cmdLineParams.getAsString("-ca_vocab"), cmdLineParams.getAsString("-vocab_e"),
                                  cmdLineParams.getAsInt("-threads")
                                );
     std::cout << '\n' << "Vocab building: "; // profiler str prefix
@@ -133,7 +133,7 @@ int main(int argc, char **argv)
     if ( !v_main->load( cmdLineParams.getAsString("-vocab_l") ) )
       return -1;
     v_mwe = std::make_shared<MweVocabulary>( );
-    if ( !v_mwe->load("mwe.list", v_main) )
+    if ( !v_mwe->load( cmdLineParams.getAsString("-vocab_e"), v_main ) )
       return -1;
     bool needLoadDepCtxVocab = (cmdLineParams.getAsInt("-size_d") > 0);
     bool needLoadAssocCtxVocab = (cmdLineParams.getAsInt("-size_a") > 0);
