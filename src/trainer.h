@@ -47,6 +47,7 @@ public:
            std::shared_ptr< CustomVocabulary > assoc_contexts_vocabulary,
            size_t embedding_dep_size,
            size_t embedding_assoc_size,
+           size_t assoc_d_size,
            size_t embedding_gramm_size,
            size_t epochs,
            float learning_rate,
@@ -62,6 +63,8 @@ public:
   , layer1_size(embedding_dep_size + embedding_assoc_size)
   , size_dep(embedding_dep_size)
   , size_assoc(embedding_assoc_size)
+  , size_assoc_d(assoc_d_size)
+  , size_assoc_th(embedding_assoc_size - assoc_d_size)
   , size_gramm(embedding_gramm_size)
   , epoch_count(epochs)
   , alpha(learning_rate)
@@ -572,6 +575,10 @@ private:
   size_t size_dep;
   // размерность части эмбеддинга, обучаемого на ассоциативных контекстах
   size_t size_assoc;
+  // число измерений в ассоциативной части эмбеддинга, обучаемых на ассоциативных контекстах, которые, кроме того, связаны синтаксически
+  size_t size_assoc_d;
+  // число измерений в ассоциативной части эмбеддинга, обучаемых на тематических контекстах
+  size_t size_assoc_th;
   // размерность части эмбеддинга, обучаемого грамматическим признакам
   size_t size_gramm;
   // количество эпох обучения
@@ -642,8 +649,18 @@ private:
     size_t selected_ctx;   // хранилище для индекса контекста
     int label;             // метка класса; знаковое целое (!)
     float g = 0;           // хранилище для величины ошибки
+
     // вычисляем смещение вектора, соответствующего целевому слову
     float *targetVectorPtr = syn0 + le.word * layer1_size;
+    float *targetDepPtr = targetVectorPtr;                                     // смещение категориальной части вектора
+    float *targetDepEndPtr = targetDepPtr + size_dep;
+    float *targetAssocPtr = targetVectorPtr + size_dep;                        // смещение ассоциативной части вектора
+    float *targetAssocEndPtr = targetAssocPtr + size_assoc;
+    float *targetAssocDPtr = targetAssocPtr;                                   // смещение синтактик-ассоциативной части вектора
+    float *targetAssocDEndPtr = targetAssocDPtr + size_assoc_d;
+    float *targetThemeAssocPtr = targetAssocPtr + size_assoc_d;                // смещение тематическо-ассоциативной части вектора
+    float *targetThemeAssocEndPtr = targetAssocEndPtr;
+
     // цикл по синтаксическим контекстам
     for (auto&& ctx_idx : le.dep_context)
     {
@@ -666,7 +683,7 @@ private:
         float *ctxVectorPtr = syn1_dep + selected_ctx * size_dep;
         // в skip-gram выход скрытого слоя в точности соответствует вектору целевого слова
         // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
-        float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_dep, ctxVectorPtr, 0.0);
+        float f = std::inner_product(targetDepPtr, targetDepEndPtr, ctxVectorPtr, 0.0);
         if ( std::isnan(f) ) continue;
         f = sigmoid(f);
         if (f == -1.0 || f == 1.0)
@@ -685,7 +702,7 @@ private:
         // обучение весов hidden -> output
         if ( !toks_train )
         {
-          std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+          std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetDepPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
           // ограничиваем значение в векторах контекста
           // это необходимо для недопущения паралича обучения; sigmoid вычисляется с ограченной точностью, и если
           // векторное произведение станет слишком большим (маленьким), то sigmoid выдаст +1 (-1), что сделает градиент нулевым на положительном примере
@@ -693,9 +710,9 @@ private:
         }
       } // for all samples
       // обучение весов input -> hidden
-      std::transform(targetVectorPtr, targetVectorPtr+size_dep, neu1e, targetVectorPtr, std::plus<float>());
+      std::transform(targetDepPtr, targetDepEndPtr, neu1e, targetDepPtr, std::plus<float>());
       // ограничение степени выраженности признака
-      std::transform(targetVectorPtr, targetVectorPtr+size_dep, targetVectorPtr, Trainer::space_threshold_functor);
+      std::transform(targetDepPtr, targetDepEndPtr, targetDepPtr, Trainer::space_threshold_functor);
     } // for all dep contexts
 //    // DBG-start
 //    if (le.word == dbg_id1 || le.word == dbg_id2 || le.word == dbg_id3)
@@ -755,7 +772,52 @@ private:
     } // if reliable categorial pairs
 
     // цикл по ассоциативным контекстам
-    targetVectorPtr += size_dep; // используем оставшуюся часть вектора для ассоциаций
+
+    // синтактик-ассоциации
+    for (auto&& ctx_idx : le.assoc_dep_context)
+    {
+      for (size_t d = 0; d <= negative_a; ++d)
+      {
+        if (d == 0) // на первой итерации рассматриваем положительный пример (контекст)
+        {
+          selected_ctx = ctx_idx;
+          label = 1;
+        }
+        else // на остальных итерациях рассматриваем отрицательные примеры (случайные контексты из noise distribution)
+        {
+          update_random_ns(next_random_ns);
+          selected_ctx = (next_random_ns >> 16) % w_vocabulary_size; // uniform distribution
+          // отталкиваем даже стоп-слова!
+          label = 0;
+        }
+        // вычисляем смещение вектора, соответствующего очередному положительному/отрицательному примеру
+        float *ctxVectorPtr = syn0 + selected_ctx * layer1_size + size_dep;
+        // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
+        float f = std::inner_product(targetAssocDPtr, targetAssocDEndPtr, ctxVectorPtr, 0.0);
+        if ( std::isnan(f) ) continue;
+        f = sigmoid(f);
+        if (f == -1.0 || f == 1.0)
+          ++ass_se_cnt;
+        // вычислим ошибку, умноженную на коэффициент скорости обучения
+        g = (label - f) * alpha;
+        if (g == 0) continue;
+        // обучение весов (input only)
+        if (d == 0)
+        {
+          std::transform(targetAssocDPtr, targetAssocDEndPtr, ctxVectorPtr, targetAssocDPtr, [g](float a, float b) -> float {return a + g*b;});
+          // ограничение степени выраженности признака
+          std::transform(targetAssocDPtr, targetAssocDEndPtr, targetAssocDPtr, Trainer::space_threshold_functor);
+        }
+        else
+        {
+          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc_d, targetAssocDPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+          // ограничение степени выраженности признака
+          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc_d, ctxVectorPtr, Trainer::space_threshold_functor);
+        }
+      } // for all samples
+    } // for all assoc contexts
+
+    // чисто тематические ассоциации
     for (auto&& ctx_idx : le.assoc_context)
     {
       for (size_t d = 0; d <= negative_a; ++d)
@@ -775,7 +837,8 @@ private:
         // вычисляем смещение вектора, соответствующего очередному положительному/отрицательному примеру
         float *ctxVectorPtr = syn0 + selected_ctx * layer1_size + size_dep;
         // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
-        float f = std::inner_product(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, 0.0);
+        // выход и ошибку считаем по всей assoc-части
+        float f = std::inner_product(targetAssocPtr, targetAssocEndPtr, ctxVectorPtr, 0.0);
         if ( std::isnan(f) ) continue;
         f = sigmoid(f);
         if (f == -1.0 || f == 1.0)
@@ -784,17 +847,19 @@ private:
         g = (label - f) * alpha;
         if (g == 0) continue;
         // обучение весов (input only)
+        // веса корректируем только за рамками size_assoc_d
+        ctxVectorPtr += size_assoc_d;
         if (d == 0)
         {
-          std::transform(targetVectorPtr, targetVectorPtr+size_assoc, ctxVectorPtr, targetVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+          std::transform(targetThemeAssocPtr, targetThemeAssocEndPtr, ctxVectorPtr, targetThemeAssocPtr, [g](float a, float b) -> float {return a + g*b;});
           // ограничение степени выраженности признака
-          std::transform(targetVectorPtr, targetVectorPtr+size_assoc, targetVectorPtr, Trainer::space_threshold_functor);
+          std::transform(targetThemeAssocPtr, targetThemeAssocEndPtr, targetThemeAssocPtr, Trainer::space_threshold_functor);
         }
         else
         {
-          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc_th, targetThemeAssocPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
           // ограничение степени выраженности признака
-          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, ctxVectorPtr, Trainer::space_threshold_functor);
+          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc_th, ctxVectorPtr, Trainer::space_threshold_functor);
         }
       } // for all samples
     } // for all assoc contexts
@@ -803,15 +868,15 @@ private:
     for ( size_t d = 0; d < le.derivatives.size(); ++d )
     {
       auto&& led = le.derivatives[d];
-      float *vector1Ptr = syn0 + led.first * layer1_size + size_dep;
-      float *vector2Ptr = syn0 + led.second * layer1_size + size_dep;
-      std::transform(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, neu1e, std::minus<float>());
-      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+size_assoc, neu1e, 0.0) );
+      float *vector1Ptr = syn0 + led.first * layer1_size + size_dep + size_assoc_d;
+      float *vector2Ptr = syn0 + led.second * layer1_size + size_dep + size_assoc_d;
+      std::transform(vector1Ptr, vector1Ptr+size_assoc_th, vector2Ptr, neu1e, std::minus<float>());
+      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+size_assoc_th, neu1e, 0.0) );
       if ( e_dist > 0.1)
       {
-        std::transform(neu1e, neu1e+size_assoc, neu1e, [this](float a) -> float {return a * alpha * 0.5;});
-        std::transform(vector2Ptr, vector2Ptr+size_assoc, neu1e, vector2Ptr, std::plus<float>());
-        std::transform(vector1Ptr, vector1Ptr+size_assoc, neu1e, vector1Ptr, std::minus<float>());
+        std::transform(neu1e, neu1e+size_assoc_th, neu1e, [this](float a) -> float {return a * alpha * 0.5;});
+        std::transform(vector2Ptr, vector2Ptr+size_assoc_th, neu1e, vector2Ptr, std::plus<float>());
+        std::transform(vector1Ptr, vector1Ptr+size_assoc_th, neu1e, vector1Ptr, std::minus<float>());
       }
     } // if derivatives
 
@@ -820,15 +885,15 @@ private:
     {
       auto&& lera = le.rassoc[d];
       float sim = std::get<2>(lera);
-      float *vector1Ptr = syn0 + std::get<0>(lera) * layer1_size + size_dep;
-      float *vector2Ptr = syn0 + std::get<1>(lera) * layer1_size + size_dep;
-      std::transform(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, neu1e, std::minus<float>());
-      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+size_assoc, neu1e, 0.0) );
+      float *vector1Ptr = syn0 + std::get<0>(lera) * layer1_size + size_dep + size_assoc_d;
+      float *vector2Ptr = syn0 + std::get<1>(lera) * layer1_size + size_dep + size_assoc_d;
+      std::transform(vector1Ptr, vector1Ptr+size_assoc_th, vector2Ptr, neu1e, std::minus<float>());
+      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+size_assoc_th, neu1e, 0.0) );
       if ( e_dist > 0.1)
       {
-        std::transform(neu1e, neu1e+size_assoc, neu1e, [this,sim](float a) -> float {return a * alpha * 0.5 * sim;});
-        std::transform(vector2Ptr, vector2Ptr+size_assoc, neu1e, vector2Ptr, std::plus<float>());
-        std::transform(vector1Ptr, vector1Ptr+size_assoc, neu1e, vector1Ptr, std::minus<float>());
+        std::transform(neu1e, neu1e+size_assoc_th, neu1e, [this,sim](float a) -> float {return a * alpha * 0.5 * sim;});
+        std::transform(vector2Ptr, vector2Ptr+size_assoc_th, neu1e, vector2Ptr, std::plus<float>());
+        std::transform(vector1Ptr, vector1Ptr+size_assoc_th, neu1e, vector1Ptr, std::minus<float>());
       }
     } // if reliable associatives
 

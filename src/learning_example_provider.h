@@ -190,8 +190,9 @@ public:
     auto sm_size = sentence_matrix.size();
     const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
     // конвертируем conll-таблицу в более удобные структуры
-    std::vector< std::vector<size_t> > deps( sm_size );  // хранилище синатксических контекстов для каждого токена
-    std::set<size_t> associations;                       // хранилище ассоциативных контекстов для всего предложения
+    std::vector< std::vector<size_t> > deps( sm_size );      // хранилище синатксических контекстов для каждого токена
+    std::set<size_t> associations;                           // хранилище ассоциативных контекстов для всего предложения
+    std::vector< std::vector<size_t> > assodeps( sm_size );  // хранилище ассоциативных контекстов (+синт.связь) для каждого токена
     if ( dep_ctx_vocabulary )
     {
       for (size_t i = 0; i < sm_size; ++i)
@@ -237,11 +238,13 @@ public:
     }
     if ( assoc_ctx_vocabulary )
     {
-      for (auto& rec : sentence_matrix)
+      std::vector<size_t> assovec(sm_size, INVALID_IDX);
+      for (size_t i = 0; i < sm_size; ++i)
       {
+        auto& token = sentence_matrix[i];
         // обязательно проверяем по словарю ассоциаций, т.к. он фильтруется (в отличие от главного)
         // но индекс берем из главного (т.к. основной алгортим работает только по первой матрице)
-        std::string avi = (!toks_train) ? rec[Conll::LEMMA] : rec[Conll::FORM];    // lemma column by default; lower(token) when token training
+        std::string avi = (!toks_train) ? token[Conll::LEMMA] : token[Conll::FORM];    // lemma column by default; lower(token) when token training
         size_t assoc_idx = assoc_ctx_vocabulary->word_to_idx(avi);
         if ( assoc_idx == INVALID_IDX )
           continue;
@@ -253,11 +256,29 @@ public:
           if (ran < (t_environment.next_random & 0xFFFF) / (float)65536)
             continue;
         }
-        auto word_idx = words_vocabulary->word_to_idx(rec[emb_column]);
+        auto word_idx = words_vocabulary->word_to_idx(token[emb_column]);
         if ( word_idx == INVALID_IDX )
           continue;
         associations.insert(word_idx);
+        assovec[i] = word_idx;
       } // for all words in sentence
+      // строим перечень ассоциаций с синтаксической связью
+      for (size_t i = 0; i < sm_size; ++i)
+      {
+        auto& token = sentence_matrix[i];
+        if ( token[Conll::DEPREL] == "_" ) continue;
+        size_t parent_token_no = 0;
+        try {
+          parent_token_no = std::stoi(token[Conll::HEAD]);
+        } catch (...) {
+          parent_token_no = 0; // если конвертирование неудачно, считаем, что нет родителя
+        }
+        if ( parent_token_no < 1 || parent_token_no > sm_size ) continue;
+        auto pti = parent_token_no - 1;
+        if ( assovec[i] == INVALID_IDX || assovec[pti] == INVALID_IDX ) continue;
+        assodeps[pti].push_back(assovec[i]);
+        assodeps[i].push_back(assovec[pti]);
+      }
     }
     // конвертируем в структуру для итерирования (фильтрация несловарных)
     for (size_t i = 0; i < sm_size; ++i)
@@ -278,6 +299,8 @@ public:
         le.dep_context = deps[i];
         std::copy_if( associations.begin(), associations.end(), std::back_inserter(le.assoc_context),
                       [word_idx](const size_t a_idx) {return (a_idx != word_idx);} );                  // текущее слово не считаем себе ассоциативным
+        le.assoc_dep_context = assodeps[i];
+
         if ( deriv_vocabulary && !deriv_vocabulary->empty() && fraction < deriv_span )
         {
           if (++t_environment.deriv_counter == deriv_rate)
