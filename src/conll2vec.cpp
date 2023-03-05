@@ -191,7 +191,6 @@ int main(int argc, char **argv)
     Trainer trainer( lep, v_main, false, v_dep_ctx, v_assoc_ctx,
                      cmdLineParams.getAsInt("-size_d"),
                      cmdLineParams.getAsInt("-size_a"),
-                     cmdLineParams.getAsInt("-size_ad"),
                      0,
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
@@ -338,7 +337,7 @@ int main(int argc, char **argv)
                                                                                                 );
     // создаем объект, организующий обучение
     Trainer trainer( lep, v_toks, true, v_dep_ctx, v_assoc_ctx,
-                     vm.dep_size, vm.assoc_size, 0, 0,
+                     vm.dep_size, vm.assoc_size, 0,
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
                      cmdLineParams.getAsInt("-negative_d"),
@@ -393,7 +392,7 @@ int main(int argc, char **argv)
                                                                                                 );
     // создаем объект, организующий обучение
     Trainer trainer( lep, v_toks, false, nullptr, nullptr,
-                     vm.dep_size, vm.assoc_size, 0, cmdLineParams.getAsInt("-size_g"),
+                     vm.dep_size, vm.assoc_size, cmdLineParams.getAsInt("-size_g"),
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
                      cmdLineParams.getAsInt("-negative_d"),

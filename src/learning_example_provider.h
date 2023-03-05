@@ -192,7 +192,6 @@ public:
     // конвертируем conll-таблицу в более удобные структуры
     std::vector< std::vector<size_t> > deps( sm_size );      // хранилище синатксических контекстов для каждого токена
     std::set<size_t> associations;                           // хранилище ассоциативных контекстов для всего предложения
-    std::vector< std::vector<size_t> > assodeps( sm_size );  // хранилище ассоциативных контекстов (+синт.связь) для каждого токена
     if ( dep_ctx_vocabulary )
     {
       for (size_t i = 0; i < sm_size; ++i)
@@ -238,7 +237,6 @@ public:
     }
     if ( assoc_ctx_vocabulary )
     {
-      std::vector<size_t> assovec(sm_size, INVALID_IDX);
       for (size_t i = 0; i < sm_size; ++i)
       {
         auto& token = sentence_matrix[i];
@@ -260,25 +258,7 @@ public:
         if ( word_idx == INVALID_IDX )
           continue;
         associations.insert(word_idx);
-        assovec[i] = word_idx;
       } // for all words in sentence
-      // строим перечень ассоциаций с синтаксической связью
-      for (size_t i = 0; i < sm_size; ++i)
-      {
-        auto& token = sentence_matrix[i];
-        if ( token[Conll::DEPREL] == "_" ) continue;
-        size_t parent_token_no = 0;
-        try {
-          parent_token_no = std::stoi(token[Conll::HEAD]);
-        } catch (...) {
-          parent_token_no = 0; // если конвертирование неудачно, считаем, что нет родителя
-        }
-        if ( parent_token_no < 1 || parent_token_no > sm_size ) continue;
-        auto pti = parent_token_no - 1;
-        if ( assovec[i] == INVALID_IDX || assovec[pti] == INVALID_IDX ) continue;
-        assodeps[pti].push_back(assovec[i]);
-        assodeps[i].push_back(assovec[pti]);
-      }
     }
     // конвертируем в структуру для итерирования (фильтрация несловарных)
     for (size_t i = 0; i < sm_size; ++i)
@@ -299,7 +279,6 @@ public:
         le.dep_context = deps[i];
         std::copy_if( associations.begin(), associations.end(), std::back_inserter(le.assoc_context),
                       [word_idx](const size_t a_idx) {return (a_idx != word_idx);} );                  // текущее слово не считаем себе ассоциативным
-        le.assoc_dep_context = assodeps[i];
 
         if ( deriv_vocabulary && !deriv_vocabulary->empty() && fraction < deriv_span )
         {
