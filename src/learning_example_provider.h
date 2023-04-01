@@ -152,9 +152,13 @@ public:
       if ( t_environment.words_count > train_words / threads_count ) // не настал ли конец эпохи?
         return std::nullopt;
       auto& sentence_matrix = t_environment.sentence_matrix;
-      while ( t_environment.cr->read_sentence(t_environment.sentence_matrix) )
+      do
       {
-        if ( sentence_matrix.empty() ) // не настал ли конец эпохи?
+
+        bool is_read_ok = t_environment.cr->read_sentence(sentence_matrix);
+        if ( !is_read_ok ) // не настал ли конец эпохи? (вычитали весь файл или ошибка чтения)
+          return std::nullopt;
+        if ( sentence_matrix.empty() ) // предохранитель
           return std::nullopt;
 
         if (!gramm)
@@ -162,10 +166,7 @@ public:
         else
           get_from_sentence__gram(t_environment);
 
-        if ( t_environment.sentence.empty() )
-          continue;
-        break;
-      }
+      } while ( t_environment.sentence.empty() );
     }
 
     // при выходе из цикла выше в t_environment.sentence должно быть полезное предложение
@@ -545,6 +546,8 @@ private:
     gcNumeralCard,
     gcNumeralOrd,
     gcNumeralCollect,
+    gcCtCoord,
+    gcCtSubord,
 
     gcLast
   };
@@ -764,7 +767,20 @@ private:
       }
     }
     if (msd[0] == 'C') // conjunction
+    {
       le.assoc_context[gcPosConj] = 1;
+      for(size_t i = 1; i < msd.size(); ++i)
+      {
+        if (i == 1)
+        {
+          switch (msd[i])
+          {
+          case 'c': le.assoc_context[gcCtCoord] = 1; break;
+          case 's': le.assoc_context[gcCtSubord] = 1; break;
+          }
+        }
+      }
+    }
     if (msd[0] == 'Q') // particle
       le.assoc_context[gcPosPart] = 1;
     if (msd[0] == 'I') // interjection
