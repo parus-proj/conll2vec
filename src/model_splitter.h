@@ -54,21 +54,12 @@ public:
     }
 
     // 3. Отберем токены, которым соответствует только одна лемма. Построим обратное отображение.
-    std::map<size_t, std::vector<std::u32string>> l2t_map;
+    std::map<size_t, std::vector<std::u32string>> l2t_map;  // отображение из lemma_id в список соответствующих токенов (которые точно относятся к этой лемме)
     for (auto& i : t2l_map)
     {
       if (i.second.size() == 1)
         l2t_map[i.second.begin()->first].push_back( StrConv::To_UTF32(i.first) );
     }
-    // добавление самих лемм (леммы может не быть в списке токенов по частотной причине, хотя она при этом присутствует в модели)
-    for (auto& i : l2t_map)
-    {
-      auto lemma_str = StrConv::To_UTF32(vm.vocab[i.first]);
-      auto it = std::find(i.second.cbegin(), i.second.cend(), lemma_str);
-      if (it == i.second.end())
-        i.second.push_back(lemma_str);
-    }
-
 
     // 4. Загрузим словарь суффиксов
     std::set<std::u32string> sfxs;
