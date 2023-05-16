@@ -73,6 +73,9 @@ public:
     float *neOffset = new_embeddings;
     for (auto& token : t2l_map)
     {
+      /////
+      rebalance( token.second ); // ограничим вклад наиболее частотной леммы (размажем вектор между леммами)
+      /////
       float cnt_sum = 0;
       for (auto& lemma : token.second)
         cnt_sum += lemma.second;
@@ -100,6 +103,53 @@ public:
 
     fclose(fo);
   } // method-end
+
+private:
+  static void rebalance(std::map<size_t, size_t>& lcmap)
+  {
+    if ( lcmap.size() < 2 ) return;
+    // перебалансировка частот лемм (ограничение сверху в 60%)
+    auto it = lcmap.begin();
+    auto maxIt = it;
+    size_t cnt_sum = lcmap.begin()->second;
+    for (++it; it != lcmap.end(); ++it)
+    {
+      cnt_sum += it->second;
+      if ( it->second > maxIt->second )
+        maxIt = it;
+    }
+    size_t cnt_sum_without_max = cnt_sum - maxIt->second; // по этому количеству будем считать доли в перераспределении
+
+    float maxRate = (float)(maxIt->second) / (float)cnt_sum;
+    if (maxRate <= 0.6) return;
+
+    size_t new_max_cnt = static_cast<size_t>(0.6 * cnt_sum); // todo: округление к целому
+    size_t delta = maxIt->second - new_max_cnt; // это та величина, которую надо перераспределить на другие леммы
+    if (delta == 0) return;
+
+    // надо выбрать всю delta, а если останется, вернуть остаток в maxIt->second
+    size_t delta_tail = delta;
+    for (auto it = lcmap.begin(); it != lcmap.end(); ++it)
+    {
+      if ( it == maxIt ) continue;
+      float itRate = (float)(it->second) / (float)cnt_sum_without_max;
+      size_t addon = static_cast<size_t>(itRate * delta); // todo: округление к целому
+      delta_tail -= addon;
+      it->second += addon;
+
+    }
+    maxIt->second = new_max_cnt + delta_tail;
+
+    // todo: считаем снова сумму для контроля (она не должна измениться)
+    size_t check_sum = 0;
+    for (auto it = lcmap.begin(); it != lcmap.end(); ++it)
+      check_sum += it->second;
+    if (check_sum != cnt_sum)
+    {
+      std::cerr << "Rebalance checksum error!" << std::endl;
+      throw std::runtime_error("rebalance");
+    }
+  }
 
 }; // class-decl-end
 
