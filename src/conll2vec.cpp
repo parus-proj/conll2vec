@@ -13,7 +13,6 @@
 #include "balance.h"
 #include "sseval.h"
 #include "vectors_model.h"
-#include "derive_vocab.h"
 #include "ra_vocab.h"
 #include "categoroid_vocab.h"
 #include "model_splitter.h"
@@ -150,32 +149,22 @@ int main(int argc, char **argv)
       if ( !v_assoc_ctx->load( cmdLineParams.getAsString("-vocab_l") ) )
         return -1;
     }
-    std::shared_ptr< DerivativeVocabulary > deriv_vocab;
-    if ( cmdLineParams.isDefined("-deriv_vocab"))
+
+    std::shared_ptr< ExternalVocabsManager > ext_vocab_manager;
+    if ( cmdLineParams.isDefined("-vocabs_tab"))
     {
-      deriv_vocab = std::make_shared<DerivativeVocabulary>();
-      if ( !deriv_vocab->load( cmdLineParams.getAsString("-deriv_vocab"), v_main ) )
+      ext_vocab_manager = std::make_shared<ExternalVocabsManager>();
+      if ( !ext_vocab_manager->load( cmdLineParams.getAsString("-vocabs_tab") ) )
+        return -1;
+      if ( !ext_vocab_manager->load_vocabs(v_main) )
         return -1;
     }
+
     std::shared_ptr< ReliableAssociativesVocabulary > ra_vocab;
     if ( cmdLineParams.isDefined("-ra_vocab"))
     {
       ra_vocab = std::make_shared<ReliableAssociativesVocabulary>();
       if ( !ra_vocab->load( cmdLineParams.getAsString("-ra_vocab"), v_main ) )
-        return -1;
-    }
-    std::shared_ptr< CategoroidsVocabulary > coid_vocab;
-    if ( cmdLineParams.isDefined("-ca_vocab"))
-    {
-      coid_vocab = std::make_shared<CategoroidsVocabulary>();
-      if ( !coid_vocab->load( cmdLineParams.getAsString("-ca_vocab"), v_main ) )
-        return -1;
-    }
-    std::shared_ptr< CategoroidsVocabulary > rc_vocab;
-    if ( cmdLineParams.isDefined("-rc_vocab"))
-    {
-      rc_vocab = std::make_shared<CategoroidsVocabulary>();
-      if ( !rc_vocab->load( cmdLineParams.getAsString("-rc_vocab"), v_main ) )
         return -1;
     }
 
@@ -184,7 +173,7 @@ int main(int argc, char **argv)
     std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
                                                                                                   v_main, false, v_dep_ctx, v_assoc_ctx, v_mwe,
                                                                                                   2, false, 0,
-                                                                                                  deriv_vocab, ra_vocab, coid_vocab, rc_vocab
+                                                                                                  ra_vocab, ext_vocab_manager
                                                                                                 );
 
     // создаем объект, организующий обучение

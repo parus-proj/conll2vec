@@ -110,7 +110,7 @@ private:
   {
     if (items.size() < 2)
     {
-      std::cerr << "Invalid record in " << filename << ": " << line << std::endl;
+      std::cerr << "Invalid record (count) in " << filename << ": " << line << std::endl;
       return false;
     }
     std::set<std::string> dedoubler;

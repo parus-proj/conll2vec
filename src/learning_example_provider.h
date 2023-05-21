@@ -4,9 +4,8 @@
 #include "conll_reader.h"
 #include "original_word2vec_vocabulary.h"
 #include "mwe_vocabulary.h"
-#include "derive_vocab.h"
+#include "external_vocabs_manager.h"
 #include "ra_vocab.h"
-#include "categoroid_vocab.h"
 #include "str_conv.h"
 #include "learning_example.h"
 #include "command_line_parameters_defs.h"
@@ -28,19 +27,13 @@ struct ThreadEnvironment
   unsigned long long next_random;                      // поле для вычисления случайных величин
   unsigned long long words_count;                      // количество прочитанных словарных слов
   std::vector< std::vector<std::string> > sentence_matrix; // conll-матрица для предложения
-  size_t deriv_counter;                                // счетчик для выбора обучающих примеров на деривацию с заданной частотой сэмплирования
-  size_t ra_counter;                                   // аналогично для надежных ассоциатов
-  size_t coid_counter;                                 // аналогично для категороидов
-  size_t rc_counter;                                   // аналогично для надежных категориальных пар
+  size_t ra_counter;                                   // счетчик для выбора обучающих примеров из надежных ассоциатов с заданной частотой сэмплирования
   ThreadEnvironment()
   : cr(nullptr)
   , position_in_sentence(-1)
   , next_random(0)
   , words_count(0)
-  , deriv_counter(0)
   , ra_counter(0)
-  , coid_counter(0)
-  , rc_counter(0)
   {
     sentence.reserve(1000);
     sentence_matrix.reserve(1000);
@@ -65,10 +58,8 @@ public:
                           std::shared_ptr<OriginalWord2VecVocabulary> depCtxVocabulary, std::shared_ptr<OriginalWord2VecVocabulary> assocCtxVocabulary,
                           std::shared_ptr<MweVocabulary> mweVocabulary,
                           size_t embColumn, bool oov, size_t oovMaxLen,
-                          std::shared_ptr<DerivativeVocabulary> derivVocab = nullptr,
                           std::shared_ptr<ReliableAssociativesVocabulary> raVocab = nullptr,
-                          std::shared_ptr< CategoroidsVocabulary > coid_vocab = nullptr,
-                          std::shared_ptr< CategoroidsVocabulary > rcVocab = nullptr)
+                          std::shared_ptr< ExternalVocabsManager > ext_vm = nullptr)
   : threads_count( cmdLineParams.getAsInt("-threads") )
   , train_filename( cmdLineParams.getAsString("-train") )
   , words_vocabulary(wordsVocabulary)
@@ -84,22 +75,11 @@ public:
   , sample_w( cmdLineParams.getAsFloat("-sample_w") )
   , sample_d( cmdLineParams.getAsFloat("-sample_d") )
   , sample_a( cmdLineParams.getAsFloat("-sample_a") )
-  , deriv_vocabulary(derivVocab)
-  , deriv_rate( cmdLineParams.getAsInt("-deriv_rate") )
-  , deriv_pack( cmdLineParams.getAsInt("-deriv_pack") )
-  , deriv_span( cmdLineParams.getAsFloat("-deriv_span") )
+  , ext_vocabs_manager(ext_vm)
   , ra_vocabulary(raVocab)
   , ra_rate( cmdLineParams.getAsInt("-ra_rate") )
   , ra_pack( cmdLineParams.getAsInt("-ra_pack") )
   , ra_span( cmdLineParams.getAsFloat("-ra_span") )
-  , coid_vocababulary(coid_vocab)
-  , coid_rate( cmdLineParams.getAsInt("-ca_rate") )
-  , coid_pack( cmdLineParams.getAsInt("-ca_pack") )
-  , coid_span( cmdLineParams.getAsFloat("-ca_span") )
-  , rc_vocabulary(rcVocab)
-  , rc_rate( cmdLineParams.getAsInt("-rc_rate") )
-  , rc_pack( cmdLineParams.getAsInt("-rc_pack") )
-  , rc_span( cmdLineParams.getAsFloat("-rc_span") )
   {
     thread_environment.resize(threads_count);
     for (size_t i = 0; i < threads_count; ++i)
@@ -281,15 +261,6 @@ public:
         std::copy_if( associations.begin(), associations.end(), std::back_inserter(le.assoc_context),
                       [word_idx](const size_t a_idx) {return (a_idx != word_idx);} );                  // текущее слово не считаем себе ассоциативным
 
-        if ( deriv_vocabulary && !deriv_vocabulary->empty() && fraction < deriv_span )
-        {
-          if (++t_environment.deriv_counter == deriv_rate)
-          {
-            t_environment.deriv_counter = 0;
-            for (size_t i = 0; i < deriv_pack; ++i)
-              le.derivatives.push_back( deriv_vocabulary->get_random(t_environment.next_random) );
-          }
-        }
         if ( ra_vocabulary && !ra_vocabulary->empty() && fraction < ra_span )
         {
           if (++t_environment.ra_counter == ra_rate)
@@ -299,24 +270,10 @@ public:
               le.rassoc.push_back( ra_vocabulary->get_random(t_environment.next_random) );
           }
         }
-        if ( coid_vocababulary && !coid_vocababulary->empty() && fraction < coid_span  )
+
+        if (ext_vocabs_manager)
         {
-          if (++t_environment.coid_counter == coid_rate)
-          {
-            t_environment.coid_counter = 0;
-            for (size_t i = 0; i < coid_pack; ++i)
-              le.categoroids.push_back( coid_vocababulary->get_random(t_environment.next_random) );
-          }
-        }
-        if ( rc_vocabulary && !rc_vocabulary->empty() && fraction < rc_span )
-        {
-          if (++t_environment.rc_counter == rc_rate)
-          {
-            t_environment.rc_counter = 0;
-            for (size_t i = 0; i < rc_pack; ++i)
-              le.rcat.push_back( rc_vocabulary->get_random(t_environment.next_random) );
-            //Log::getInstance()(3);
-          }
+          ext_vocabs_manager->get(le.ext_vocab_data, fraction, t_environment.next_random);
         }
 
         t_environment.sentence.push_back(le);
@@ -436,14 +393,8 @@ private:
   float sample_d = 0;
   // порог для алгоритма сэмплирования (subsampling) -- для ассоциативных контекстов
   float sample_a = 0;
-  // словарь деривативных гнезд
-  std::shared_ptr<DerivativeVocabulary> deriv_vocabulary;
-  // частота сэмлпирования из деривативного словаря
-  size_t deriv_rate;
-  // количество пар в сэмле из деривативного словаря
-  size_t deriv_pack;
-  // процент итераций, на которых применяется деривативный словарь
-  float deriv_span;
+  // менеджер внешних словарей
+  std::shared_ptr< ExternalVocabsManager > ext_vocabs_manager;
   // словарь надежных ассоциатов
   std::shared_ptr< ReliableAssociativesVocabulary > ra_vocabulary;
   // частота сэмлпирования из словаря надежных ассоциатов
@@ -452,22 +403,6 @@ private:
   size_t ra_pack;
   // процент итераций, на которых применяется словарь надежных ассоциатов
   float ra_span;
-  // словарь категороидов
-  std::shared_ptr< CategoroidsVocabulary > coid_vocababulary;
-  // частота сэмлпирования из словаря категороидов
-  size_t coid_rate;
-  // количество пар в сэмле из словаря категороидов
-  size_t coid_pack;
-  // процент итераций, на которых применяется словарь категороидов
-  float coid_span;
-  // словарь надежных категор. пар
-  std::shared_ptr< CategoroidsVocabulary > rc_vocabulary;
-  // частота сэмлпирования из словаря надежных категор. пар
-  size_t rc_rate;
-  // количество пар в сэмле из словаря надежных категор. пар
-  size_t rc_pack;
-  // процент итераций, на которых применяется словарь надежных категор. пар
-  float rc_span;
   // минимальная длина слова, от которого берутся oov-суффиксы
   const size_t SFX_SOURCE_WORD_MIN_LEN = 6;
 

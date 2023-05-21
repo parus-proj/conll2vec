@@ -729,37 +729,6 @@ private:
     if (toks_train)
       return;
 
-    // обработка "надежных" категориальных пар
-    for ( size_t d = 0; d < le.categoroids.size(); ++d )
-    {
-      auto&& lec = le.categoroids[d];
-      float *vector1Ptr = syn0 + lec.first * layer1_size;
-      float *vector2Ptr = syn0 + lec.second * layer1_size;
-      std::transform(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, neu1e, std::minus<float>());
-      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+size_dep, neu1e, 0.0) );
-      if ( e_dist > 0.1)
-      {
-        std::transform(neu1e, neu1e+size_dep, neu1e, [this](float a) -> float {return a * alpha * 0.5;});
-        std::transform(vector2Ptr, vector2Ptr+size_dep, neu1e, vector2Ptr, std::plus<float>());
-        std::transform(vector1Ptr, vector1Ptr+size_dep, neu1e, vector1Ptr, std::minus<float>());
-      }
-    } // if categoroids
-
-    // обработка "сверхнадежных" категориальных пар
-    for ( size_t d = 0; d < le.rcat.size(); ++d )
-    {
-      auto&& lec = le.rcat[d];
-      float *vector1Ptr = syn0 + lec.first * layer1_size;
-      float *vector2Ptr = syn0 + lec.second * layer1_size;
-      std::transform(vector1Ptr, vector1Ptr+size_dep, vector2Ptr, neu1e, std::minus<float>());
-      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+size_dep, neu1e, 0.0) );
-      if ( e_dist > 0.1)
-      {
-        std::transform(neu1e, neu1e+size_dep, neu1e, [this](float a) -> float {return a * alpha;});
-        std::transform(vector2Ptr, vector2Ptr+size_dep, neu1e, vector2Ptr, std::plus<float>());
-      }
-    } // if reliable categorial pairs
-
     // цикл по ассоциативным контекстам
     for (auto&& ctx_idx : le.assoc_context)
     {
@@ -804,38 +773,41 @@ private:
       } // for all samples
     } // for all assoc contexts
 
-    // обработка деривативных пар
-    for ( size_t d = 0; d < le.derivatives.size(); ++d )
-    {
-      auto&& led = le.derivatives[d];
-      float *vector1Ptr = syn0 + led.first * layer1_size + size_dep;
-      float *vector2Ptr = syn0 + led.second * layer1_size + size_dep;
-      std::transform(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, neu1e, std::minus<float>());
-      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+size_assoc, neu1e, 0.0) );
-      if ( e_dist > 0.1)
-      {
-        std::transform(neu1e, neu1e+size_assoc, neu1e, [this](float a) -> float {return a * alpha * 0.5;});
-        std::transform(vector2Ptr, vector2Ptr+size_assoc, neu1e, vector2Ptr, std::plus<float>());
-        std::transform(vector1Ptr, vector1Ptr+size_assoc, neu1e, vector1Ptr, std::minus<float>());
-      }
-    } // if derivatives
+//    // обработка "надежных" ассоциативных пар
+//    for ( size_t d = 0; d < le.rassoc.size(); ++d )
+//    {
+//      auto&& lera = le.rassoc[d];
+//      float sim = std::get<2>(lera);
+//      float *vector1Ptr = syn0 + std::get<0>(lera) * layer1_size + size_dep;
+//      float *vector2Ptr = syn0 + std::get<1>(lera) * layer1_size + size_dep;
+//      std::transform(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, neu1e, std::minus<float>());
+//      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+size_assoc, neu1e, 0.0) );
+//      if ( e_dist > 0.1)
+//      {
+//        std::transform(neu1e, neu1e+size_assoc, neu1e, [this,sim](float a) -> float {return a * alpha * 0.5 * sim;});
+//        std::transform(vector2Ptr, vector2Ptr+size_assoc, neu1e, vector2Ptr, std::plus<float>());
+//        std::transform(vector1Ptr, vector1Ptr+size_assoc, neu1e, vector1Ptr, std::minus<float>());
+//      }
+//    } // if reliable associatives
 
-    // обработка "надежных" ассоциативных пар
-    for ( size_t d = 0; d < le.rassoc.size(); ++d )
+    // обработка данных от внешних словарей
+    for ( size_t d = 0; d < le.ext_vocab_data.size(); ++d )
     {
-      auto&& lera = le.rassoc[d];
-      float sim = std::get<2>(lera);
-      float *vector1Ptr = syn0 + std::get<0>(lera) * layer1_size + size_dep;
-      float *vector2Ptr = syn0 + std::get<1>(lera) * layer1_size + size_dep;
-      std::transform(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, neu1e, std::minus<float>());
-      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+size_assoc, neu1e, 0.0) );
-      if ( e_dist > 0.1)
+      auto&& data = le.ext_vocab_data[d];
+
+      float *vector1Ptr = syn0 + data.word1 * layer1_size + data.dims_from;
+      float *vector2Ptr = syn0 + data.word2 * layer1_size + data.dims_from;
+      size_t to_end = data.dims_to - data.dims_from + 1;
+      std::transform(vector1Ptr, vector1Ptr+to_end, vector2Ptr, neu1e, std::minus<float>());
+      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+to_end, neu1e, 0.0) );
+      if ( e_dist > 0.1) // требуем, чтобы стягиваемые вектора хоть немного, но различались, т.к. слова-то всё ж разные
       {
-        std::transform(neu1e, neu1e+size_assoc, neu1e, [this,sim](float a) -> float {return a * alpha * 0.5 * sim;});
-        std::transform(vector2Ptr, vector2Ptr+size_assoc, neu1e, vector2Ptr, std::plus<float>());
-        std::transform(vector1Ptr, vector1Ptr+size_assoc, neu1e, vector1Ptr, std::minus<float>());
+        std::transform(neu1e, neu1e+to_end, neu1e, [this](float a) -> float {return a * alpha;});
+        std::transform(vector2Ptr, vector2Ptr+to_end, neu1e, vector2Ptr, std::plus<float>());
+        if ( data.algo == evaPairwise)
+          std::transform(vector1Ptr, vector1Ptr+to_end, neu1e, vector1Ptr, std::minus<float>());
       }
-    } // if reliable associatives
+    } // for all ext vocabs data
 
   } // method-end
 
