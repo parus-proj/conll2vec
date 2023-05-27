@@ -22,8 +22,9 @@ struct ExtVocabExample
   size_t word1;
   size_t word2;
   ExtVocabAlgo algo;
-  ExtVocabExample(const std::pair<size_t, size_t>& d, const std::pair<size_t, size_t>& w, ExtVocabAlgo a)
-    : dims_from(d.first), dims_to(d.second), word1(w.first), word2(w.second), algo(a)
+  float e_dist_lim;
+  ExtVocabExample(const std::pair<size_t, size_t>& d, const std::pair<size_t, size_t>& w, const ExtVocabAlgo a, const float edl)
+    : dims_from(d.first), dims_to(d.second), word1(w.first), word2(w.second), algo(a), e_dist_lim(edl)
     { }
 };
 

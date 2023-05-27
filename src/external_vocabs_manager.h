@@ -23,6 +23,7 @@ struct VocabUsageInfo
   ExtVocabAlgo algo;                        // алгоритм стягивания/отталкивания
   size_t rate = 0;  // как часто использовать данные словаря при обучении (с каждым rate обучающим примером)
   size_t pack = 0;  // по сколько словарных данных подавать в один эпизод обучения
+  float e_dist_limit = 0; // предел стягивания (по евклидову расстоянию)
 
   std::vector< std::pair<size_t, size_t> > data; // сами данные словаря -- пары индексов слов
   mutable std::atomic_uint counter{0};           // счетчик для выбора обучающих примеров с заданной частотой сэмплирования (rate)
@@ -50,7 +51,7 @@ public:
       std::vector<std::string> rec_fields;
       StrUtil::split_by_whitespaces(line, rec_fields);
 
-      if (rec_fields.size() != 8)
+      if (rec_fields.size() != 9)
       {
         std::cerr << "Skip invalid record: " << line << " (" << filename << ")" << std::endl;
         continue;
@@ -66,6 +67,7 @@ public:
         r.algo = static_cast<ExtVocabAlgo>( std::stoi(rec_fields[5]) );
         r.rate = std::stoi(rec_fields[6]);
         r.pack = std::stoi(rec_fields[7]);
+        r.e_dist_limit = std::stof(rec_fields[8]);
         records.push_back( std::move(rptr) );
       }
       catch (...) {
@@ -119,7 +121,7 @@ public:
       auto& v = *vptr;
       if ( v.data.empty() )
         continue;
-      if ( fraction < v.fraction_range.first || fraction >= v.fraction_range.second )
+      if ( fraction < v.fraction_range.first || fraction > v.fraction_range.second )
         continue;
       if ( ++v.counter % v.rate == 0 )
       {
@@ -127,7 +129,7 @@ public:
         {
           next_random = next_random * (unsigned long long)25214903917 + 11;
           auto& selected = v.data[ next_random % v.data.size() ];
-          result.emplace_back( v.dims_range, selected, v.algo );
+          result.emplace_back( v.dims_range, selected, v.algo, v.e_dist_limit );
         }
       }
     }
@@ -139,14 +141,14 @@ private:
   void print_table_dbg() const
   {
     std::cout << "External vocabs table" << std::endl;
-    std::cout << "DIM_FROM   DIM_TO   FRAC_FROM   FRAC_TO   FILE   ALGO   RATE   PACK" << std::endl;
+    std::cout << "DIM_FROM   DIM_TO   FRAC_FROM   FRAC_TO   FILE   ALGO   RATE   PACK   EDIST_LIM" << std::endl;
     for (auto& rptr : records)
     {
       auto& r = *rptr;
       std::cout << r.dims_range.first << "  " << r.dims_range.second << "  "
                 << r.fraction_range.first << "  " << r.fraction_range.second << "  "
                 << r.vocab_filename << "  " << ((size_t)r.algo) << "  "
-                << r.rate << "  " << r.pack << std::endl;
+                << r.rate << "  " << r.pack << "  " << r.e_dist_limit << std::endl;
     }
   }
 

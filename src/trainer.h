@@ -800,7 +800,7 @@ private:
       size_t to_end = data.dims_to - data.dims_from + 1;
       std::transform(vector1Ptr, vector1Ptr+to_end, vector2Ptr, neu1e, std::minus<float>());
       float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+to_end, neu1e, 0.0) );
-      if ( e_dist > 0.1) // требуем, чтобы стягиваемые вектора хоть немного, но различались, т.к. слова-то всё ж разные
+      if ( e_dist > data.e_dist_lim) // требуем, чтобы стягиваемые вектора хоть немного, но различались, т.к. слова-то всё ж разные
       {
         std::transform(neu1e, neu1e+to_end, neu1e, [this](float a) -> float {return a * alpha;});
         std::transform(vector2Ptr, vector2Ptr+to_end, neu1e, vector2Ptr, std::plus<float>());
