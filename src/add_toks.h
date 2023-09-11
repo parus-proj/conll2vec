@@ -44,7 +44,7 @@ public:
       {
         const auto& lemma = parts[i*2+1];
         const auto& cnt_str = parts[i*2+2];
-        size_t lemma_idx = vm.get_word_idx(lemma);
+        size_t lemma_idx = vm.get_word_idx_fast(lemma);
         if ( lemma_idx == vm.vocab.size() ) continue;
         size_t cnt = 0;
         try { cnt = std::stoi(cnt_str); } catch (...) { isParseOk = false; break; }

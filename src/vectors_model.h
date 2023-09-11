@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <map>
 #include <fstream>
 #include <iostream>
 
@@ -150,6 +151,20 @@ public:
       if (vocab[widx] == word)
         break;
     return widx;
+  } // method-end
+  // поиск слова в словаре (в неизменяемой! модели с построением индекса)
+  size_t get_word_idx_fast(const std::string& word) const
+  {
+    static std::map<std::string, size_t> vmap;
+    if (words_count == 0) return 0;
+    if (vmap.size() == 0)
+    {
+      for (size_t idx = 0; idx < words_count; ++idx)
+        vmap[ vocab[idx] ] = idx;
+    }
+    auto it = vmap.find(word);
+    if (it == vmap.end()) return words_count;
+    return it->second;
   } // method-end
   // слияние моделей
   bool merge(const VectorsModel& ext)
