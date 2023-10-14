@@ -16,6 +16,7 @@
 #include "ra_vocab.h"
 #include "categoroid_vocab.h"
 #include "model_splitter.h"
+#include "make_rue_embeddings.h"
 
 #include <memory>
 #include <string>
@@ -68,7 +69,8 @@ int main(int argc, char **argv)
               << "  -task fsim        -- calc similarity measure for word pairs in file" << std::endl
               << "  -task sseval      -- subsampling value estimation" << std::endl
               << "  -task aextr       -- extract associative pairs from model" << std::endl
-              << "  -task spl_m       -- split model (stem, suffix)" << std::endl;
+              << "  -task spl_m       -- split model (stem, suffix)" << std::endl
+              << "  -task rue         -- prepare RUE embeddings" << std::endl;
     return -1;
   }
   auto&& task = cmdLineParams.getAsString("-task");
@@ -508,6 +510,14 @@ int main(int argc, char **argv)
                         cmdLineParams.getAsString("-vocab_o"), cmdLineParams.getAsInt("-size_g") );
     return 0;
   } // if task == spl_m
+
+
+  // если поставлена задача подготовки эмбеддингов для RUE-модели
+  if (task == "rue")
+  {
+    MakeRueEmbeddings::run(cmdLineParams.getAsString("-model"), cmdLineParams.getAsString("-tl_map"));
+    return 0;
+  } // if task == toks
 
   return -1;
 }

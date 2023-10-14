@@ -18,8 +18,14 @@ public:
     VectorsModel vm;
     if ( !vm.load(model_fn) )
       return;
+    // 2. Расширяем модель знаками пунктуации и сохраняем её
+    if ( merge_punct(vm) )
+      vm.save(model_fn);
+  } // method-end
 
-    // 2. Порождаем эмбеддинги для знаков пунктуации
+  static bool merge_punct(VectorsModel& vm)
+  {
+    // 1. Порождаем эмбеддинги для знаков пунктуации (в отдельной модели)
     const std::vector<std::string> puncts = { ".", ",", "!", "?", ";", "…", "...",
                                               ":", "-", "--", "—", "–", "‒",
                                               "'", "ʼ", "ˮ", "\"",
@@ -74,12 +80,8 @@ public:
       VectorsModel::make_embedding_as_neighbour(vm.emb_size, base, pvm.embeddings + pvm.emb_size * i);
     }
 
-
-    // 3. Расширяем модель знаками пунктуации и сохраняем её
-    bool merge_ok = vm.merge(pvm);
-    if (merge_ok)
-      vm.save(model_fn);
-
+    // 2. Расширяем модель знаками пунктуации
+    return vm.merge(pvm);
   } // method-end
 
 private:
