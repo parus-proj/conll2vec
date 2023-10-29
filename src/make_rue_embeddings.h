@@ -178,9 +178,9 @@ private:
     size_t cnt_sum_without_max = cnt_sum - maxIt->second; // по этому количеству будем считать доли в перераспределении
 
     float maxRate = (float)(maxIt->second) / (float)cnt_sum;
-    if (maxRate <= 0.6) return;
+    if (maxRate <= 0.7) return;
 
-    size_t new_max_cnt = static_cast<size_t>(0.6 * cnt_sum); // todo: округление к целому
+    size_t new_max_cnt = static_cast<size_t>(0.7 * cnt_sum); // todo: округление к целому
     size_t delta = maxIt->second - new_max_cnt; // это та величина, которую надо перераспределить на другие леммы
     if (delta == 0) return;
 
