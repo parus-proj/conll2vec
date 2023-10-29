@@ -109,6 +109,8 @@ private:
     // теоретически, манипуляции со связями (например, с предлогами) могут затереть метку PUNC у списочных знаков препинания
     // запустим принудительную расстановку отношения PUNC повторно
     process_punc(data);
+    // привязка союзов и др. служебных слов в фиктивным токенам (иначе большая часть союзов "повиснет в воздухе" после fit)
+    process_funcwords(data);
   } // method-end
   // приведение токенов к нижнему регистру
   void tokens_to_lower(u32SentenceMatrix& data)
@@ -545,6 +547,43 @@ private:
       }
       t[Conll::HEAD] = head_t[Conll::HEAD];
       t[Conll::DEPREL] = head_t[Conll::DEPREL];
+    }
+  }
+  //
+  void process_funcwords(u32SentenceMatrix& data)
+  {
+    // категориальная семантика служебных слов будет ограничена их морфологическими типами
+    enum FunctionalWordsTypes
+    {
+      fwConj,
+      fwQ
+    };
+    std::map<FunctionalWordsTypes, size_t> fwt2idx;
+    for (auto& t : data)
+    {
+      if ( t[Conll::FEATURES].empty() || t[Conll::DEPREL] != U"_" ) continue;
+      if ( t[Conll::FEATURES][0] == U'C' )
+      {
+        auto it = fwt2idx.find(fwConj);
+        if ( it == fwt2idx.end() ) fwt2idx[fwConj] = data.size() + fwt2idx.size() + 1;
+        t[Conll::HEAD] = StrConv::To_UTF32(std::to_string( fwt2idx[fwConj] ));
+        t[Conll::DEPREL] = StrConv::toLower( t[Conll::FEATURES] );
+      }
+      if ( t[Conll::FEATURES][0] == U'Q' )
+      {
+        auto it = fwt2idx.find(fwQ);
+        if ( it == fwt2idx.end() ) fwt2idx[fwQ] = data.size() + fwt2idx.size() + 1;
+        t[Conll::HEAD] = StrConv::To_UTF32(std::to_string( fwt2idx[fwQ] ));
+        t[Conll::DEPREL] = U"q";
+      }
+    }
+    std::set<size_t> sorter;
+    for (const auto& nt : fwt2idx)
+      sorter.insert(nt.second);
+    for (const auto& tidx : sorter)
+    {
+      std::vector<std::u32string> stub_data {StrConv::To_UTF32(std::to_string(tidx)),U"_",U"_",U"_",U"_",U"_",U"0",U"_", U"_", U"STUB"};
+      data.push_back(stub_data);
     }
   }
   // поиск начала сочинительной цепочки

@@ -566,18 +566,21 @@ private:
         auto& parent = sentence[ parent_token_no - 1 ];
         if ( parent[7] == "PUNC" ) // "контексты -- знаки препинания" нам не интересны
           continue;                // note: не посчитаем контекст вниз, но его и не нужно, т.к. это контекст знака пунктуации
-        if ( parent[column] == "_" ) // символ отсутствия значения в conll
+        if ( parent[column] == "_" && parent[Conll::MISC] != "STUB" ) // символ отсутствия значения в conll
           continue;
 
         {
           const std::lock_guard<std::mutex> lock(vocab_mtx);
           // рассматриваем контекст с точки зрения родителя в синтаксической связи
-          auto ctx__from_head_viewpoint = token[column] + "<" + token[Conll::DEPREL];
-          auto it_h = vocab->find( ctx__from_head_viewpoint );
-          if (it_h == vocab->end())
-            (*vocab)[ctx__from_head_viewpoint] = 1;
-          else
-            ++it_h->second;
+          if ( parent[Conll::MISC] != "STUB" )
+          {
+            auto ctx__from_head_viewpoint = token[column] + "<" + token[Conll::DEPREL];
+            auto it_h = vocab->find( ctx__from_head_viewpoint );
+            if (it_h == vocab->end())
+              (*vocab)[ctx__from_head_viewpoint] = 1;
+            else
+              ++it_h->second;
+          }
           // рассматриваем контекст с точки зрения потомка в синтаксической связи
           auto ctx__from_child_viewpoint = parent[column] + ">" + token[Conll::DEPREL];
           auto it_c = vocab->find( ctx__from_child_viewpoint );
