@@ -87,10 +87,12 @@ private:
     // эвристика, исправляющая ошибки типизации синатксических связей у знаков препинания
     process_punc(data);
     // неизвестные леммы замещаем на символ подчеркивания (они игнорируются при построении словарей)
-    process_unknonw(data);
+    process_unknown(data);
     // денумификация -- обобщение токенов и лемм, содержащих числовые величины
     if ( exclude_nums )
       process_nums(data);
+    // к леммам-инициалам приписываем метку (чтобы отличать их от однобуквенных союзов, предлогов, местоимений)
+    process_initials(data);
     // фильтрация синтаксических отношений, не заслуживающих внимания
     reltypes_filter(data);
     // поглощение предлогов
@@ -128,7 +130,7 @@ private:
     }
   } // method-end
   // неизвестные леммы замещаем на символ подчеркивания (они игнорируются при построении словарей)
-  void process_unknonw(u32SentenceMatrix& data)
+  void process_unknown(u32SentenceMatrix& data)
   {
     for (auto& t : data)
     {
@@ -138,13 +140,24 @@ private:
         t[Conll::LEMMA] = U"_";
     }
   }
+  // к леммам-инициалам приписываем метку (чтобы отличать их от однобуквенных союзов, предлогов, местоимений)
+  void process_initials(u32SentenceMatrix& data)
+  {
+    const std::u32string InitLets = U"абвгдеёжзийклмнопрстуфхцчшщыэюя"; // к этому моменту FORM уже в lowercase
+    for (auto& t : data)
+    {
+      if ( t[Conll::FORM].length() == 1 && InitLets.find(t[Conll::FORM]) != std::u32string::npos && t[Conll::LEMMA].length() == 1
+           && t[Conll::FEATURES].length() > 1 && t[Conll::FEATURES].find(U"Np") == 0 )
+        t[Conll::LEMMA] += U"_NP";
+    }
+  }
   // обобщение токенов, содержащих числовые величины
   void process_nums(u32SentenceMatrix& data)
   {
     // превращаем числа в @num@
-    const std::u32string NUM  = U"@num@";
-    const std::u32string Digs = U"0123456789";
-    const std::u32string RuLets = U"АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЬЫЪЭЮЯабвгдеёжзийклмнопрстуфхцчшщьыъэюя";
+//    const std::u32string NUM  = U"@num@";
+//    const std::u32string Digs = U"0123456789";
+//    const std::u32string RuLets = U"АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЬЫЪЭЮЯабвгдеёжзийклмнопрстуфхцчшщьыъэюя";
     for (auto& t : data)
     {
       auto& token = t[Conll::FORM];

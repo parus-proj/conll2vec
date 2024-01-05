@@ -288,6 +288,8 @@ public:
     const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
     for (size_t i = 0; i < sm_size; ++i)
     {
+      if (sentence_matrix[i][Conll::LEMMA] == "_") // если процедура fit по какой-то причине сделала лемму невалидной, то надо это пропустить
+        continue;
       auto token_str = sentence_matrix[i][emb_column];            // TODO: возможно по словарю модели, но там не для всех слов известны частоты
       auto word_idx = words_vocabulary->word_to_idx(token_str);
       if ( word_idx != INVALID_IDX )
