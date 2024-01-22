@@ -17,6 +17,7 @@
 #include "categoroid_vocab.h"
 #include "model_splitter.h"
 #include "make_rue_embeddings.h"
+#include "extract_related.h"
 
 #include <memory>
 #include <string>
@@ -68,7 +69,8 @@ int main(int argc, char **argv)
               << "  -task sub         -- extract sub-model (for dimensions range)" << std::endl
               << "  -task fsim        -- calc similarity measure for word pairs in file" << std::endl
               << "  -task sseval      -- subsampling value estimation" << std::endl
-              << "  -task aextr       -- extract associative pairs from model" << std::endl
+              << "  -task extract     -- extract related pairs from model" << std::endl
+              << "  -task emerge      -- merge extracted related pairs" << std::endl
               << "  -task spl_m       -- split model (stem, suffix)" << std::endl
               << "  -task rue         -- prepare RUE embeddings" << std::endl;
     return -1;
@@ -163,10 +165,10 @@ int main(int argc, char **argv)
     }
 
     std::shared_ptr< ReliableAssociativesVocabulary > ra_vocab;
-    if ( cmdLineParams.isDefined("-ra_vocab"))
+    if ( cmdLineParams.isDefined("-rr_vocab"))
     {
       ra_vocab = std::make_shared<ReliableAssociativesVocabulary>();
-      if ( !ra_vocab->load( cmdLineParams.getAsString("-ra_vocab"), v_main ) )
+      if ( !ra_vocab->load( cmdLineParams.getAsString("-rr_vocab"), v_main ) )
         return -1;
     }
 
@@ -467,41 +469,21 @@ int main(int argc, char **argv)
     return 0;
   } // if task == sseval
 
-  // если поставлена задача извлечения ассоциативных пар из модели
-  if (task == "aextr")
+  // если поставлена задача извлечения связных пар из модели
+  if (task == "extract")
   {
-    auto sim_estimator = create_sim_estimator(cmdLineParams);
-    if (!sim_estimator)
-      return -1;
-    if ( !cmdLineParams.isDefined("-ra_vocab") )
-    {
-      std::cerr << "-ra_vocab parameters must be defined." << std::endl;
-      return -1;
-    }
-    std::ofstream ofs(cmdLineParams.getAsString("-ra_vocab"));
-    if ( !ofs.good() )
-      return -1;
-    auto contains_ru_letter = [](const std::string& lemma) -> bool
-        {
-          const std::u32string RuLets = U"абвгдеёжзийклмнопрстуфхцчшщьыъэюя";
-          auto s32 = StrConv::To_UTF32(lemma);
-          return ( s32.find_first_of(RuLets) != std::u32string::npos );
-        };
-    float min_sim = cmdLineParams.getAsFloat("-ra_min_sim");
-    auto vm = sim_estimator->raw();
-    for (size_t i = 0; i < vm->words_count-1; ++i)
-    {
-      if ( !contains_ru_letter(vm->vocab[i]) ) continue;
-      for (size_t j = (i < vm->words_count/2 ? vm->words_count/2 : i+1); j < vm->words_count; ++j)
-      {
-        if ( !contains_ru_letter(vm->vocab[j]) ) continue;
-        auto sim = sim_estimator->get_sim(SimilarityEstimator::cdAssocOnly, i, j);
-        if (sim && sim.value() > min_sim)
-          ofs << vm->vocab[i] << " " << vm->vocab[j] << " " << sim.value() << std::endl;
-      }
-    }
+    RelatedPairsExtractor e;
+    e.run(cmdLineParams);
     return 0;
-  } // if task == aextr
+  } // if task == extract
+
+  // если поставлена задача мержинга связных пар, извелченных из нескольких моделей
+  if (task == "emerge")
+  {
+    RelatedPairsExtractor e;
+    e.merge(cmdLineParams);
+    return 0;
+  } // if task == emerge
 
   // если поставлена задача разделения модели на подмодели псевдооснов, суффиксов и полных слов
   if (task == "spl_m")

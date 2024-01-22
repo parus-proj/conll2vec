@@ -51,11 +51,8 @@ public:
         {"-fsim_file",    {"File with word pairs for fsim task", std::nullopt, std::nullopt}},
         {"-fsim_fmt",     {"File with word pairs format (detail|russe)", "detail", std::nullopt}},
         {"-eval_vocab",   {"A vocabulary for subsampling evaluation", std::nullopt, std::nullopt}},
-        {"-ra_vocab",     {"Reliable associatives vocabulary <file>", std::nullopt, std::nullopt}},
-        {"-ra_min_sim",   {"Reliable associatives minimal similarity", "0.5", std::nullopt}},
-        {"-ra_rate",      {"Reliable associatives sample rate", "1", std::nullopt}},
-        {"-ra_pack",      {"Reliable associatives package size", "1", std::nullopt}},
-        {"-ra_span",      {"Reliable associatives logic span", "0.1", std::nullopt}},
+        {"-rr_vocab",     {"Reliable rel-pairs vocabulary <file>", std::nullopt, std::nullopt}},
+        {"-rr_min_sim",   {"Reliable rel-pairs minimal similarity", "0.6", std::nullopt}},
         {"-ca_vocab",     {"Safe lemmas vocabulary <file>", std::nullopt, std::nullopt}},
         {"-vocabs_tab",   {"External vocabs table <file>", "vocabs.table", std::nullopt}}
 
