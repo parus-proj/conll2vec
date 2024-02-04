@@ -105,7 +105,7 @@ public:
       std::multimap<float, std::string, std::greater<float>> avg;
       for ( const auto& [w2, v] : m )
       {
-        if ( v.size() < 3 ) continue; // фильтруем ненадежное
+        if ( v.size() < 5 ) continue; // фильтруем ненадежное
         const double avg_v = std::accumulate(v.begin(), v.end(), 0.0) / v.size();
         avg.insert( std::make_pair(avg_v, w2) );
       }
@@ -121,7 +121,7 @@ public:
       std::multimap<float, std::string, std::greater<float>> avg;
       for ( const auto& [w2, v] : m )
       {
-        if ( v.size() < 3 ) continue; // фильтруем ненадежное
+        if ( v.size() < 5 ) continue; // фильтруем ненадежное
         const double avg_v = std::accumulate(v.begin(), v.end(), 0.0) / v.size();
         avg.insert( std::make_pair(avg_v, w2) );
       }

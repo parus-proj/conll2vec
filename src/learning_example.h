@@ -10,7 +10,8 @@
 enum ExtVocabAlgo
 {
   evaFirstWithOther,    // стягивание к первому слову словаря
-  evaPairwise           // попарное притяжение
+  evaPairwise,          // попарное притяжение
+  evaFirstWeighted      // стягиваие к первому, сила связи имеет вес
 };
 
 
@@ -21,10 +22,11 @@ struct ExtVocabExample
   size_t dims_to;
   size_t word1;
   size_t word2;
+  float weight;
   ExtVocabAlgo algo;
   float e_dist_lim;
-  ExtVocabExample(const std::pair<size_t, size_t>& d, const std::pair<size_t, size_t>& w, const ExtVocabAlgo a, const float edl)
-    : dims_from(d.first), dims_to(d.second), word1(w.first), word2(w.second), algo(a), e_dist_lim(edl)
+  ExtVocabExample(const std::pair<size_t, size_t>& d, const std::tuple<size_t, size_t, float>& w, const ExtVocabAlgo a, const float edl)
+    : dims_from(d.first), dims_to(d.second), word1(std::get<0>(w)), word2(std::get<1>(w)), weight(std::get<2>(w)), algo(a), e_dist_lim(edl)
     { }
 };
 
@@ -34,8 +36,7 @@ struct LearningExample
   size_t word;                                              // индекс слова
   std::vector<size_t> dep_context;                          // индексы синтаксических контекстов
   std::vector<size_t> assoc_context;                        // индексы ассоциативных контекстов
-  std::vector<std::tuple<size_t, size_t, float>> rassoc;    // индексы ассоциатов, согласно надежному источнику + степень их близости
-  std::vector<ExtVocabExample> ext_vocab_data;
+  std::vector<ExtVocabExample> ext_vocab_data;              // дополнительные воздействия на основе данных внешних словарей
 };
 
 

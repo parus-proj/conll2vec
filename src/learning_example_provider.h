@@ -5,7 +5,6 @@
 #include "original_word2vec_vocabulary.h"
 #include "mwe_vocabulary.h"
 #include "external_vocabs_manager.h"
-#include "ra_vocab.h"
 #include "str_conv.h"
 #include "learning_example.h"
 #include "command_line_parameters_defs.h"
@@ -27,13 +26,11 @@ struct ThreadEnvironment
   unsigned long long next_random;                      // поле для вычисления случайных величин
   unsigned long long words_count;                      // количество прочитанных словарных слов
   std::vector< std::vector<std::string> > sentence_matrix; // conll-матрица для предложения
-  size_t ra_counter;                                   // счетчик для выбора обучающих примеров из надежных ассоциатов с заданной частотой сэмплирования
   ThreadEnvironment()
   : cr(nullptr)
   , position_in_sentence(-1)
   , next_random(0)
   , words_count(0)
-  , ra_counter(0)
   {
     sentence.reserve(1000);
     sentence_matrix.reserve(1000);
@@ -58,7 +55,6 @@ public:
                           std::shared_ptr<OriginalWord2VecVocabulary> depCtxVocabulary, std::shared_ptr<OriginalWord2VecVocabulary> assocCtxVocabulary,
                           std::shared_ptr<MweVocabulary> mweVocabulary,
                           size_t embColumn, bool oov, size_t oovMaxLen,
-                          std::shared_ptr<ReliableAssociativesVocabulary> raVocab = nullptr,
                           std::shared_ptr< ExternalVocabsManager > ext_vm = nullptr)
   : threads_count( cmdLineParams.getAsInt("-threads") )
   , train_filename( cmdLineParams.getAsString("-train") )
@@ -76,10 +72,6 @@ public:
   , sample_d( cmdLineParams.getAsFloat("-sample_d") )
   , sample_a( cmdLineParams.getAsFloat("-sample_a") )
   , ext_vocabs_manager(ext_vm)
-  , ra_vocabulary(raVocab)
-  , ra_rate( cmdLineParams.getAsInt("-ra_rate") )
-  , ra_pack( cmdLineParams.getAsInt("-ra_pack") )
-  , ra_span( cmdLineParams.getAsFloat("-ra_span") )
   {
     thread_environment.resize(threads_count);
     for (size_t i = 0; i < threads_count; ++i)
@@ -261,16 +253,6 @@ public:
         std::copy_if( associations.begin(), associations.end(), std::back_inserter(le.assoc_context),
                       [word_idx](const size_t a_idx) {return (a_idx != word_idx);} );                  // текущее слово не считаем себе ассоциативным
 
-        if ( ra_vocabulary && !ra_vocabulary->empty() && fraction < ra_span )
-        {
-          if (++t_environment.ra_counter == ra_rate)
-          {
-            t_environment.ra_counter = 0;
-            for (size_t i = 0; i < ra_pack; ++i)
-              le.rassoc.push_back( ra_vocabulary->get_random(t_environment.next_random) );
-          }
-        }
-
         if (ext_vocabs_manager)
         {
           ext_vocabs_manager->get(le.ext_vocab_data, fraction, t_environment.next_random);
@@ -397,14 +379,6 @@ private:
   float sample_a = 0;
   // менеджер внешних словарей
   std::shared_ptr< ExternalVocabsManager > ext_vocabs_manager;
-  // словарь надежных ассоциатов
-  std::shared_ptr< ReliableAssociativesVocabulary > ra_vocabulary;
-  // частота сэмлпирования из словаря надежных ассоциатов
-  size_t ra_rate;
-  // количество пар в сэмле из словаря надежных ассоциатов
-  size_t ra_pack;
-  // процент итераций, на которых применяется словарь надежных ассоциатов
-  float ra_span;
   // минимальная длина слова, от которого берутся oov-суффиксы
   const size_t SFX_SOURCE_WORD_MIN_LEN = 6;
 

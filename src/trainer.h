@@ -793,7 +793,7 @@ private:
     // обработка данных от внешних словарей
     for ( size_t d = 0; d < le.ext_vocab_data.size(); ++d )
     {
-      auto&& data = le.ext_vocab_data[d];
+      const auto& data = le.ext_vocab_data[d];
 
       float *vector1Ptr = syn0 + data.word1 * layer1_size + data.dims_from;
       float *vector2Ptr = syn0 + data.word2 * layer1_size + data.dims_from;
@@ -802,7 +802,7 @@ private:
       float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+to_end, neu1e, 0.0) );
       if ( e_dist > data.e_dist_lim) // требуем, чтобы стягиваемые вектора хоть немного, но различались, т.к. слова-то всё ж разные
       {
-        std::transform(neu1e, neu1e+to_end, neu1e, [this](float a) -> float {return a * alpha;});
+        std::transform(neu1e, neu1e+to_end, neu1e, [this, data](float a) -> float {return a * alpha * data.weight;});
         std::transform(vector2Ptr, vector2Ptr+to_end, neu1e, vector2Ptr, std::plus<float>());
         if ( data.algo == evaPairwise)
           std::transform(vector1Ptr, vector1Ptr+to_end, neu1e, vector1Ptr, std::minus<float>());

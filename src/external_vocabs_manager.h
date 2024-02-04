@@ -25,8 +25,8 @@ struct VocabUsageInfo
   size_t pack = 0;  // по сколько словарных данных подавать в один эпизод обучения
   float e_dist_limit = 0; // предел стягивания (по евклидову расстоянию)
 
-  std::vector< std::pair<size_t, size_t> > data; // сами данные словаря -- пары индексов слов
-  mutable std::atomic_uint counter{0};           // счетчик для выбора обучающих примеров с заданной частотой сэмплирования (rate)
+  std::vector< std::tuple<size_t, size_t, float> > data;  // сами данные словаря -- пары индексов слов и вес связи
+  mutable std::atomic_uint counter{0};                    // счетчик для выбора обучающих примеров с заданной частотой сэмплирования (rate)
 };
 
 
@@ -107,6 +107,7 @@ public:
         {
         case evaFirstWithOther: first_with_other_helper(v, items, wordsVocabulary, v.vocab_filename); break;
         case evaPairwise: pairwise_helper(v, items, wordsVocabulary, v.vocab_filename); break;
+        case evaFirstWeighted: first_weighted_helper(v, items, wordsVocabulary, v.vocab_filename); break;
         }
       }
       print_stat_dbg(v);
@@ -186,7 +187,7 @@ private:
         //std::cerr << "Skip unknown word '" << items[i] << "' in " << filename << std::endl;
         continue;
       }
-      v.data.push_back( std::make_pair( hyper_idx, idx ) );
+      v.data.push_back( std::make_tuple( hyper_idx, idx, 1.0 ) );
     }
   }
 
@@ -211,7 +212,31 @@ private:
     }
     for (size_t i = 0; i < nest.size()-1; ++i)
       for (size_t j = i+1; j < nest.size(); ++j)
-        v.data.push_back( std::make_pair( nest[i], nest[j] ) );
+        v.data.push_back( std::make_tuple( nest[i], nest[j], 1.0 ) );
+  }
+
+  void first_weighted_helper(VocabUsageInfo& v, const std::vector<std::string>& items, std::shared_ptr<OriginalWord2VecVocabulary> wordsVocabulary, const std::string& filename)
+  {
+    constexpr size_t INVALID_IDX = std::numeric_limits<size_t>::max();
+    const size_t idx_1 = wordsVocabulary->word_to_idx(items[0]);
+    if (idx_1 == INVALID_IDX)
+    {
+      //std::cerr << "Skip record in " << filename << ": unknown word '" << items[0] << "'" << std::endl;
+      return;
+    }
+    const size_t idx_2 = wordsVocabulary->word_to_idx(items[1]);
+    if (idx_2 == INVALID_IDX)
+    {
+      //std::cerr << "Skip record in " << filename << ": unknown word '" << items[1] << "'" << std::endl;
+      return;
+    }
+    float val = 0;
+    try { val = std::stof(items[2]); }
+    catch (...) {
+      //std::cerr << "Skip record in " << filename << ": invalid float value '" << items[2] << "'" << std::endl;
+      return;
+    }
+    v.data.push_back( std::make_tuple( idx_1, idx_2, val ) );
   }
 
   void print_stat_dbg(VocabUsageInfo& v) const
@@ -221,8 +246,8 @@ private:
     std::set<size_t> w;
     for (auto& r : v.data)
     {
-      w.insert(r.first);
-      w.insert(r.second);
+      w.insert(std::get<0>(r));
+      w.insert(std::get<1>(r));
     }
     std::cout << "  words count = " << w.size() << std::endl;
   }

@@ -3,6 +3,7 @@
 #include "fit_parus.h"
 #include "vocabs_builder.h"
 #include "original_word2vec_vocabulary.h"
+#include "external_vocabs_manager.h"
 #include "mwe_vocabulary.h"
 #include "learning_example_provider.h"
 #include "trainer.h"
@@ -13,8 +14,6 @@
 #include "balance.h"
 #include "sseval.h"
 #include "vectors_model.h"
-#include "ra_vocab.h"
-#include "categoroid_vocab.h"
 #include "model_splitter.h"
 #include "make_rue_embeddings.h"
 #include "extract_related.h"
@@ -164,20 +163,12 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    std::shared_ptr< ReliableAssociativesVocabulary > ra_vocab;
-    if ( cmdLineParams.isDefined("-rr_vocab"))
-    {
-      ra_vocab = std::make_shared<ReliableAssociativesVocabulary>();
-      if ( !ra_vocab->load( cmdLineParams.getAsString("-rr_vocab"), v_main ) )
-        return -1;
-    }
-
     // создание поставщика обучающих примеров
     // к моменту создания "поставщика обучающих примеров" словарь должен быть загружен (в частности, используется cn_sum())
     std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
                                                                                                   v_main, false, v_dep_ctx, v_assoc_ctx, v_mwe,
                                                                                                   2, false, 0,
-                                                                                                  ra_vocab, ext_vocab_manager
+                                                                                                  ext_vocab_manager
                                                                                                 );
 
     // создаем объект, организующий обучение
