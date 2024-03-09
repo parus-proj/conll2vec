@@ -48,7 +48,7 @@ public:
     dep_ofs = &ofs_dep;
     assoc_ofs = &ofs_assoc;
 
-    // 3. Создаем рабочие потоки для вычисления близости и сохраннения результатов
+    // 3. Создаем рабочие потоки для вычисления близости и сохранения результатов
     min_sim = cmdLineParams.getAsFloat("-rr_min_sim");
     size_t threads_count = cmdLineParams.getAsInt("-threads");
     std::vector<std::thread> threads_vec;
