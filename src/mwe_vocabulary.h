@@ -64,6 +64,8 @@ public:
       printNode(node->head);
     }
     std::cout << node->word;
+    if (node->tok_match)
+      std::cout << "(" + node->tok_match.value() + ")";
     for (auto ch : node->children)
       printNode(ch);
     std::cout << (node->out_of_match ? "]" : "}");
@@ -196,11 +198,13 @@ public:
             break;
           }
           else
-            sentence_matrix[c.first][2] = ph->str;
+          {
+            sentence_matrix[c.first][Conll::LEMMA] = ph->str;
 //          dbg_print_sentence_conll(sentence_matrix);
 //          static size_t dbg_cnt = 0;
 //          if (++dbg_cnt == 10)
 //            exit(0);
+          }
         }
       }
     }
@@ -213,7 +217,7 @@ public:
     phCandidates.clear();
     for (size_t tidx = 0; tidx < sentence_matrix.size(); ++tidx)
     {
-      auto& norma = sentence_matrix[tidx][2];
+      auto& norma = sentence_matrix[tidx][Conll::LEMMA];
       auto range = mwes.equal_range(norma);
       for (auto i = range.first; i != range.second; ++i)
         phCandidates[tidx].push_back(i->second);
@@ -432,6 +436,10 @@ private:
   {
     for (auto& t : phrase->trees)
     {
+      // у "ключевого слова" лемма уже сопоставлена (на стадии поиска фраз-кандидатов), но ограничения на токен еще не проверены
+      // проверяем их в первую очередь, если они есть
+      if ( t->tok_match && sentence_matrix[match_point][Conll::FORM] != t->tok_match.value() )
+        continue;
       bool succ = compare_trees_helper(sentence_matrix, deps, match_point, t, match_result);
       if (succ) return true;
     }
@@ -466,7 +474,7 @@ private:
     // во фразе "друг пригласил друга на чай" у слова "пригласить" два потомка "друг"
     // алгоритм попытается сопоставиться с первым попавшимся "друг", и если не сопоставит, то альтернативный вариант сопоставления рассматриваться не будет
     // предполагается, что множественные сопоставления редки
-    // WARNING: возможно конструкции с предлогами будут проблемными: пригласил в четверг в бар
+    // WARNING: возможно конструкции с предлогами будут проблемными: пригласил в четверг в бар (сейчас на этапе fix предлоги привязываются к существительным-потомкам)
 
     while ( !need_to_match.empty() )
     {
