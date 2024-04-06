@@ -9,14 +9,15 @@
 # - EDIS_LIM -- don't use algo if distance in space < limit
 
 0 59 1 4 categoroid.vocab 0 1000 1 0.25
-0 39 5 90 rc_hierarchical.vocab 0 1000 1 0.02
-0 29 5 90 rc_symmetrical.vocab 1 1000 1 0.01
+0 39 5 60 rc_hierarchical.vocab 0 1000 1 0.02
+0 39 5 90 rc_light.vocab 1 1000 1 0.02
+0 39 5 90 rc_symmetrical.vocab 1 1000 1 0.01
 60 79 0 90 deriv.vocab 1 1000 1 0.05
-0 9 4 4 imperf_perf_verbs.vocab 1 10 2 0.001
-0 9 5 90 imperf_perf_verbs.vocab 1 1000 1 0.001
+0 14 4 4 imperf_perf_verbs.vocab 1 10 2 0.001
+0 14 5 90 imperf_perf_verbs.vocab 1 1000 1 0.001
 0 9 10 80 verb_participle.vocab 0 1000 1 0.005
 0 9 10 80 verb_noun.vocab 0 1000 1 0.01
 0 19 10 50 diminutives.vocab 0 1000 1 0.005
 0 9 50 90 adj_adv.vocab 0 1000 1 0.1
-40 59 0 70 r.dep 2 1 1 0.001
-80 99 0 70 r.assoc 2 1 1 0.001
+#40 59 0 70 r.dep 2 1 1 0.001
+#80 99 0 70 r.assoc 2 1 1 0.001
