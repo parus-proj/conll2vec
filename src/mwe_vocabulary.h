@@ -177,6 +177,7 @@ public:
 
     // пытаемся найти фразы-кандидаты в синтакс.дереве предложения
     std::set<size_t> match;
+    std::map<size_t, std::string> deferred_replaces; // замены лемм производим после всех сопоставлений (однако, если меняется структура, то преобразование выполняется немедленно)
     while ( !phCandidates.empty() )
     {
       auto c = *phCandidates.begin();
@@ -199,14 +200,19 @@ public:
           }
           else
           {
-            sentence_matrix[c.first][Conll::LEMMA] = ph->str;
-//          dbg_print_sentence_conll(sentence_matrix);
-//          static size_t dbg_cnt = 0;
-//          if (++dbg_cnt == 10)
-//            exit(0);
+            deferred_replaces[c.first] = ph->str; // отложенное изменение, т.к. слово может быть контекстом для распознавания других словосочетаний
           }
         }
       }
+    }
+
+    for (const auto r : deferred_replaces)
+    {
+      sentence_matrix[r.first][Conll::LEMMA] = r.second;
+      //          dbg_print_sentence_conll(sentence_matrix);
+      //          static size_t dbg_cnt = 0;
+      //          if (++dbg_cnt == 10)
+      //            exit(0);
     }
 
   } // method-end

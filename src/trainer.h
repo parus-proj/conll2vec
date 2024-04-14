@@ -29,6 +29,12 @@
 #define MAX_EXP 15
 
 
+// функция знака
+template <typename T> int sgn(T val) {
+    return (T(0) < val) - (val < T(0));
+}
+
+
 // forward decls
 class ThreadsInWorkCounterGuard;
 
@@ -632,9 +638,7 @@ private:
   static float space_threshold_functor(float value)
   {
     const float FEATURE_VALUE_THRESHOLD = 3.0;
-    if ( value > FEATURE_VALUE_THRESHOLD ) return FEATURE_VALUE_THRESHOLD;
-    else if ( value < -FEATURE_VALUE_THRESHOLD ) return -FEATURE_VALUE_THRESHOLD;
-    else return value;
+    return std::clamp(value, -FEATURE_VALUE_THRESHOLD, FEATURE_VALUE_THRESHOLD);
   }
   // функция, реализующая модель обучения skip-gram
   void skip_gram( const LearningExample& le, float *neu1e, unsigned long long& next_random_ns )
@@ -693,7 +697,7 @@ private:
         {
           std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetDepPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
           // ограничиваем значение в векторах контекста
-          // это необходимо для недопущения паралича обучения; sigmoid вычисляется с ограченной точностью, и если
+          // это необходимо для недопущения паралича обучения; sigmoid вычисляется с ограниченной точностью, и если
           // векторное произведение станет слишком большим (маленьким), то sigmoid выдаст +1 (-1), что сделает градиент нулевым на положительном примере
           std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, ctxVectorPtr, Trainer::space_threshold_functor);
         }
@@ -748,7 +752,7 @@ private:
         }
         // вычисляем смещение вектора, соответствующего очередному положительному/отрицательному примеру
         float *ctxVectorPtr = syn0 + selected_ctx * layer1_size + size_dep;
-        // вычисляем выход нейрона выходного слоя (нейрона, соответствующего рассматриваемому положительному/отрицательному примеру) (hidden -> output)
+        // вычисляем оценку сходства
         float f = std::inner_product(targetAssocPtr, targetAssocEndPtr, ctxVectorPtr, 0.0);
         if ( std::isnan(f) ) continue;
         f = sigmoid(f);
@@ -760,35 +764,22 @@ private:
         // обучение весов (input only)
         if (d == 0)
         {
-          std::transform(targetAssocPtr, targetAssocEndPtr, ctxVectorPtr, targetAssocPtr, [g](float a, float b) -> float {return a + g*b;});
+          // здесь g>0
+          std::transform(targetAssocPtr, targetAssocEndPtr, ctxVectorPtr, targetAssocPtr, [g](float a, float b) -> float {return a + g*(b-a);});
           // ограничение степени выраженности признака
           std::transform(targetAssocPtr, targetAssocEndPtr, targetAssocPtr, Trainer::space_threshold_functor);
         }
         else
         {
-          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetAssocPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+          // здесь g<0
+          float g_norm = -g / negative_a;
+          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetAssocPtr, ctxVectorPtr, [g_norm](float a, float b) -> float {return a + g_norm*sgn(a-b);}); // сила отталкивания со временем будет снижаться
           // ограничение степени выраженности признака
           std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, ctxVectorPtr, Trainer::space_threshold_functor);
         }
       } // for all samples
     } // for all assoc contexts
 
-//    // обработка "надежных" ассоциативных пар
-//    for ( size_t d = 0; d < le.rassoc.size(); ++d )
-//    {
-//      auto&& lera = le.rassoc[d];
-//      float sim = std::get<2>(lera);
-//      float *vector1Ptr = syn0 + std::get<0>(lera) * layer1_size + size_dep;
-//      float *vector2Ptr = syn0 + std::get<1>(lera) * layer1_size + size_dep;
-//      std::transform(vector1Ptr, vector1Ptr+size_assoc, vector2Ptr, neu1e, std::minus<float>());
-//      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+size_assoc, neu1e, 0.0) );
-//      if ( e_dist > 0.1)
-//      {
-//        std::transform(neu1e, neu1e+size_assoc, neu1e, [this,sim](float a) -> float {return a * alpha * 0.5 * sim;});
-//        std::transform(vector2Ptr, vector2Ptr+size_assoc, neu1e, vector2Ptr, std::plus<float>());
-//        std::transform(vector1Ptr, vector1Ptr+size_assoc, neu1e, vector1Ptr, std::minus<float>());
-//      }
-//    } // if reliable associatives
 
     // обработка данных от внешних словарей
     for ( size_t d = 0; d < le.ext_vocab_data.size(); ++d )
@@ -802,7 +793,7 @@ private:
       float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+to_end, neu1e, 0.0) );
       if ( e_dist > data.e_dist_lim) // требуем, чтобы стягиваемые вектора хоть немного, но различались, т.к. слова-то всё ж разные
       {
-        std::transform(neu1e, neu1e+to_end, neu1e, [this, data](float a) -> float {return a * alpha * data.weight;});
+        std::transform(neu1e, neu1e+to_end, neu1e, [alpha=alpha, data](float a) -> float {return a * alpha * data.weight;});
         std::transform(vector2Ptr, vector2Ptr+to_end, neu1e, vector2Ptr, std::plus<float>());
         if ( data.algo == evaPairwise)
           std::transform(vector1Ptr, vector1Ptr+to_end, neu1e, vector1Ptr, std::minus<float>());
