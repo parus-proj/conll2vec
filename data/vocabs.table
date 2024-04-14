@@ -15,9 +15,9 @@
 60 79 0 90 deriv.vocab 1 1000 1 0.05
 0 14 4 4 imperf_perf_verbs.vocab 1 10 2 0.001
 0 14 5 90 imperf_perf_verbs.vocab 1 1000 1 0.001
-0 9 10 80 verb_participle.vocab 0 1000 1 0.005
-0 9 10 80 verb_noun.vocab 0 1000 1 0.01
-0 19 10 50 diminutives.vocab 0 1000 1 0.005
-0 9 50 90 adj_adv.vocab 0 1000 1 0.1
+0 9 0 95 verb_participle.vocab 0 1000 1 0.005
+0 9 0 95 verb_noun.vocab 0 1000 1 0.01
+0 19 1 50 diminutives.vocab 0 1000 1 0.005
+0 9 0 95 adj_adv.vocab 0 1000 1 0.1
 #40 59 0 70 r.dep 2 1 1 0.001
 #80 99 0 70 r.assoc 2 1 1 0.001
