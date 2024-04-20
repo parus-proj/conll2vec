@@ -29,11 +29,6 @@
 #define MAX_EXP 15
 
 
-// функция знака
-template <typename T> int sgn(T val) {
-    return (T(0) < val) - (val < T(0));
-}
-
 
 // forward decls
 class ThreadsInWorkCounterGuard;
@@ -765,15 +760,18 @@ private:
         if (d == 0)
         {
           // здесь g>0
-          std::transform(targetAssocPtr, targetAssocEndPtr, ctxVectorPtr, targetAssocPtr, [g](float a, float b) -> float {return a + g*(b-a);});
+          // если измерение-признак у target и ctx однознаковое, то признак у target усиливается, иначе ослабевает
+          // такое условие увеличивает f и уменьшает ошибку (label - f)
+          std::transform(targetAssocPtr, targetAssocEndPtr, ctxVectorPtr, targetAssocPtr, [g](float a, float b) -> float {return a + g*b;});
           // ограничение степени выраженности признака
           std::transform(targetAssocPtr, targetAssocEndPtr, targetAssocPtr, Trainer::space_threshold_functor);
         }
         else
         {
           // здесь g<0
-          float g_norm = -g / negative_a;
-          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetAssocPtr, ctxVectorPtr, [g_norm](float a, float b) -> float {return a + g_norm*sgn(a-b);}); // сила отталкивания со временем будет снижаться
+          // если измерение-признак у ctx и target разнознаковые, то признак у ctx усиливается, иначе ослабевает
+          // такое условие уменьшает f и уменьшает модуль ошибки (label - f)
+          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetAssocPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
           // ограничение степени выраженности признака
           std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, ctxVectorPtr, Trainer::space_threshold_functor);
         }
