@@ -817,13 +817,14 @@ private:
       // здесь g>0
       // если измерение-признак у word1 и word2 однознаковое, то признак у word1 и word2 усиливается, иначе ослабевает
       // такое условие увеличивает f и уменьшает ошибку (1.0 - f)
-      std::transform(vector2Ptr, vector2Ptr+to_end, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return a + g*b;});
+      // кроме того, усиливать будем только более слабый признак (если же признак и так сильный, незачем его усиливать)
+      std::transform(vector2Ptr, vector2Ptr+to_end, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return ((fabs(a)<fabs(b)) ? a + g*b : a);});
       if ( data.algo == evaPairwise)
-        std::transform(vector1Ptr, vector1Ptr+to_end, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return a + g*b;});
-      // ограничение степени выраженности признака
-      std::transform(vector2Ptr, vector2Ptr+to_end, vector2Ptr, Trainer::space_threshold_functor);
-      if ( data.algo == evaPairwise)
-        std::transform(vector1Ptr, vector1Ptr+to_end, vector1Ptr, Trainer::space_threshold_functor);
+        std::transform(vector1Ptr, vector1Ptr+to_end, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return ((fabs(a)<fabs(b)) ? a + g*b : a);});
+//      // ограничение степени выраженности признака
+//      std::transform(vector2Ptr, vector2Ptr+to_end, vector2Ptr, Trainer::space_threshold_functor);
+//      if ( data.algo == evaPairwise)
+//        std::transform(vector1Ptr, vector1Ptr+to_end, vector1Ptr, Trainer::space_threshold_functor);
     } // for all ext vocabs data
 
   } // method-end
