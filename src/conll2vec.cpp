@@ -148,7 +148,7 @@ int main(int argc, char **argv)
     if (needLoadAssocCtxVocab)
     {
       v_assoc_ctx = std::make_shared<OriginalWord2VecVocabulary>();
-      v_assoc_ctx->init_stoplist("stopwords.assoc");
+      v_assoc_ctx->init_stoplist("./data/stopwords.assoc");
       if ( !v_assoc_ctx->load( cmdLineParams.getAsString("-vocab_l") ) )
         return -1;
     }
@@ -308,7 +308,7 @@ int main(int argc, char **argv)
 //    if (needLoadAssocCtxVocab)
 //    {
 //      v_assoc_ctx = std::make_shared<OriginalWord2VecVocabulary>();
-//      v_assoc_ctx->init_stoplist("stopwords.assoc");
+//      v_assoc_ctx->init_stoplist("./data/stopwords.assoc");
 //      if ( !v_assoc_ctx->load( cmdLineParams.getAsString("-vocab_t") ) )
 //        return -1;
 //    }

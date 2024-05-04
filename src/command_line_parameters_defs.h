@@ -15,9 +15,9 @@ public:
         {"-train",        {"Training data <file>.conll", std::nullopt, std::nullopt}},
         {"-vocab_l",      {"Lemmas vocabulary <file>", std::nullopt, std::nullopt}},
         {"-vocab_t",      {"Tokens vocabulary <file>", std::nullopt, std::nullopt}},
-        {"-tl_map",       {"Tokens-lemmas mapping <file>", "tl.map", std::nullopt}},
+        {"-tl_map",       {"Tokens-lemmas mapping <file>", "token2lemmas.map", std::nullopt}},
         {"-vocab_o",      {"OOV items vocabulary <file>", std::nullopt, std::nullopt}},
-        {"-vocab_e",      {"Expressions vocabulary <file>", "mwe.list", std::nullopt}},
+        {"-vocab_e",      {"Expressions vocabulary <file>", "./data/mwe.list", std::nullopt}},
         {"-vocab_d",      {"Dependency contexts vocabulary <file>", std::nullopt, std::nullopt}},
         {"-backup",       {"Save neural network weights to <file>", std::nullopt, std::nullopt}},
         {"-restore",      {"Restore neural network weights from <file>", std::nullopt, std::nullopt}},
@@ -54,7 +54,7 @@ public:
         {"-rr_vocab",     {"Reliable rel-pairs vocabulary <file>", std::nullopt, std::nullopt}},
         {"-rr_min_sim",   {"Reliable rel-pairs minimal similarity", "0.6", std::nullopt}},
         {"-ca_vocab",     {"Safe lemmas vocabulary <file>", std::nullopt, std::nullopt}},
-        {"-vocabs_tab",   {"External vocabs table <file>", "vocabs.table", std::nullopt}}
+        {"-vocabs_tab",   {"External vocabs table <file>", "./data/vocabs.table", std::nullopt}}
 
     };
   }
