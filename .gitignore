@@ -1,0 +1,10 @@
+backup.data
+conll2vec
+ctx_dep.vocab
+main.vocab
+parus.conll
+parus.conll.bz2
+parus_first_10m_lines.conll
+token2lemmas.map
+tokens.vocab
+vectors.c2v
