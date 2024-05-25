@@ -2,6 +2,7 @@ backup.data
 conll2vec
 ctx_dep.vocab
 main.vocab
+oov.vocab
 parus.conll
 parus.conll.bz2
 parus_first_10m_lines.conll

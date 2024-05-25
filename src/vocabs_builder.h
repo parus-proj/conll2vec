@@ -17,6 +17,7 @@
 #include <fstream>
 #include <thread>
 #include <atomic>
+#include <mutex>
 #include <chrono>
 
 // Класс, хранящий данные по чтению обучающих данных и выводящий прогресс-сообщения
@@ -384,7 +385,7 @@ private:
 //    if (!isListLoaded)
 //    {
 //      isListLoaded = true;
-//      std::ifstream ifs("stopwords.lems");
+//      std::ifstream ifs("./data/stopwords.lems");
 //      std::string line;
 //      while ( std::getline(ifs, line).good() )
 //        stoplist.insert(line);
@@ -407,7 +408,7 @@ private:
     if (!isListLoaded)
     {
       isListLoaded = true;
-      std::ifstream ifs("stopwords.toks");
+      std::ifstream ifs("./data/stopwords.toks");
       std::string line;
       while ( std::getline(ifs, line).good() )
         stoplist.insert(line);

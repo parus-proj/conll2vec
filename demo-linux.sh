@@ -16,13 +16,13 @@ make
 
 echo ""
 echo "TRAINSET EXTRACTION AND FITTING"
-gzip --decompress --stdout ./data/parus_first_10m_lines.conll.zip | ./conll2vec -task fit -fit_input stdin -train $TRAIN_FN
+gzip --decompress --stdout ./data/parus_first_10m_lines.conll.zip | ./conll2vec -task fit -fit_input stdin -train $TRAIN_FN -exclude_nums 1
 
 echo ""
 echo "BUILDING VOCABULARIES"
 ./conll2vec -task vocab -train $TRAIN_FN \
             -vocab_l $VOC_M -vocab_t $VOC_T -tl_map $TLM -vocab_d $VOC_D -col_ctx_d $COL_CTX_D -use_deprel $USE_DEPREL \
-            -min-count_m 70 -min-count_t 50 -min-count_d 20 -exclude_nums 1
+            -min-count_l 70 -min-count_t 50 -min-count_d 20
 
 echo ""
 echo "TRAINING EMBEDDINGS -- MAIN"
