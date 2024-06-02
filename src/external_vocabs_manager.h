@@ -108,6 +108,7 @@ public:
         case evaFirstWithOther: first_with_other_helper(v, items, wordsVocabulary, v.vocab_filename); break;
         case evaPairwise: pairwise_helper(v, items, wordsVocabulary, v.vocab_filename); break;
         case evaFirstWeighted: first_weighted_helper(v, items, wordsVocabulary, v.vocab_filename); break;
+        case evaPairwiseEuclidean: pairwise_helper(v, items, wordsVocabulary, v.vocab_filename); break;
         }
       }
       print_stat_dbg(v);

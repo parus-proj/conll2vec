@@ -3,7 +3,7 @@
 # - [DIM_FROM, DIM_TO] -- vector space dimensions (int)
 # - [FRAC_FROM, FRAC_TO] -- training process stage (int)
 # - FILE -- vocabulary (string)
-# - ALGO -- algorith ( 0 -- first with others, 1 -- pairwise ) (int)
+# - ALGO -- algorith ( 0 -- first with others, 1 -- pairwise, 3 -- euclidean pairwise ) (int)
 # - RATE -- apply every RATE learning example (int)
 # - PACK -- apply PACK records at ones (int)
 # - EDIS_LIM -- don't use algo if distance in space < limit
@@ -12,6 +12,7 @@
 0 59 5 60 ./data/rc_hierarchical.vocab 0 1000 1 0.18
 0 59 5 90 ./data/rc_light.vocab 1 1000 1 0.12
 0 59 5 90 ./data/rc_symmetrical.vocab 1 2000 1 0.07
+0 59 90 97 ./data/eq.vocab 3 3000 1 0.03
 60 99 0 90 ./data/deriv.vocab 1 250 1 0.15
 0 14 4 4 ./data/imperf_perf_verbs.vocab 1 10 1 0.005
 0 14 5 95 ./data/imperf_perf_verbs.vocab 1 500 1 0.005

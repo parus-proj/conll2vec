@@ -703,6 +703,7 @@ private:
       // ограничение степени выраженности признака
       std::transform(targetDepPtr, targetDepEndPtr, targetDepPtr, Trainer::space_threshold_functor);
     } // for all dep contexts
+
 //    // DBG-start
 //    if (le.word == dbg_id1 || le.word == dbg_id2 || le.word == dbg_id3)
 //    {
@@ -780,26 +781,6 @@ private:
     } // for all assoc contexts
 
 
-//    // обработка данных от внешних словарей
-//    for ( size_t d = 0; d < le.ext_vocab_data.size(); ++d )
-//    {
-//      const auto& data = le.ext_vocab_data[d];
-//
-//      float *vector1Ptr = syn0 + data.word1 * layer1_size + data.dims_from;
-//      float *vector2Ptr = syn0 + data.word2 * layer1_size + data.dims_from;
-//      size_t to_end = data.dims_to - data.dims_from + 1;
-//      std::transform(vector1Ptr, vector1Ptr+to_end, vector2Ptr, neu1e, std::minus<float>());
-//      float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+to_end, neu1e, 0.0) );
-//      if ( e_dist > data.e_dist_lim) // требуем, чтобы стягиваемые вектора хоть немного, но различались, т.к. слова-то всё ж разные
-//      {
-//        std::transform(neu1e, neu1e+to_end, neu1e, [alpha=alpha, data](float a) -> float {return a * alpha * data.weight;});
-//        std::transform(vector2Ptr, vector2Ptr+to_end, neu1e, vector2Ptr, std::plus<float>());
-//        if ( data.algo == evaPairwise)
-//          std::transform(vector1Ptr, vector1Ptr+to_end, neu1e, vector1Ptr, std::minus<float>());
-//      }
-//    } // for all ext vocabs data
-
-
     // обработка данных от внешних словарей
     for ( size_t d = 0; d < le.ext_vocab_data.size(); ++d )
     {
@@ -808,27 +789,46 @@ private:
       float *vector1Ptr = syn0 + data.word1 * layer1_size + data.dims_from;
       float *vector2Ptr = syn0 + data.word2 * layer1_size + data.dims_from;
       size_t to_end = data.dims_to - data.dims_from + 1;
+      switch ( data.algo )
+      {
+        case evaFirstWithOther:
+        case evaPairwise:          attract_vecs_s(vector1Ptr, vector2Ptr, to_end, data); break;
+        case evaPairwiseEuclidean: attract_vecs_e(vector1Ptr, vector2Ptr, to_end, data, neu1e); break;
+      }
+      
 
-      float f = std::inner_product(vector1Ptr, vector1Ptr+to_end, vector2Ptr, 0.0);
-      if ( std::isnan(f) ) continue;
-      f = sigmoid(f);
-      if (f == 1.0) continue; // уже очень похожи
-      g = 1.0 - f; // величина различия
-      if ( g < data.e_dist_lim ) continue; // требуем, чтобы стягиваемые вектора хоть немного, но различались, т.к. слова-то всё ж разные
-      // здесь g>0
-      // если измерение-признак у word1 и word2 однознаковое, то признак у word1 и word2 усиливается, иначе ослабевает
-      // такое условие увеличивает f и уменьшает ошибку (1.0 - f)
-      // кроме того, усиливать будем только более слабый признак (если же признак и так сильный, незачем его усиливать)
-      std::transform(vector2Ptr, vector2Ptr+to_end, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return ((fabs(a)<fabs(b)) ? a + g*b : a);});
-      if ( data.algo == evaPairwise)
-        std::transform(vector1Ptr, vector1Ptr+to_end, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return ((fabs(a)<fabs(b)) ? a + g*b : a);});
-//      // ограничение степени выраженности признака
-//      std::transform(vector2Ptr, vector2Ptr+to_end, vector2Ptr, Trainer::space_threshold_functor);
-//      if ( data.algo == evaPairwise)
-//        std::transform(vector1Ptr, vector1Ptr+to_end, vector1Ptr, Trainer::space_threshold_functor);
     } // for all ext vocabs data
 
   } // method-end
+
+  // стягивание векторов по "знаковой модели"
+  inline void attract_vecs_s(float* vector1Ptr, float* vector2Ptr, size_t to_end, const ExtVocabExample& data)
+  {
+    float f = std::inner_product(vector1Ptr, vector1Ptr+to_end, vector2Ptr, 0.0);
+    if ( std::isnan(f) ) return;
+    f = sigmoid(f);
+    if (f == 1.0) return; // уже очень похожи
+    float g = 1.0 - f; // величина различия
+    if ( g < data.e_dist_lim ) return; // требуем, чтобы стягиваемые вектора хоть немного, но различались, т.к. слова-то всё ж разные
+    // здесь g>0
+    // если измерение-признак у word1 и word2 однознаковое, то признак у word1 и word2 усиливается, иначе ослабевает
+    // такое условие увеличивает f и уменьшает ошибку (1.0 - f)
+    // кроме того, усиливать будем только более слабый признак (если же признак и так сильный, незачем его усиливать)
+    std::transform(vector2Ptr, vector2Ptr+to_end, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return ((fabs(a)<fabs(b)) ? a + g*b : a);});
+    if ( data.algo == evaPairwise)
+      std::transform(vector1Ptr, vector1Ptr+to_end, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return ((fabs(a)<fabs(b)) ? a + g*b : a);});
+  }
+
+  // стягивание векторов по "евклидовой модели"
+  inline void attract_vecs_e(float* vector1Ptr, float* vector2Ptr, size_t to_end, const ExtVocabExample& data, float* neu1e)
+  {
+    std::transform(vector1Ptr, vector1Ptr+to_end, vector2Ptr, neu1e, std::minus<float>());
+    float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+to_end, neu1e, 0.0) );
+    if ( e_dist < data.e_dist_lim) return; // требуем, чтобы стягиваемые вектора хоть немного, но различались, т.к. слова-то всё ж разные
+    std::transform(neu1e, neu1e+to_end, neu1e, [alpha=alpha](float a) -> float {return a * alpha;});
+    std::transform(vector2Ptr, vector2Ptr+to_end, neu1e, vector2Ptr, std::plus<float>());
+    std::transform(vector1Ptr, vector1Ptr+to_end, neu1e, vector1Ptr, std::minus<float>());
+  }
 
   // вычисление значения сигмоиды
   inline float sigmoid(float f) const

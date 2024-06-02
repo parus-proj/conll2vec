@@ -11,7 +11,8 @@ enum ExtVocabAlgo
 {
   evaFirstWithOther,    // стягивание к первому слову словаря
   evaPairwise,          // попарное притяжение
-  evaFirstWeighted      // стягиваие к первому, сила связи имеет вес
+  evaFirstWeighted,     // стягиваие к первому, сила связи имеет вес
+  evaPairwiseEuclidean  // попарное притяжение (евклидова мера близости)
 };
 
 
