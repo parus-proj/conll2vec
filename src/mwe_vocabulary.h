@@ -23,6 +23,7 @@ public:
   std::shared_ptr<TreeNode> head;                     // синтаксический предок узла
   bool out_of_match;                                  // если true, то узел служит только для целей распознавания словосочетания и не подлежит замещению
   std::optional<std::string> tok_match;               // сопоставлять по полю токена (а не только леммы)
+  std::optional<std::string> pos_match;               // сопоставлять ли по части речи
   std::string word;
   TreeNode(const std::string& word_str, std::shared_ptr<TreeNode> parent_ptr)
   : parent_tmp(parent_ptr)
@@ -66,6 +67,8 @@ public:
     std::cout << node->word;
     if (node->tok_match)
       std::cout << "(" + node->tok_match.value() + ")";
+    if (node->pos_match)
+      std::cout << "(" + node->pos_match.value() + ")";
     for (auto ch : node->children)
       printNode(ch);
     std::cout << (node->out_of_match ? "]" : "}");
@@ -419,8 +422,15 @@ private:
         {
           if ( tok.length() > 0 && tok[0] == 't' )
             currNode->tok_match = tok.substr(1);
+          else if (tok == "noun" || tok == "adj")
+          {
+            if ( !currNode->pos_match)
+              currNode->pos_match = tok;
+            else
+              std::cerr << "mwe: invalid constraint: " << str << std::endl;
+          }
           else
-            std::cerr << "mwe: invalid constrain: " << str << std::endl;
+            std::cerr << "mwe: invalid constraint: " << str << std::endl;
         }
         else
         {
@@ -432,6 +442,14 @@ private:
     } // while str isn't finished
     return holder->children[0];
   } // method-end
+  // проверка ограничения на часть речи
+  bool pos_match_ok( const std::string& constraint, const std::string& features_value) const
+  {
+    if ( features_value.length() < 1 ) return false;
+    if ( constraint == "noun" && features_value[0] == 'N') return true; // можно сравнивать литеры (гарантировано однобайтные строки)
+    if ( constraint == "adj" && features_value[0] == 'A') return true;
+    return false;
+  }
   // проверка вхождения словосочетания в заданную позицию предложения
   // при нахождении словосочетания возвращает множество индексов токенов, составляющих часть фразы, подлежащей замене на дескриптор
   bool compare_trees( const std::vector< std::vector<std::string> >& sentence_matrix,
@@ -445,6 +463,9 @@ private:
       // у "ключевого слова" лемма уже сопоставлена (на стадии поиска фраз-кандидатов), но ограничения на токен еще не проверены
       // проверяем их в первую очередь, если они есть
       if ( t->tok_match && sentence_matrix[match_point][Conll::FORM] != t->tok_match.value() )
+        continue;
+      // также проверяем ограничения не часть речи
+      if ( t->pos_match && !pos_match_ok(t->pos_match.value(), sentence_matrix[match_point][Conll::FEATURES]) )
         continue;
       bool succ = compare_trees_helper(sentence_matrix, deps, match_point, t, match_result);
       if (succ) return true;
@@ -492,7 +513,8 @@ private:
       {
         int syn_head = std::stoi(sentence_matrix[actual_token_no][Conll::HEAD]) - 1;
         if ( syn_head < 0 || sentence_matrix[syn_head][Conll::LEMMA] != tree_node->word
-             || (tree_node->tok_match && sentence_matrix[syn_head][Conll::FORM] != tree_node->tok_match.value()) )
+             || (tree_node->tok_match && sentence_matrix[syn_head][Conll::FORM] != tree_node->tok_match.value())
+             || (tree_node->pos_match && !pos_match_ok(tree_node->pos_match.value(), sentence_matrix[syn_head][Conll::FEATURES])) )
         {
           match_result.clear();
           return false;
@@ -508,7 +530,8 @@ private:
         bool found = false;
         for (auto d : deps_it->second)
           if ( sentence_matrix[d][Conll::LEMMA] == tree_node->word
-               && (!tree_node->tok_match || sentence_matrix[d][Conll::FORM] == tree_node->tok_match.value()) ) // нашли зависимое
+               && (!tree_node->tok_match || sentence_matrix[d][Conll::FORM] == tree_node->tok_match.value())
+               && (!tree_node->pos_match || pos_match_ok(tree_node->pos_match.value(), sentence_matrix[d][Conll::FEATURES])) ) // нашли зависимое
           {
             add_match_query(d, tree_node);
             if ( !tree_node->out_of_match )

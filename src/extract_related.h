@@ -204,17 +204,36 @@ private:
         auto dep_sim = sim_estimator->get_sim(SimilarityEstimator::cdDepOnly, i, j);
         if (dep_sim && dep_sim.value() > min_sim)
           try_get(best_dep, dep_sim.value(), vm->vocab[j]);
-        auto assoc_sim = sim_estimator->get_sim(SimilarityEstimator::cdAssocOnly, i, j);
-        if (assoc_sim && assoc_sim.value() > min_sim)
-          try_get(best_assoc, assoc_sim.value(), vm->vocab[j]);
+        // auto assoc_sim = sim_estimator->get_sim(SimilarityEstimator::cdAssocOnly, i, j);
+        // if (assoc_sim && assoc_sim.value() > min_sim)
+        //   try_get(best_assoc, assoc_sim.value(), vm->vocab[j]);
       }
+      best_dep = reorder_deps_with_assoc(vm->vocab[i], best_dep);
       if ( !best_dep.empty() )
         save(dep_ofs, to_str(vm->vocab[i], best_dep));
-      if ( !best_assoc.empty() )
-        save(assoc_ofs, to_str(vm->vocab[i], best_assoc));
+      // if ( !best_assoc.empty() )
+      //   save(assoc_ofs, to_str(vm->vocab[i], best_assoc));
     }
 
-  }
+  } // method-end
+
+  std::multimap<float, std::string, std::greater<float>> reorder_deps_with_assoc(const std::string& word, const std::multimap<float, std::string, std::greater<float>>& best_dep)
+  {
+    std::multimap<float, std::string, std::greater<float>> result, assoc_sorted;
+    for (const auto& d : best_dep)
+    {
+      const float sim_assoc = sim_estimator->get_sim(SimilarityEstimator::cdAssocOnly, word, d.second).value();
+      assoc_sorted.insert( std::make_pair(sim_assoc, d.second) );
+    }
+    std::map<std::string, size_t> assoc_rank;
+    size_t rank = 1;
+    for (const auto& a : assoc_sorted)
+      assoc_rank[a.second] = rank++;
+    rank = 1;
+    for (const auto& d : best_dep)
+      result.insert( std::make_pair( 1.0/(rank++ + assoc_rank[d.second])+0.5, d.second ) );
+    return result;
+  } // method-end
 
   void read_to_merge(std::map<std::string, std::map<std::string, std::vector<float>>>& data, const std::string& fn)
   {
