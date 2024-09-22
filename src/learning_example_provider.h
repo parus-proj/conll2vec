@@ -337,15 +337,15 @@ public:
     return gcLast;
   }
   // изменение subsampling-коэффициентов в динамике
-  void update_subsampling_rates(float w_mul = 0.8, float d_mul = 0.8, float a_mul = 0.8)
+  void update_subsampling_rates(float w_mul = 0.8 /*, float d_mul = 0.8, float a_mul = 0.8*/)
   {
-    sample_w *= w_mul; sample_d *= d_mul; sample_a *= a_mul;
+    sample_w *= w_mul; /*sample_d *= d_mul; sample_a *= a_mul;*/
     if ( words_vocabulary )
       words_vocabulary->sampling_estimation(sample_w);
-    if ( dep_ctx_vocabulary )
-      dep_ctx_vocabulary->sampling_estimation(sample_d);
-    if ( assoc_ctx_vocabulary )
-      assoc_ctx_vocabulary->sampling_estimation(sample_a);
+    // if ( dep_ctx_vocabulary )
+    //   dep_ctx_vocabulary->sampling_estimation(sample_d);
+    // if ( assoc_ctx_vocabulary )
+    //   assoc_ctx_vocabulary->sampling_estimation(sample_a);
   }
 private:
   // количество потоков управления (thread), параллельно работающих с поставщиком обучающих примеров

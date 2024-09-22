@@ -501,11 +501,12 @@ private:
       std::cout << "  " << r.first << " (" << r.second << ")";
     std::cout << std::endl;
     // выводим гистограмму худшего измерения
-    std::map<float, size_t> bar;
+    const float FEATURE_VALUE_THRESHOLD = 3.0;  // как в trainer.h
+      std::map<float, size_t> bar;
     const size_t resolution = 100;
-    const float step = 1.0 / resolution;
+    const float step = FEATURE_VALUE_THRESHOLD / resolution;
     for (size_t i = 0; i < (2*resolution); ++i)
-      bar[-1.0 + i*step] = 0;
+      bar[-FEATURE_VALUE_THRESHOLD + i*step] = 0;
     size_t target_dimension = maxShifts.rbegin()->second;
     for (size_t w = 0; w < vm->words_count; ++w)
     {
