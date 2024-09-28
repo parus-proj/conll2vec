@@ -25,7 +25,7 @@ struct ThreadEnvironment
   int position_in_sentence;                            // текущая позиция в предложении
   unsigned long long next_random;                      // поле для вычисления случайных величин
   unsigned long long words_count;                      // количество прочитанных словарных слов
-  std::vector< std::vector<std::string> > sentence_matrix; // conll-матрица для предложения
+  ConllReader::SentenceMatrix sentence_matrix;         // conll-матрица для предложения
   ThreadEnvironment()
   : cr(nullptr)
   , position_in_sentence(-1)
@@ -113,6 +113,7 @@ public:
     t_environment.cr->fin();
     return true;
   } // method-end
+
   // получение очередного обучающего примера
   std::optional<LearningExample> get(size_t threadIndex, float fraction, bool gramm = false)
   {
@@ -149,6 +150,29 @@ public:
       t_environment.sentence.clear();
     return result;
   } // method-end
+
+  // для каждого слова в sentence_matrix получение индексов (в той же sentence_matrix) синтаксически связанных слов
+  std::vector<std::set<size_t>> get_syntactically_related(const ConllReader::SentenceMatrix& sentence_matrix) const
+  {
+    auto sm_size = sentence_matrix.size();
+    std::vector<std::set<size_t>> result( sm_size );
+    for (size_t i = 0; i < sm_size; ++i)
+    {
+      auto& token = sentence_matrix[i];
+      if ( token[Conll::DEPREL] == "_" ) continue;
+      size_t parent_token_no = 0;
+      try {
+        parent_token_no = std::stoi(token[Conll::HEAD]);
+      } catch (...) {
+        parent_token_no = 0; // если конвертирование неудачно, считаем, что нет родителя
+      }
+      if ( parent_token_no < 1 || parent_token_no > sm_size ) continue;
+      result[ parent_token_no - 1 ].insert(i);
+      result[ i ].insert(parent_token_no - 1);
+    }
+    return result;
+  }
+
   // извлечение обучающих примеров из предложения (вспомогат. процедура для get)
   void get_from_sentence__usual(ThreadEnvironment& t_environment, float fraction)
   {
@@ -163,8 +187,9 @@ public:
     auto sm_size = sentence_matrix.size();
     const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
     // конвертируем conll-таблицу в более удобные структуры
+    const auto synt_related = get_syntactically_related(sentence_matrix);
     std::vector< std::vector<size_t> > deps( sm_size );      // хранилище синатксических контекстов для каждого токена
-    std::set<size_t> associations;                           // хранилище ассоциативных контекстов для всего предложения
+    std::vector< std::vector<size_t> > assocs( sm_size );    // хранилище ассоциативных контекстов для каждого токена
     if ( dep_ctx_vocabulary )
     {
       for (size_t i = 0; i < sm_size; ++i)
@@ -208,8 +233,10 @@ public:
         }
       }
     }
-    if ( assoc_ctx_vocabulary )
+    if ( assoc_ctx_vocabulary && sm_size > 20 /* на коротких предложениях ассоциацию не учим вообще */)
     {
+      // первичная фильтрация (сабсэмплинг и несловарное)
+      std::vector<std::optional<size_t>> associations(sm_size);
       for (size_t i = 0; i < sm_size; ++i)
       {
         auto& token = sentence_matrix[i];
@@ -230,8 +257,32 @@ public:
         auto word_idx = words_vocabulary->word_to_idx(token[emb_column]);
         if ( word_idx == INVALID_IDX )
           continue;
-        associations.insert(word_idx);
+        associations[i] = word_idx;
       } // for all words in sentence
+      // формирование ассоциативных контекстов с фильтрацией синтаксически-связанных
+      for (size_t i = 0; i < sm_size; ++i)
+      {
+        if ( !associations[i] ) continue; // i-ое слово отфильтровано
+        for (size_t j = 0; j < sm_size; ++j)
+        {
+          if ( j == i ) continue; // сам себе не ассоциативен (бессмысленные вычисления)
+          if ( associations[j] && synt_related[i].find(j) == synt_related[i].end() ) // если j-ое слово не отфильтровано и не является синтаксически свяазнным в i-ым
+            assocs[i].push_back(associations[j].value());                              // то добавим его в ассоциации к i-ому
+        }
+      }
+// // DEBUG
+// for (size_t i = 0; i < sm_size; ++i) {
+//   std::cout << (i+1) << " " << sentence_matrix[i][Conll::FORM] << " / ";
+//   for (const auto& j : synt_related[i]) std::cout << (j+1) << " ";
+//   std::cout << "/ ";
+//   if ( associations[i] ) std::cout << associations[i].value(); else std::cout << "-";
+//   std::cout << " / ";
+//   for (const auto& j : assocs[i]) std::cout << j << " ";
+//   std::cout << std::endl;
+// }
+//   int uuuu = 0;
+//   std::cin >> uuuu;
+// // DEBUG
     }
     // конвертируем в структуру для итерирования (фильтрация несловарных)
     for (size_t i = 0; i < sm_size; ++i)
@@ -250,8 +301,7 @@ public:
         LearningExample le;
         le.word = word_idx;
         le.dep_context = deps[i];
-        std::copy_if( associations.begin(), associations.end(), std::back_inserter(le.assoc_context),
-                      [word_idx](const size_t a_idx) {return (a_idx != word_idx);} );                  // текущее слово не считаем себе ассоциативным
+        le.assoc_context = assocs[i];
 
         if (ext_vocabs_manager)
         {
@@ -262,6 +312,7 @@ public:
       }
     }
   } // method-end
+
   // извлечение из предложения обучающих примеров для построения грамматических векторов (вспомогат. процедура для get)
   void get_from_sentence__gram(ThreadEnvironment& t_environment)
   {

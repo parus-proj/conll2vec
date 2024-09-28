@@ -147,7 +147,7 @@ private:
   std::string filename;
   // файловый дескриптор
   FILE* f = nullptr;
-  // буфер для чтения
+  // буфер для чтения (10 Мб на thread)
   static constexpr size_t BUF_SIZE = 10 * 1024 * 1024;
   char* buf = nullptr;
   // текущая позиция в буфере для чтения
