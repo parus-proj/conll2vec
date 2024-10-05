@@ -5,7 +5,8 @@
 #include "original_word2vec_vocabulary.h"
 #include "external_vocabs_manager.h"
 #include "mwe_vocabulary.h"
-#include "learning_example_provider.h"
+#include "learning_example_provider_lemmas.h"
+#include "learning_example_provider_gramm.h"
 #include "trainer.h"
 #include "sim_estimator.h"
 #include "selftest_ru.h"
@@ -61,6 +62,7 @@ int main(int argc, char **argv)
               << "  -task punct       -- add punctuation to model" << std::endl
               << "  -task toks        -- add tokens to model" << std::endl
               << "  -task toks_train  -- train tokens model" << std::endl
+              << "  -task toks_coocc  -- train cooccurrence embeddings and append them to model" << std::endl
               << "  -task toks_gramm  -- train grammatical embeddings and append them to model" << std::endl
               << "  -task import      -- import from word2vec model" << std::endl
               << "  -task export      -- export to word2vec model" << std::endl
@@ -165,11 +167,10 @@ int main(int argc, char **argv)
 
     // создание поставщика обучающих примеров
     // к моменту создания "поставщика обучающих примеров" словарь должен быть загружен (в частности, используется cn_sum())
-    std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
-                                                                                                  v_main, false, v_dep_ctx, v_assoc_ctx, v_mwe,
-                                                                                                  2, false, 0,
-                                                                                                  ext_vocab_manager
-                                                                                                );
+    std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProviderLemmas > ( cmdLineParams,
+                                                                                                        v_main, false, v_dep_ctx, v_assoc_ctx, v_mwe,
+                                                                                                        2, ext_vocab_manager
+                                                                                                      );
 
     // создаем объект, организующий обучение
     Trainer trainer( lep, v_main, false, v_dep_ctx, v_assoc_ctx,
@@ -315,10 +316,10 @@ int main(int argc, char **argv)
 
     // создание поставщика обучающих примеров
     // к моменту создания "поставщика обучающих примеров" словарь должен быть загружен (в частности, используется cn_sum())
-    std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
-                                                                                                  v_toks, true, v_dep_ctx, v_assoc_ctx, nullptr,
-                                                                                                  1, false, 0
-                                                                                                );
+    std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProviderLemmas > ( cmdLineParams,
+                                                                                                        v_toks, true, v_dep_ctx, v_assoc_ctx, nullptr,
+                                                                                                        1
+                                                                                                      );
     // создаем объект, организующий обучение
     Trainer trainer( lep, v_toks, true, v_dep_ctx, v_assoc_ctx,
                      vm.dep_size, vm.assoc_size, 0,
@@ -349,6 +350,59 @@ int main(int argc, char **argv)
     return 0;
   } // if task == toks_train
 
+  // // если поставлена задача добавления в модель эмбеддингов сочетаемости
+  // if (task == "toks_coocc")
+  // {
+  //   // загрузим модель
+  //   VectorsModel vm;
+  //   if ( !vm.load(cmdLineParams.getAsString("-model")) )
+  //     return -1;
+  //   // загрузим словарь токенов
+  //   std::shared_ptr< OriginalWord2VecVocabulary > v_toks = std::make_shared<OriginalWord2VecVocabulary>();
+  //   v_toks->init_whitelist(vm);
+  //   if ( !v_toks->load( cmdLineParams.getAsString("-vocab_t") ) )
+  //     return -1;
+  //   // создание поставщика обучающих примеров
+  //   std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
+  //                                                                                                 v_toks, false, nullptr, nullptr, nullptr,
+  //                                                                                                 1, !oovv.empty(), cmdLineParams.getAsInt("-max_oov_sfx")
+  //                                                                                               );
+  //   // создаем объект, организующий обучение
+  //   Trainer trainer( lep, v_toks, false, nullptr, nullptr,
+  //                    vm.dep_size, vm.assoc_size, cmdLineParams.getAsInt("-size_g"),
+  //                    cmdLineParams.getAsInt("-iter"),
+  //                    cmdLineParams.getAsFloat("-alpha"),
+  //                    cmdLineParams.getAsInt("-negative_d"),
+  //                    cmdLineParams.getAsInt("-negative_a"),
+  //                    cmdLineParams.getAsInt("-threads") );
+
+  //   // инициализация нейросети
+  //   trainer.create_and_init_gramm_net();
+
+  //   size_t threads_count = cmdLineParams.getAsInt("-threads");
+  //   // запускаем потоки, осуществляющие обучение
+  //   {
+  //     SimpleProfiler train_profiler;
+  //     std::vector<std::thread> threads_vec;
+  //     threads_vec.reserve(threads_count);
+  //     for (size_t i = 0; i < threads_count; ++i)
+  //       threads_vec.emplace_back(&Trainer::train_entry_point__gramm, &trainer, i);
+  //     // ждем завершения обучения
+  //     for (size_t i = 0; i < threads_count; ++i)
+  //       threads_vec[i].join();
+  //     std::cout << std::endl << "Training finished.";
+  //   }
+
+  //   // сохраняем вычисленные вектора в файл
+  //   {
+  //     SimpleProfiler saving_profiler;
+  //     trainer.saveGrammaticalEmbeddings( vm, cmdLineParams.getAsFloat("-g_ratio"), oovv, cmdLineParams.getAsString("-model") );
+  //     std::cout << "Embeddings saving finished.";
+  //   }
+  //   return 0;
+  // } // if task == toks_coocc
+
+
   // если поставлена задача добавления в модель грамматических эмбеддингов
   if (task == "toks_gramm")
   {
@@ -370,10 +424,9 @@ int main(int argc, char **argv)
         return -1;
     }
     // создание поставщика обучающих примеров
-    std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
-                                                                                                  v_toks, false, nullptr, nullptr, nullptr,
-                                                                                                  1, !oovv.empty(), cmdLineParams.getAsInt("-max_oov_sfx")
-                                                                                                );
+    std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProviderGramm > ( cmdLineParams,
+                                                                                                       v_toks, !oovv.empty(), cmdLineParams.getAsInt("-max_oov_sfx")
+                                                                                                     );
     // создаем объект, организующий обучение
     Trainer trainer( lep, v_toks, false, nullptr, nullptr,
                      vm.dep_size, vm.assoc_size, cmdLineParams.getAsInt("-size_g"),
@@ -408,6 +461,7 @@ int main(int argc, char **argv)
     }
     return 0;
   } // if task == toks_gramm
+
 
   // если поставлена задача балансировки модели (изменения весового соотношения dep и assoc частей)
   if (task == "balance")

@@ -166,7 +166,7 @@ public:
         syn0[a * size_gramm + b] = (((next_random & 0xFFFF) / (float)65536) - 0.5) / 100;
       }
 
-    size_t output_size = lep->getGrammemesVectorSize();
+    size_t output_size = std::dynamic_pointer_cast<LearningExampleProviderGramm>(lep)->getGrammemesVectorSize();
     ap = posix_memalign((void **)&syn1_assoc, 128, (long long)output_size * size_gramm * sizeof(float));
     if (syn1_assoc == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
     std::fill(syn1_assoc, syn1_assoc+output_size*size_gramm, 0.0);
@@ -233,7 +233,7 @@ public:
   void train_entry_point__gramm( size_t thread_idx )
   {
     // выделение памяти для хранения выхода нейросети и дельт нейронов
-    size_t output_size = lep->getGrammemesVectorSize();
+    size_t output_size = std::dynamic_pointer_cast<LearningExampleProviderGramm>(lep)->getGrammemesVectorSize();
     float *y = (float *)calloc(output_size, sizeof(float));
     float *eo = (float *)calloc(output_size, sizeof(float));
     float *eh = (float *)calloc(size_gramm, sizeof(float));
@@ -910,7 +910,7 @@ private:
   {
     ++upd_ss_cnt;
     std::cout << "Decrease subsampling" << std::endl;
-    lep->update_subsampling_rates(0.7 /*, 0.95, 0.95*/); // выполняем первым, т.к. InitUnigramTable зависит от уже вычисленных sample_probability в словарях
+    lep->update_subsampling_rates(0.5 /*, 0.95, 0.95*/); // выполняем первым, т.к. InitUnigramTable зависит от уже вычисленных sample_probability в словарях
     if (table_dep)
       free(table_dep);
     if ( dep_ctx_vocabulary )
