@@ -184,6 +184,18 @@ public:
     }
   } // method-end
 
+  // изменение subsampling-коэффициентов в динамике
+  virtual void update_subsampling_rates(float w_mul = 0.7 /* , float d_mul = 0.95, float a_mul = 0.95*/)
+  {
+    sample_w *= w_mul; /*sample_d *= d_mul; sample_a *= a_mul;*/
+    if ( words_vocabulary )
+      words_vocabulary->sampling_estimation(sample_w);
+    // if ( dep_ctx_vocabulary )
+    //   dep_ctx_vocabulary->sampling_estimation(sample_d);
+    // if ( assoc_ctx_vocabulary )
+    //   assoc_ctx_vocabulary->sampling_estimation(sample_a);
+  }
+
 
 private:
   // словари
@@ -196,8 +208,6 @@ private:
   size_t dep_column;
   // следует ли задействовать тип и направление синтаксической связи в определении синтаксического контекста
   bool use_deprel;
-  // порог для алгоритма сэмплирования (subsampling) -- для словаря векторной модели
-  float sample_w = 0;
   // порог для алгоритма сэмплирования (subsampling) -- для синтаксических контекстов
   float sample_d = 0;
   // порог для алгоритма сэмплирования (subsampling) -- для ассоциативных контекстов

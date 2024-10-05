@@ -133,18 +133,6 @@ public:
     return thread_environment[threadIndex].words_count;
   }
 
-  // изменение subsampling-коэффициентов в динамике
-  void update_subsampling_rates(float w_mul = 0.7 /*, float d_mul = 0.95, float a_mul = 0.95*/)
-  {
-    sample_w *= w_mul; /*sample_d *= d_mul; sample_a *= a_mul;*/
-    if ( words_vocabulary )
-      words_vocabulary->sampling_estimation(sample_w);
-    // if ( dep_ctx_vocabulary )
-    //   dep_ctx_vocabulary->sampling_estimation(sample_d);
-    // if ( assoc_ctx_vocabulary )
-    //   assoc_ctx_vocabulary->sampling_estimation(sample_a);
-  }
-
 protected:
   // основной словарь
   std::shared_ptr< OriginalWord2VecVocabulary > words_vocabulary;
