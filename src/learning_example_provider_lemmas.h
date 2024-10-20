@@ -104,7 +104,7 @@ public:
         }
       }
     }
-    if ( assoc_ctx_vocabulary && sm_size > 20 /* на коротких предложениях ассоциацию не учим вообще */)
+    if ( assoc_ctx_vocabulary && sm_size > 15 /* на коротких предложениях ассоциацию не учим вообще */)
     {
       // первичная фильтрация (сабсэмплинг и несловарное)
       std::vector<std::optional<size_t>> associations(sm_size);
@@ -137,23 +137,10 @@ public:
         for (size_t j = 0; j < sm_size; ++j)
         {
           if ( j == i ) continue; // сам себе не ассоциативен (бессмысленные вычисления)
-          if ( associations[j] && synt_related[i].find(j) == synt_related[i].end() ) // если j-ое слово не отфильтровано и не является синтаксически свяазнным с i-ым
-            assocs[i].push_back(associations[j].value());                              // то добавим его в ассоциации к i-ому
+          if ( associations[j] && ( fraction < 0.1 || synt_related[i].find(j) == synt_related[i].end()) ) // если j-ое слово не отфильтровано и не является синтаксически свяазнным с i-ым (чтобы не моделировать в ассоциациях совместную встречаемость)
+            assocs[i].push_back(associations[j].value());                                                 // то добавим его в ассоциации к i-ому
         }
       }
-// // DEBUG
-// for (size_t i = 0; i < sm_size; ++i) {
-//   std::cout << (i+1) << " " << sentence_matrix[i][Conll::FORM] << " / ";
-//   for (const auto& j : synt_related[i]) std::cout << (j+1) << " ";
-//   std::cout << "/ ";
-//   if ( associations[i] ) std::cout << associations[i].value(); else std::cout << "-";
-//   std::cout << " / ";
-//   for (const auto& j : assocs[i]) std::cout << j << " ";
-//   std::cout << std::endl;
-// }
-//   int uuuu = 0;
-//   std::cin >> uuuu;
-// // DEBUG
     }
     // конвертируем в структуру для итерирования (фильтрация несловарных)
     for (size_t i = 0; i < sm_size; ++i)
