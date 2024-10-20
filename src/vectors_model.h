@@ -20,16 +20,18 @@ public:
   // подпространства и их размерности
   size_t dep_size = 0;
   size_t assoc_size = 0;
+  size_t coocc_size = 0;
   size_t gramm_size = 0;
   // индексы смещений каждого из подпространств
   size_t dep_begin = 0, dep_end = 0;
   size_t assoc_begin = 0, assoc_end = 0;
+  size_t coocc_begin = 0, coocc_end = 0;
   size_t gramm_begin = 0, gramm_end = 0;
   // словарь модели (имеет место соответствие между порядком слов и порядком векторов)
   std::vector<std::string> vocab;
   // векторное пространство
   float* embeddings = nullptr;
-public:
+private:
   // индексы лексических единиц, не подлежащих сохранению (для упрощения логики фильтраций)
   std::set<size_t> do_not_save;
 public:
@@ -37,19 +39,24 @@ public:
   VectorsModel()
   {
   }
+
   // d-tor
   ~VectorsModel()
   {
     if (embeddings)
       free(embeddings);
+      embeddings = nullptr;
   }
+
   // очистка модели
   void clear()
   {
     words_count = 0;
     emb_size = 0;
-    dep_size = 0; assoc_size = 0; gramm_size = 0;
-    dep_begin = 0; dep_end = 0; assoc_begin = 0; assoc_end = 0; gramm_begin = 0; gramm_end = 0;
+    dep_size = 0;   dep_begin = 0;   dep_end = 0; 
+    assoc_size = 0; assoc_begin = 0; assoc_end = 0; 
+    coocc_size = 0; coocc_begin = 0; coocc_end = 0; 
+    gramm_size = 0; gramm_begin = 0; gramm_end = 0;
     vocab.clear();
     if (embeddings)
     {
@@ -58,19 +65,24 @@ public:
     }
     do_not_save.clear();
   } // method-end
+
   // инициалиация размерностей подпространств
-  void setup_subspaces(size_t dep_part, size_t assoc_part, size_t gramm_part)
+  void setup_subspaces(size_t dep_part, size_t assoc_part, size_t coocc_part, size_t gramm_part)
   {
     dep_size = dep_part;
     assoc_size = assoc_part;
+    coocc_size = coocc_part;
     gramm_size = gramm_part;
     dep_begin = 0;
     dep_end = dep_size;
     assoc_begin = dep_end;
     assoc_end = dep_size + assoc_size;
-    gramm_begin = assoc_end;
-    gramm_end = dep_size + assoc_size + gramm_size;
+    coocc_begin = assoc_end;
+    coocc_end = dep_size + assoc_size + coocc_size;
+    gramm_begin = coocc_end;
+    gramm_end = dep_size + assoc_size + coocc_size + gramm_size;
   }
+
   // функция загрузки и импорта
   // выделяет память под хранение векторной модели
   bool load( const std::string& model_fn, const std::string& fmt = "c2v", bool doNormalization = false )
@@ -89,8 +101,8 @@ public:
     ifs >> emb_size;
     if (fmt == "c2v")
     {
-      ifs >> dep_size >> assoc_size >> gramm_size;
-      setup_subspaces(dep_size, assoc_size, gramm_size);
+      ifs >> dep_size >> assoc_size >> coocc_size >> gramm_size;
+      setup_subspaces(dep_size, assoc_size, coocc_size, gramm_size);
     }
     std::getline(ifs,buf); // считываем конец строки
     // выделяем память для эмбеддингов
@@ -130,12 +142,13 @@ public:
     }
     return true;
   } // method-end
-  // функциясохранения и экспорта
+
+  // функция сохранения и экспорта
   void save( const std::string& model_fn, const std::string& fmt = "c2v" )
   {
     FILE *fo = fopen(model_fn.c_str(), "wb");
     if (fmt == "c2v")
-      fprintf(fo, "%lu %lu %lu %lu %lu\n", words_count-do_not_save.size(), emb_size, dep_size, assoc_size, gramm_size);
+      fprintf(fo, "%lu %lu %lu %lu %lu %lu\n", words_count-do_not_save.size(), emb_size, dep_size, assoc_size, coocc_size, gramm_size);
     else
       fprintf(fo, "%lu %lu\n", words_count-do_not_save.size(), emb_size);
     for (size_t a = 0; a < vocab.size(); ++a)
@@ -143,6 +156,7 @@ public:
         VectorsModel::write_embedding(fo, vocab[a], &embeddings[a * emb_size], emb_size, (fmt == "txt"));
     fclose(fo);
   } // method-end
+
   // поиск слова в словаре
   size_t get_word_idx(const std::string& word) const
   {
@@ -152,6 +166,7 @@ public:
         break;
     return widx;
   } // method-end
+
   // поиск слова в словаре (в неизменяемой! модели с построением индекса)
   size_t get_word_idx_fast(const std::string& word) const
   {
@@ -166,6 +181,7 @@ public:
     if (it == vmap.end()) return words_count;
     return it->second;
   } // method-end
+
   // слияние моделей
   bool merge(const VectorsModel& ext)
   {
@@ -196,6 +212,7 @@ public:
     std::copy(ext.embeddings, ext.embeddings + ext.words_count*ext.emb_size, embeddings+new_data_future_offset);
     return true;
   }
+
   // статический метод для порождения случайного вектора, близкого к заданному (память должна быть выделена заранее)
   static void make_embedding_as_neighbour( size_t emb_size, float* base_embedding, float* new_embedding, float distance_factor = 1.0 )
   {
@@ -206,23 +223,27 @@ public:
       *(new_embedding + d) = *offs + random_sign() * (*offs / 100 * distance_factor);
     }
   } // method-end
+
   // статический метод записи одного эмбеддинга в файл
   static void write_embedding( FILE* fo, const std::string& word, float* embedding, size_t emb_size, bool useTxtFmt = false )
   {
     write_embedding_slice( fo, word, embedding, 0, emb_size, useTxtFmt );
   } // method-end
+
   static void write_embedding_slice( FILE* fo, const std::string& word, float* embedding, size_t begin, size_t end, bool useTxtFmt = false )
   {
     write_embedding__start(fo, word, useTxtFmt);
     write_embedding__vec(fo, embedding, begin, end, useTxtFmt);
     write_embedding__fin(fo);
   } // method-end
+
   static void write_embedding__start( FILE* fo, const std::string& word, bool useTxtFmt = false )
   {
     fprintf(fo, "%s", word.c_str());
     if ( !useTxtFmt )
       fprintf(fo, " ");
   } // method-end
+
   static void write_embedding__vec( FILE* fo, float* embedding, size_t begin, size_t end, bool useTxtFmt = false )
   {
     for (size_t b = begin; b < end; ++b)
@@ -233,10 +254,12 @@ public:
         fwrite(&embedding[b], sizeof(float), 1, fo);
     }
   } // method-end
+
   static void write_embedding__fin( FILE* fo )
   {
     fprintf(fo, "\n");
   } // method-end
+
 private:
   void report_alloc_error() const
   {

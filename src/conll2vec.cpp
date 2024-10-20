@@ -6,6 +6,7 @@
 #include "external_vocabs_manager.h"
 #include "mwe_vocabulary.h"
 #include "learning_example_provider_lemmas.h"
+#include "learning_example_provider_coocc.h"
 #include "learning_example_provider_gramm.h"
 #include "trainer.h"
 #include "sim_estimator.h"
@@ -179,7 +180,7 @@ int main(int argc, char **argv)
     Trainer trainer( lep, v_main, false, v_dep_ctx, v_assoc_ctx,
                      cmdLineParams.getAsInt("-size_d"),
                      cmdLineParams.getAsInt("-size_a"),
-                     0,
+                     0, 0,
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
                      cmdLineParams.getAsInt("-negative_d"),
@@ -330,7 +331,7 @@ int main(int argc, char **argv)
                                                                                                       );
     // создаем объект, организующий обучение
     Trainer trainer( lep, v_toks, true, v_dep_ctx, v_assoc_ctx,
-                     vm.dep_size, vm.assoc_size, 0,
+                     vm.dep_size, vm.assoc_size, 0, 0,
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
                      cmdLineParams.getAsInt("-negative_d"),
@@ -359,57 +360,62 @@ int main(int argc, char **argv)
   } // if task == toks_train
 
   // -------------------------------------------------
-  // // если поставлена задача добавления в модель эмбеддингов сочетаемости
-  // if (task == "toks_coocc")
-  // {
-  //   // загрузим модель
-  //   VectorsModel vm;
-  //   if ( !vm.load(cmdLineParams.getAsString("-model")) )
-  //     return -1;
-  //   // загрузим словарь токенов
-  //   std::shared_ptr< OriginalWord2VecVocabulary > v_toks = std::make_shared<OriginalWord2VecVocabulary>();
-  //   v_toks->init_whitelist(vm);
-  //   if ( !v_toks->load( cmdLineParams.getAsString("-vocab_t") ) )
-  //     return -1;
-  //   // создание поставщика обучающих примеров
-  //   std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProvider > ( cmdLineParams,
-  //                                                                                                 v_toks, false, nullptr, nullptr, nullptr,
-  //                                                                                                 1, !oovv.empty(), cmdLineParams.getAsInt("-max_oov_sfx")
-  //                                                                                               );
-  //   // создаем объект, организующий обучение
-  //   Trainer trainer( lep, v_toks, false, nullptr, nullptr,
-  //                    vm.dep_size, vm.assoc_size, cmdLineParams.getAsInt("-size_g"),
-  //                    cmdLineParams.getAsInt("-iter"),
-  //                    cmdLineParams.getAsFloat("-alpha"),
-  //                    cmdLineParams.getAsInt("-negative_d"),
-  //                    cmdLineParams.getAsInt("-negative_a"),
-  //                    cmdLineParams.getAsInt("-threads") );
+  // если поставлена задача добавления в модель "эмбеддингов сочетаемости"
+  if (task == "toks_coocc")
+  {
+    // загрузим модель
+    VectorsModel vm;
+    if ( !vm.load(cmdLineParams.getAsString("-model")) )
+      return -1;
+    if ( vm.coocc_size != 0 || vm.gramm_size != 0 )
+    {
+      std::cerr << "-size_c & -size_g must be zero" << std::endl;
+      return -1;
+    }
+    // загрузим словарь токенов
+    std::shared_ptr< OriginalWord2VecVocabulary > v_toks = std::make_shared<OriginalWord2VecVocabulary>();
+    v_toks->init_whitelist(vm);
+    if ( !v_toks->load( cmdLineParams.getAsString("-vocab_t") ) )
+      return -1;
+    // проверим соответствие словарей модели и словаря
+    if ( !v_toks->check_aligned(vm) )
+      return -1;
+    // создание поставщика обучающих примеров
+    std::shared_ptr< LearningExampleProvider> lep = std::make_shared< LearningExampleProviderCoocc > ( cmdLineParams, v_toks );
+    // создаем объект, организующий обучение
+    Trainer trainer( lep, v_toks, false, nullptr, nullptr,
+                     vm.dep_size, vm.assoc_size, cmdLineParams.getAsInt("-size_c"), 0,
+                     cmdLineParams.getAsInt("-iter"),
+                     cmdLineParams.getAsFloat("-alpha"),
+                     cmdLineParams.getAsInt("-negative_d"),
+                     cmdLineParams.getAsInt("-negative_a"),
+                     cmdLineParams.getAsInt("-threads") );
 
-  //   // инициализация нейросети
-  //   trainer.create_and_init_gramm_net();
+    // инициализация нейросети
+    trainer.create_and_init_coocc_net();
 
-  //   size_t threads_count = cmdLineParams.getAsInt("-threads");
-  //   // запускаем потоки, осуществляющие обучение
-  //   {
-  //     SimpleProfiler train_profiler;
-  //     std::vector<std::thread> threads_vec;
-  //     threads_vec.reserve(threads_count);
-  //     for (size_t i = 0; i < threads_count; ++i)
-  //       threads_vec.emplace_back(&Trainer::train_entry_point__gramm, &trainer, i);
-  //     // ждем завершения обучения
-  //     for (size_t i = 0; i < threads_count; ++i)
-  //       threads_vec[i].join();
-  //     std::cout << std::endl << "Training finished.";
-  //   }
+    size_t threads_count = cmdLineParams.getAsInt("-threads");
+    // запускаем потоки, осуществляющие обучение
+    {
+      SimpleProfiler train_profiler;
+      std::vector<std::thread> threads_vec;
+      threads_vec.reserve(threads_count);
+      for (size_t i = 0; i < threads_count; ++i)
+        threads_vec.emplace_back(&Trainer::train_entry_point__coocc, &trainer, i);
+      // ждем завершения обучения
+      for (size_t i = 0; i < threads_count; ++i)
+        threads_vec[i].join();
+      std::cout << std::endl << "Training finished.";
+    }
 
-  //   // сохраняем вычисленные вектора в файл
-  //   {
-  //     SimpleProfiler saving_profiler;
-  //     trainer.saveGrammaticalEmbeddings( vm, cmdLineParams.getAsFloat("-g_ratio"), oovv, cmdLineParams.getAsString("-model") );
-  //     std::cout << "Embeddings saving finished.";
-  //   }
-  //   return 0;
-  // } // if task == toks_coocc
+    // сохраняем вычисленные вектора в файл
+    {
+      SimpleProfiler saving_profiler;
+      trainer.saveCooccurrenceEmbeddings( vm, cmdLineParams.getAsString("-model") );
+      std::cout << "Embeddings saving finished.";
+    }
+    return 0;
+  } // if task == toks_coocc
 
 
   // -------------------------------------------------
@@ -420,6 +426,11 @@ int main(int argc, char **argv)
     VectorsModel vm;
     if ( !vm.load(cmdLineParams.getAsString("-model")) )
       return -1;
+    if ( vm.gramm_size != 0 )
+    {
+      std::cerr << "-size_g must be zero" << std::endl;
+      return -1;
+    }
     // загрузим словарь токенов
     std::shared_ptr< OriginalWord2VecVocabulary > v_toks = std::make_shared<OriginalWord2VecVocabulary>();
     v_toks->init_whitelist(vm);
@@ -439,7 +450,7 @@ int main(int argc, char **argv)
                                                                                                      );
     // создаем объект, организующий обучение
     Trainer trainer( lep, v_toks, false, nullptr, nullptr,
-                     vm.dep_size, vm.assoc_size, cmdLineParams.getAsInt("-size_g"),
+                     vm.dep_size, vm.assoc_size, vm.coocc_size, cmdLineParams.getAsInt("-size_g"),
                      cmdLineParams.getAsInt("-iter"),
                      cmdLineParams.getAsFloat("-alpha"),
                      cmdLineParams.getAsInt("-negative_d"),

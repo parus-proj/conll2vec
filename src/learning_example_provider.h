@@ -140,7 +140,8 @@ protected:
   float sample_w = 0;
 
   // для каждого слова в sentence_matrix получение индексов (в той же sentence_matrix) синтаксически связанных слов
-  static std::vector<std::set<size_t>> get_syntactically_related(const ConllReader::SentenceMatrix& sentence_matrix)
+  typedef std::function<bool(const std::string& synt_rel_name, const std::string& child_features, const std::string& parent_features)> SyntRelFilter;
+  static std::vector<std::set<size_t>> get_syntactically_related(const ConllReader::SentenceMatrix& sentence_matrix, SyntRelFilter suitable_relation = nullptr)
   {
     auto sm_size = sentence_matrix.size();
     std::vector<std::set<size_t>> result( sm_size );
@@ -155,6 +156,7 @@ protected:
         parent_token_no = 0; // если конвертирование неудачно, считаем, что нет родителя
       }
       if ( parent_token_no < 1 || parent_token_no > sm_size ) continue;
+      if ( suitable_relation && !suitable_relation(token[Conll::DEPREL], token[Conll::FEATURES], sentence_matrix[parent_token_no - 1][Conll::FEATURES]) ) continue;
       result[ parent_token_no - 1 ].insert(i);
       result[ i ].insert(parent_token_no - 1);
     }

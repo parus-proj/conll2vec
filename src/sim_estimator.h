@@ -26,8 +26,12 @@ public:
     cdAll,
     cdDepOnly,
     cdAssocOnly,
-    cdGrammOnly
+    cdCooccOnly,
+    cdGrammOnly,
+    cdDepAssoc,
+    cdAssocCoocc
   };
+
 public:
   SimilarityEstimator(float assoc_ratio)
   : cmp_dims(cdAll)
@@ -35,10 +39,12 @@ public:
   , a_ratio_sqr(assoc_ratio*assoc_ratio)
   {
   }
+
   bool load_model(const std::string& model_fn)
   {
     return vm.load(model_fn, "c2v", false);
   } // method-end
+
   void run()
   {
     #ifdef _MSC_VER
@@ -51,7 +57,10 @@ public:
                     "  DIM=ALL -- use all dimensions to calculate similarity\n"
                     "  DIM=DEP -- use only 'dependency' dimensions\n"
                     "  DIM=ASSOC -- use only 'associative' dimensions\n"
+                    "  DIM=COOCC -- use only 'cooccurrence' dimensions\n"
                     "  DIM=GRAMM -- use only 'grammatical' dimensions\n"
+                    "  DIM=LEX -- use 'dependency'+'associative' dimensions\n"
+                    "  DIM=AC -- use 'associative'+'cooccurrence' dimensions\n"
                     "  MOD=WORD -- find most similar words for selected one\n"
                     "  MOD=PAIR -- estimate similarity for pair of words\n"
                     "  SHORTEST -- show words with short vectors\n"
@@ -67,7 +76,10 @@ public:
       if (word == "DIM=ALL")   { cmp_dims = cdAll; continue; }
       if (word == "DIM=DEP")   { cmp_dims = cdDepOnly; continue; }
       if (word == "DIM=ASSOC") { cmp_dims = cdAssocOnly; continue; }
+      if (word == "DIM=COOCC") { cmp_dims = cdCooccOnly; continue; }
       if (word == "DIM=GRAMM") { cmp_dims = cdGrammOnly; continue; }
+      if (word == "DIM=LEX")   { cmp_dims = cdDepAssoc; continue; }
+      if (word == "DIM=AC")    { cmp_dims = cdAssocCoocc; continue; }
       if (word == "MOD=WORD")  { cmp_mode = cmWord; continue; }
       if (word == "MOD=PAIR")  { cmp_mode = cmPair; continue; }
       if (word == "SHORTEST")  { shortest(); continue; }
@@ -79,6 +91,7 @@ public:
       }
     } // infinite loop
   } // method-end
+
   void run_for_file(const std::string& filename, const std::string& fmt)
   {
     std::ifstream ifs(filename);
@@ -111,11 +124,13 @@ public:
       {
         auto simd = get_sim(cdDepOnly, word1, word2);
         auto sima = get_sim(cdAssocOnly, word1, word2);
-        std::cout << "," << simd.value_or(0) << "," << sima.value_or(0);
+        auto simc = get_sim(cdCooccOnly, word1, word2);
+        std::cout << "," << simd.value_or(0) << "," << sima.value_or(0) << "," << simc.value_or(0);
       }
       std::cout << std::endl;
     }
   } // method-end
+
   // получение расстояния для заданной пары слов
   std::optional<float> get_sim(CmpDims dims, const std::string& word1, const std::string& word2)
   {
@@ -123,6 +138,7 @@ public:
     auto widx2 = vm.get_word_idx(word2);
     return get_sim(dims, widx1, widx2);
   }
+
   std::optional<float> get_sim(CmpDims dims, size_t widx1, size_t widx2)
   {
     if (widx1 == vm.words_count || widx2 == vm.words_count)
@@ -131,11 +147,13 @@ public:
     float* w2Offset = vm.embeddings + widx2*vm.emb_size;
     return cosine_measure(w1Offset, w2Offset, dims);
   }
+
   // предоставление доступа к векторному пространству
   VectorsModel* raw()
   {
     return &vm;
   }
+
 private:
   // контейнер векторной модели
   VectorsModel vm;
@@ -155,21 +173,26 @@ private:
     std::multimap<float, std::string, std::less<float>> est;
     len_est(est);
   }
+
   void longest()
   {
     std::multimap<float, std::string, std::greater<float>> est;
     len_est(est);
   }
+
   template<typename T>
   void len_est(T est)
   {
     size_t s_dim = 0, f_dim = 0;
     switch (cmp_dims)
     {
-    case cdAll:       s_dim = 0; f_dim = vm.emb_size; break;
-    case cdDepOnly:   s_dim = vm.dep_begin; f_dim = vm.dep_end; break;
-    case cdAssocOnly: s_dim = vm.assoc_begin; f_dim = vm.assoc_end; break;
-    case cdGrammOnly: s_dim = vm.gramm_begin; f_dim = vm.gramm_end; break;
+    case cdAll:        s_dim = 0; f_dim = vm.emb_size; break;
+    case cdDepOnly:    s_dim = vm.dep_begin; f_dim = vm.dep_end; break;
+    case cdAssocOnly:  s_dim = vm.assoc_begin; f_dim = vm.assoc_end; break;
+    case cdCooccOnly:  s_dim = vm.coocc_begin; f_dim = vm.coocc_end; break;
+    case cdGrammOnly:  s_dim = vm.gramm_begin; f_dim = vm.gramm_end; break;
+    case cdDepAssoc:   s_dim = vm.dep_begin; f_dim = vm.assoc_end; break;
+    case cdAssocCoocc: s_dim = vm.assoc_begin; f_dim = vm.coocc_end; break;
     }
     for (size_t i = 0; i < vm.words_count; ++i)
     {
@@ -203,11 +226,17 @@ private:
                              l1 += w1_Offset[i]*w1_Offset[i];
                              l2 += w2_Offset[i]*w2_Offset[i];
                            }
-                           else if (i < vm.gramm_begin)
+                           else if (i < vm.coocc_begin)
                            {
                              result += w1_Offset[i]*w2_Offset[i] * a_ratio_sqr;
                              l1 += w1_Offset[i]*w1_Offset[i] * a_ratio_sqr;
                              l2 += w2_Offset[i]*w2_Offset[i] * a_ratio_sqr;
+                           }
+                           else if (i < vm.gramm_begin)
+                           {
+                             result += w1_Offset[i]*w2_Offset[i];
+                             l1 += w1_Offset[i]*w1_Offset[i];
+                             l2 += w2_Offset[i]*w2_Offset[i];
                            }
                            else
                            {
@@ -233,11 +262,32 @@ private:
                          result /= std::sqrt( std::inner_product(w2_Offset+vm.assoc_begin, w2_Offset+vm.assoc_end, w2_Offset+vm.assoc_begin, 0.0) );
                        }
                        break;
+    case cdCooccOnly : {
+                         if (vm.coocc_size == 0) return 0;
+                         result = std::inner_product(w1_Offset+vm.coocc_begin, w1_Offset+vm.coocc_end, w2_Offset+vm.coocc_begin, 0.0);
+                         result /= std::sqrt( std::inner_product(w1_Offset+vm.coocc_begin, w1_Offset+vm.coocc_end, w1_Offset+vm.coocc_begin, 0.0) );
+                         result /= std::sqrt( std::inner_product(w2_Offset+vm.coocc_begin, w2_Offset+vm.coocc_end, w2_Offset+vm.coocc_begin, 0.0) );
+                       }
+                       break;
     case cdGrammOnly : {
                          if (vm.gramm_size == 0) return 0;
                          result = std::inner_product(w1_Offset+vm.gramm_begin, w1_Offset+vm.gramm_end, w2_Offset+vm.gramm_begin, 0.0);
                          result /= std::sqrt( std::inner_product(w1_Offset+vm.gramm_begin, w1_Offset+vm.gramm_end, w1_Offset+vm.gramm_begin, 0.0) );
                          result /= std::sqrt( std::inner_product(w2_Offset+vm.gramm_begin, w2_Offset+vm.gramm_end, w2_Offset+vm.gramm_begin, 0.0) );
+                       }
+                       break;
+    case cdDepAssoc :  {
+                         if (vm.dep_size+vm.assoc_size == 0) return 0;
+                         result = std::inner_product(w1_Offset+vm.dep_begin, w1_Offset+vm.assoc_end, w2_Offset+vm.dep_begin, 0.0);
+                         result /= std::sqrt( std::inner_product(w1_Offset+vm.dep_begin, w1_Offset+vm.assoc_end, w1_Offset+vm.dep_begin, 0.0) );
+                         result /= std::sqrt( std::inner_product(w2_Offset+vm.dep_begin, w2_Offset+vm.assoc_end, w2_Offset+vm.dep_begin, 0.0) );
+                       }
+                       break;
+    case cdAssocCoocc :{
+                         if (vm.assoc_size+vm.coocc_size == 0) return 0;
+                         result = std::inner_product(w1_Offset+vm.assoc_begin, w1_Offset+vm.coocc_end, w2_Offset+vm.assoc_begin, 0.0);
+                         result /= std::sqrt( std::inner_product(w1_Offset+vm.assoc_begin, w1_Offset+vm.coocc_end, w1_Offset+vm.assoc_begin, 0.0) );
+                         result /= std::sqrt( std::inner_product(w2_Offset+vm.assoc_begin, w2_Offset+vm.coocc_end, w2_Offset+vm.assoc_begin, 0.0) );
                        }
                        break;
     }

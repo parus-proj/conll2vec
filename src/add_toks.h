@@ -93,7 +93,7 @@ public:
 
     // 4. Сохраняем модель токенов
     FILE *fo = fopen(model_fn.c_str(), "wb");
-    fprintf(fo, "%lu %lu %lu %lu %lu\n", t2l_map.size(), vm.emb_size, vm.dep_size, vm.assoc_size, (long unsigned int)0);
+    fprintf(fo, "%lu %lu %lu %lu %lu %lu\n", t2l_map.size(), vm.emb_size, vm.dep_size, vm.assoc_size, (long unsigned int)0, (long unsigned int)0);
     neOffset = new_embeddings;
     for (auto& token : t2l_map)
     {

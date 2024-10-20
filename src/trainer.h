@@ -51,6 +51,7 @@ public:
            std::shared_ptr< CustomVocabulary > assoc_contexts_vocabulary,
            size_t embedding_dep_size,
            size_t embedding_assoc_size,
+           size_t embedding_coocc_size,
            size_t embedding_gramm_size,
            size_t epochs,
            float learning_rate,
@@ -66,6 +67,7 @@ public:
   , layer1_size(embedding_dep_size + embedding_assoc_size)
   , size_dep(embedding_dep_size)
   , size_assoc(embedding_assoc_size)
+  , size_coocc(embedding_coocc_size)
   , size_gramm(embedding_gramm_size)
   , epoch_count(epochs)
   , alpha(learning_rate)
@@ -163,7 +165,7 @@ public:
       for (size_t b = 0; b < size_gramm; ++b)
       {
         next_random = next_random * (unsigned long long)25214903917 + 11;
-        syn0[a * size_gramm + b] = (((next_random & 0xFFFF) / (float)65536) - 0.5) / 100;
+        syn0[a * size_gramm + b] = (((next_random & 0xFFFF) / (float)65536) - 0.5) / 50;
       }
 
     size_t output_size = std::dynamic_pointer_cast<LearningExampleProviderGramm>(lep)->getGrammemesVectorSize();
@@ -173,6 +175,21 @@ public:
 
     start_learning_tp = std::chrono::steady_clock::now();
   } // method-end
+  void create_and_init_coocc_net()
+  {
+    const size_t w_vocab_size = w_vocabulary->size();
+    const long long ap = posix_memalign((void **)&syn0, 128, (long long)w_vocab_size * size_coocc * sizeof(float));
+    if (syn0 == nullptr || ap != 0) {std::cerr << "Memory allocation failed" << std::endl; exit(1);}
+
+    unsigned long long next_random = 1;
+   for (size_t a = 0; a < w_vocab_size; ++a)
+     for (size_t b = 0; b < size_coocc; ++b)
+     {
+       next_random = next_random * (unsigned long long)25214903917 + 11;
+       syn0[a * size_coocc + b] = (((next_random & 0xFFFF) / (float)65536) - 0.5) / 50;  // [-0.01; +0.01]
+     }
+  }
+
   // обобщенная процедура обучения (точка входа для потоков)
   void train_entry_point( size_t thread_idx )
   {
@@ -229,6 +246,130 @@ public:
     } // for all epochs
     free(neu1e);
   } // method-end: train_entry_point
+
+  // процедура обучения сочетаемостных векторов (точка входа для потоков)
+  void train_entry_point__coocc( size_t thread_idx )
+  {
+    std::unique_ptr<ThreadsInWorkCounterGuard> wth_guard = std::make_unique<ThreadsInWorkCounterGuard>(this);
+
+    unsigned long long next_random_ns = thread_idx;
+    // цикл по эпохам
+    for (size_t epochIdx = 0; epochIdx < epoch_count; ++epochIdx)
+    {
+      if ( !lep->epoch_prepare(thread_idx) )
+        return;
+      long long word_count = 0, last_word_count = 0;
+      // цикл по словам
+      while (true)
+      {
+        // вывод прогресс-сообщений
+        // и корректировка коэффициента скорости обучения (alpha)
+        if (word_count - last_word_count > alpha_chunk)
+        {
+          word_count_actual += (word_count - last_word_count);
+          last_word_count = word_count;
+          fraction = word_count_actual / (float)(epoch_count * train_words + 1);
+          //if ( debug_mode != 0 )
+          {
+            std::chrono::steady_clock::time_point current_learning_tp = std::chrono::steady_clock::now();
+            std::chrono::duration< double, std::ratio<1> > learning_seconds = current_learning_tp - start_learning_tp;
+            printf( "\rAlpha: %f  Progress: %.2f%%  Words/sec: %.2fk   ", alpha,
+                    fraction * 100,
+                    word_count_actual / (learning_seconds.count() * 1000) );
+            fflush(stdout);
+          }
+          alpha = starting_alpha * (1.0 - fraction);
+          if ( alpha < starting_alpha * 0.0001 )
+            alpha = starting_alpha * 0.0001;
+          // if (ass_se_cnt >= 1000000)
+          //   do_sync_action(thread_idx, &Trainer::rescale_assoc); -- увязано на структуру векторов (см. ниже еще закомментировано)
+          // if ((upd_ss_cnt == 0 && fraction >= 0.25) || (upd_ss_cnt == 1 && fraction >= 0.5) || (upd_ss_cnt == 2 && fraction >= 0.75))
+          //   do_sync_action(thread_idx, &Trainer::decrease_subsampling);
+        } // if ('checkpoint')
+        // читаем очередной обучающий пример
+        auto learning_example = lep->get(thread_idx, fraction);
+        word_count = lep->getWordsCount(thread_idx);
+        if (!learning_example) break; // признак окончания эпохи (все обучающие примеры перебраны)
+
+
+        // используем обучающий пример для обучения нейросети
+        size_t selected_ctx;   // хранилище для индекса контекста
+        int label;             // метка класса; знаковое целое (!)
+        float g = 0;           // хранилище для величины ошибки
+        float *targetVectorPtr = syn0 + learning_example->word * size_coocc;
+        float *targetVectorEndPtr = targetVectorPtr + size_coocc;
+        for (auto&& ctx_idx : learning_example->assoc_context)
+        {
+          for (size_t d = 0; d <= negative_a; ++d)
+          {
+            if (d == 0) // на первой итерации рассматриваем положительный пример (контекст)
+            {
+              selected_ctx = ctx_idx;
+              label = 1;
+            }
+            else // на остальных итерациях рассматриваем отрицательные примеры (случайные контексты из noise distribution)
+            {
+              update_random_ns(next_random_ns);
+              selected_ctx = (next_random_ns >> 16) % w_vocabulary_size; // uniform distribution
+              label = 0;
+            }
+            // вычисляем смещение вектора, соответствующего очередному положительному/отрицательному примеру
+            float *ctxVectorPtr = syn0 + selected_ctx * size_coocc;
+            // вычисляем оценку сходства
+            float f = std::inner_product(targetVectorPtr, targetVectorEndPtr, ctxVectorPtr, 0.0);
+            if ( std::isnan(f) ) continue;
+            f = sigmoid(f);
+            // if (f == 0.0 || f == 1.0)
+            //   ++ass_se_cnt; -- увязано на структуру векторов
+            // вычислим ошибку, умноженную на коэффициент скорости обучения
+            g = (label - f) * alpha;
+            if (g == 0) continue;
+            // обучение весов (input only)
+            if (d == 0)
+            {
+              // здесь g>0
+              // если измерение-признак у target и ctx однознаковое, то признак у target усиливается, иначе ослабевает
+              // такое условие увеличивает f и уменьшает ошибку (label - f)
+              std::transform(targetVectorPtr, targetVectorEndPtr, ctxVectorPtr, targetVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+              // ограничение степени выраженности признака
+              std::transform(targetVectorPtr, targetVectorEndPtr, targetVectorPtr, Trainer::space_threshold_functor);
+            }
+            else
+            {
+              // здесь g<0
+              // если измерение-признак у ctx и target разнознаковые, то признак у ctx усиливается, иначе ослабевает
+              // такое условие уменьшает f и уменьшает модуль ошибки (label - f)
+              std::transform(ctxVectorPtr, ctxVectorPtr+size_coocc, targetVectorPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+              // ограничение степени выраженности признака
+              std::transform(ctxVectorPtr, ctxVectorPtr+size_coocc, ctxVectorPtr, Trainer::space_threshold_functor);
+            }
+          } // for all samples
+        } // for all coocc contexts
+
+
+      } // for all learning examples
+      word_count_actual += (word_count - last_word_count);
+      if ( !lep->epoch_unprepare(thread_idx) )
+        return;
+    } // for all epochs
+  } // method-end: train_entry_point__coocc
+
+  void saveCooccurrenceEmbeddings(const VectorsModel& vm, const std::string& filename) const
+  {
+    FILE *fo = fopen(filename.c_str(), "wb");
+    fprintf(fo, "%lu %lu %lu %lu %lu %lu\n", vm.vocab.size(), vm.emb_size + size_coocc, vm.dep_size, vm.assoc_size, size_coocc, (long unsigned int)0);
+    for (size_t a = 0; a < vm.vocab.size(); ++a)
+    {
+      VectorsModel::write_embedding__start(fo, vm.vocab[a]);
+      VectorsModel::write_embedding__vec(fo, &vm.embeddings[a*vm.emb_size], 0, vm.emb_size);
+      size_t tok_idx = w_vocabulary->word_to_idx(vm.vocab[a]); // словари должны быть идентичны!!!
+      VectorsModel::write_embedding__vec(fo, &syn0[tok_idx * size_coocc], 0, size_coocc);
+      VectorsModel::write_embedding__fin(fo);
+    }
+    fclose(fo);
+  }
+
+
   // процедура обучения грамматического вектора (точка входа для потоков)
   void train_entry_point__gramm( size_t thread_idx )
   {
@@ -306,6 +447,7 @@ public:
     free(eo);
     free(eh);
   } // method-end: train_entry_point__gramm
+
   void saveGrammaticalEmbeddings(const VectorsModel& vm, float g_ratio, const std::string& oov_voc_fn, const std::string& filename) const
   {
     const size_t INVALID_IDX = std::numeric_limits<size_t>::max();
@@ -324,7 +466,7 @@ public:
     // дописываем грамм-вектора к семантическим
     size_t quasiNumIdx = w_vocabulary->word_to_idx("одиннадцать");
     FILE *fo = fopen(filename.c_str(), "wb");
-    fprintf(fo, "%lu %lu %lu %lu %lu\n", vm.vocab.size() + (v_oov ? v_oov->size() : 0), vm.emb_size + size_gramm, vm.dep_size, vm.assoc_size, size_gramm);
+    fprintf(fo, "%lu %lu %lu %lu %lu %lu\n", vm.vocab.size() + (v_oov ? v_oov->size() : 0), vm.emb_size + size_gramm, vm.dep_size, vm.assoc_size, vm.coocc_size, size_gramm);
     for (size_t a = 0; a < vm.vocab.size(); ++a)
     {
       VectorsModel::write_embedding__start(fo, vm.vocab[a]);
@@ -436,7 +578,7 @@ public:
           ++specials_cnt;
       saving_vocab_size += specials_cnt;
     }
-    fprintf(fo, "%lu %lu %lu %lu %lu\n", saving_vocab_size, layer1_size, size_dep, size_assoc, size_gramm);
+    fprintf(fo, "%lu %lu %lu %lu %lu %lu\n", saving_vocab_size, layer1_size, size_dep, size_assoc, size_coocc, size_gramm);
     if (toks_train && vm)
     {
       for ( auto w : SPECIAL_TOKS )
@@ -576,6 +718,8 @@ private:
   size_t size_dep;
   // размерность части эмбеддинга, обучаемого на ассоциативных контекстах
   size_t size_assoc;
+  // размерность части эмбеддинга, обучаемого на сочетаемостных контекстах
+  size_t size_coocc;
   // размерность части эмбеддинга, обучаемого грамматическим признакам
   size_t size_gramm;
   // количество эпох обучения

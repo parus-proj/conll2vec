@@ -137,7 +137,7 @@ public:
         for (size_t j = 0; j < sm_size; ++j)
         {
           if ( j == i ) continue; // сам себе не ассоциативен (бессмысленные вычисления)
-          if ( associations[j] && synt_related[i].find(j) == synt_related[i].end() ) // если j-ое слово не отфильтровано и не является синтаксически свяазнным в i-ым
+          if ( associations[j] && synt_related[i].find(j) == synt_related[i].end() ) // если j-ое слово не отфильтровано и не является синтаксически свяазнным с i-ым
             assocs[i].push_back(associations[j].value());                              // то добавим его в ассоциации к i-ому
         }
       }

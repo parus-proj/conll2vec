@@ -883,9 +883,15 @@ private:
   {
     std::cout << "  RT" << std::endl;
     auto test_data = read_test_file("russe2015data/rt-test.csv");
+    std::cout << "    Use dependency part of vector only:" << std::endl;
     calc_usim(SimilarityEstimator::cdDepOnly, test_data);
     calc_predict(test_data);
-    std::cout << "    Use dependency part of vector only:" << std::endl;
+    std::cout << "      average_precision_2015 = " << average_precision_sklearn_0_18_bin(test_data) << "   (used np.trapz)" << std::endl;
+    std::cout << "      accuracy = " << accuracy(test_data) << std::endl;
+    std::cout << "      average_precision = " << average_precision_sklearn_bin(test_data) << std::endl;
+    std::cout << "    Use dep+assoc parts of vector:" << std::endl;
+    calc_usim(SimilarityEstimator::cdDepAssoc, test_data);
+    calc_predict(test_data);
     std::cout << "      average_precision_2015 = " << average_precision_sklearn_0_18_bin(test_data) << "   (used np.trapz)" << std::endl;
     std::cout << "      accuracy = " << accuracy(test_data) << std::endl;
     std::cout << "      average_precision = " << average_precision_sklearn_bin(test_data) << std::endl;
@@ -897,6 +903,12 @@ private:
     auto test_data = read_test_file("russe2015data/ae-test.csv");
     std::cout << "    Use associative part of vector only:" << std::endl;
     calc_usim(SimilarityEstimator::cdAssocOnly, test_data);
+    calc_predict(test_data);
+    std::cout << "      average_precision_2015 = " << average_precision_sklearn_0_18_bin(test_data) << "   (used np.trapz)" << std::endl;
+    std::cout << "      accuracy = " << accuracy(test_data) << std::endl;
+    std::cout << "      average_precision = " << average_precision_sklearn_bin(test_data) << std::endl;
+    std::cout << "    Use assoc+coocc parts:" << std::endl;
+    calc_usim(SimilarityEstimator::cdAssocCoocc, test_data);
     calc_predict(test_data);
     std::cout << "      average_precision_2015 = " << average_precision_sklearn_0_18_bin(test_data) << "   (used np.trapz)" << std::endl;
     std::cout << "      accuracy = " << accuracy(test_data) << std::endl;
@@ -919,6 +931,12 @@ private:
     std::cout << "      average_precision_2015 = " << average_precision_sklearn_0_18_bin(test_data) << "   (used np.trapz)" << std::endl;
     std::cout << "      accuracy = " << accuracy(test_data) << std::endl;
     std::cout << "      average_precision = " << average_precision_sklearn_bin(test_data) << std::endl;
+    std::cout << "    Use assoc+coocc parts:" << std::endl;
+    calc_usim(SimilarityEstimator::cdAssocCoocc, test_data);
+    calc_predict(test_data);
+    std::cout << "      average_precision_2015 = " << average_precision_sklearn_0_18_bin(test_data) << "   (used np.trapz)" << std::endl;
+    std::cout << "      accuracy = " << accuracy(test_data) << std::endl;
+    std::cout << "      average_precision = " << average_precision_sklearn_bin(test_data) << std::endl;
     std::cout << "    Use all vector:" << std::endl;
     calc_usim(SimilarityEstimator::cdAll, test_data);
     calc_predict(test_data);
@@ -933,9 +951,15 @@ private:
     {
       std::cout << "  RuSim1000" << std::endl;
       auto test_data = read_test_file("rusim1000data/RuSim1000.csv");
+      std::cout << "    Use dependency part of vector only:" << std::endl;
       calc_usim(SimilarityEstimator::cdDepOnly, test_data);
       calc_predict(test_data);
-      std::cout << "    Use dependency part of vector only:" << std::endl;
+      std::cout << "      average_precision_2015 = " << average_precision_sklearn_0_18_bin(test_data) << "   (used np.trapz)" << std::endl;
+      std::cout << "      accuracy = " << accuracy(test_data) << std::endl;
+      std::cout << "      average_precision = " << average_precision_sklearn_bin(test_data) << std::endl;
+      std::cout << "    Use dep+assoc parts:" << std::endl;
+      calc_usim(SimilarityEstimator::cdDepAssoc, test_data);
+      calc_predict(test_data);
       std::cout << "      average_precision_2015 = " << average_precision_sklearn_0_18_bin(test_data) << "   (used np.trapz)" << std::endl;
       std::cout << "      accuracy = " << accuracy(test_data) << std::endl;
       std::cout << "      average_precision = " << average_precision_sklearn_bin(test_data) << std::endl;
