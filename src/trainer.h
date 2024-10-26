@@ -910,7 +910,7 @@ private:
   {
     ++upd_ss_cnt;
     std::cout << "Decrease subsampling" << std::endl;
-    lep->update_subsampling_rates(0.7 /*, 0.95, 0.95*/); // выполняем первым, т.к. InitUnigramTable зависит от уже вычисленных sample_probability в словарях
+    lep->update_subsampling_rates(0.5 /*, 0.95, 0.95*/); // выполняем первым, т.к. InitUnigramTable зависит от уже вычисленных sample_probability в словарях
     if (table_dep)
       free(table_dep);
     if ( dep_ctx_vocabulary )
