@@ -57,9 +57,9 @@ public:
 
     t_environment.update_random();
     const float rndVal = (t_environment.next_random & 0xFFFF) / (float)65536; // случайное значение в диапазоне [0, 1]
-    const bool SYNT_CTX = (rndVal > 0.6) ? true : false;
+    const bool SYNT_CTX = (rndVal < 0.6) ? true : false;
 
-    if ( SYNT_CTX ) // 40%
+    if ( SYNT_CTX ) // 60%
     {
       // формирование ассоциативных контекстов из числа синтаксически-связанных (сильные и надежные синт.связи)
       // todo: функцию synt_related можно сделать зависимой от fraction
