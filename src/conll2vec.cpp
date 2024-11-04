@@ -197,10 +197,13 @@ int main(int argc, char **argv)
       threads_vec[i].join();
 
     // вычисление взвешенного среднего между вектором слова и векторами связанных с ним временных словосочетаний (для которых данное слово является синтакс. вершиной)
-    std::vector< std::vector< std::pair<size_t, float> > > collapsing_info;
-    v_mwe->process_transient(v_main, collapsing_info);
-    trainer.vectors_weighted_collapsing(collapsing_info);
-    // TODO: сделать удаление временных словосочетаний из модели
+    if ( cmdLineParams.getAsInt("-mwe_collapse") == 1 )
+    {
+      std::vector< std::vector< std::pair<size_t, float> > > collapsing_info;
+      v_mwe->process_transient(v_main, collapsing_info);
+      trainer.vectors_weighted_collapsing(collapsing_info);
+      // TODO: сделать удаление временных словосочетаний из модели
+    }
 
     // сохраняем вычисленные вектора в файл
     if (cmdLineParams.isDefined("-model"))

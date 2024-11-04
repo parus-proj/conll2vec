@@ -48,6 +48,7 @@ public:
         {"-model_fmt",    {"word2vec model format (bin|txt) for import/export task", "bin", std::nullopt}},
         {"-sub_l",        {"Left range bound for sub-model", std::nullopt, std::nullopt}},
         {"-sub_r",        {"Right range bound for sub-model", std::nullopt, std::nullopt}},
+        {"-mwe_collapse", {"Collapse MWE to head", "1", std::nullopt}},
         {"-fsim_file",    {"File with word pairs for fsim task", std::nullopt, std::nullopt}},
         {"-fsim_fmt",     {"File with word pairs format (detail|russe)", "detail", std::nullopt}},
         {"-eval_vocab",   {"A vocabulary for subsampling evaluation", std::nullopt, std::nullopt}},
