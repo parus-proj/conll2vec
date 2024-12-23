@@ -9,33 +9,37 @@
 # - EDIS_LIM -- don't use algo if distance in space < limit
 
 # формирование "облика" пространства признаков
-0 69 0 3 ./data/categoroid.vocab 1 1000 1 0.25
-0 69 0 3 ./data/rc_hierarchical.vocab 1 1000 1 0.18
-0 69 0 3 ./data/diminutives.vocab 1 1000 1 0.12
-0 69 0 3 ./data/rc_light.vocab 1 1000 1 0.12
-0 69 0 3 ./data/rc_symmetrical.vocab 1 5000 1 0.07
+0 69 0 3 ./data/categoroid.vocab 1 100 1 0.25
+0 69 0 3 ./data/rc_hierarchical.vocab 1 250 1 0.12
+0 69 0 3 ./data/diminutives.vocab 1 250 1 0.12
+0 69 0 3 ./data/rc_light.vocab 1 250 1 0.12
+0 69 0 3 ./data/rc_symmetrical.vocab 1 1000 1 0.07
+0 69 0 3 ./data/eq.vocab 1 5000 1 0.07
+0 69 0 3 ./data/imperf_perf_verbs.vocab 1 250 1 0.07
 
 # поддержание "облика"
-0 69 4 60 ./data/rc_hierarchical.vocab 0 1000 1 0.18
+0 69 4 60 ./data/rc_hierarchical.vocab 0 1500 1 0.18
 0 69 4 70 ./data/diminutives.vocab 0 2000 1 0.12
-0 69 4 69 ./data/rc_light.vocab 1 2000 1 0.12
+0 69 4 69 ./data/rc_light.vocab 1 1000 1 0.12
 0 69 4 69 ./data/rc_symmetrical.vocab 1 5000 1 0.07
 
 # доводка "облика"
-0 69 70 95 ./data/rc_light.vocab 3 2000 1 2.0
+0 69 70 95 ./data/rc_light.vocab 3 1500 1 2.0
 0 69 70 95 ./data/rc_symmetrical.vocab 3 5000 1 1.0
 0 69 90 97 ./data/eq.vocab 3 10000 1 0.5
 
 
 # ассоциации в деривативном гнезде
 70 119 0 90 ./data/deriv.vocab 1 250 1 0.15
+# прочие ассоциации
+70 119 0 90 ./data/assoc.vocab 1 50000 1 0.15
 
 
 # категориальные связи в морфологической парадигме
-0 14 4 4 ./data/imperf_perf_verbs.vocab 1 10 1 0.005
-#0 14 4 4 ./data/imperf_perf_participles.vocab 1 10 1 0.005
-0 14 5 95 ./data/imperf_perf_verbs.vocab 1 500 1 0.005
-#0 14 5 95 ./data/imperf_perf_participles.vocab 1 500 1 0.005
+#0 14 4 4 ./data/imperf_perf_verbs.vocab 1 100 1 0.005
+#0 14 4 4 ./data/imperf_perf_participles.vocab 1 100 1 0.005
+0 14 4 95 ./data/imperf_perf_verbs.vocab 1 500 1 0.005
+#0 14 4 95 ./data/imperf_perf_participles.vocab 1 500 1 0.005
 
 
 # категориальные связи в деривативном гнезде
