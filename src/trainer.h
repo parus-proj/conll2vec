@@ -9,8 +9,10 @@
 
 #include <memory>
 #include <string>
+#include <map>
 #include <chrono>
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <condition_variable>
 
@@ -24,12 +26,15 @@
 #endif
 
 
-//#define EXP_TABLE_SIZE 1000
-//#define MAX_EXP 6
-// #define EXP_TABLE_SIZE 2500
-// #define MAX_EXP 15
-#define EXP_TABLE_SIZE 6000
-#define MAX_EXP 25
+// #define EXP_TABLE_SIZE 1000
+// #define MAX_EXP 6
+#define EXP_TABLE_SIZE 3000
+#define MAX_EXP 18
+
+
+template <typename T> int sgn(T val) {
+    return (T(0) < val) - (val < T(0));
+}
 
 
 
@@ -53,7 +58,10 @@ public:
            size_t embedding_assoc_size,
            size_t embedding_gramm_size,
            size_t epochs,
-           float learning_rate,
+           float learning_rate_d,
+           float learning_rate_a,
+           float learning_rate_g,
+           float lr_inflection,
            size_t negative_count_d,
            size_t negative_count_a,
            size_t total_threads_count )
@@ -68,8 +76,13 @@ public:
   , size_assoc(embedding_assoc_size)
   , size_gramm(embedding_gramm_size)
   , epoch_count(epochs)
-  , alpha(learning_rate)
-  , starting_alpha(learning_rate)
+  , alpha_d(learning_rate_d)
+  , alpha_a(learning_rate_a)
+  , alpha_g(learning_rate_g)
+  , starting_alpha_d(learning_rate_d)
+  , starting_alpha_a(learning_rate_a)
+  , starting_alpha_g(learning_rate_g)
+  , inflection_point(lr_inflection)
   , negative_d(negative_count_d)
   , negative_a(negative_count_a)
   {
@@ -135,11 +148,13 @@ public:
 //      }
     for (size_t a = 0; a < w_vocab_size; ++a)
     {
-      float denominator = std::sqrt(w_vocabulary->idx_to_data(a).cn);
+      //float denominator = std::sqrt(w_vocabulary->idx_to_data(a).cn);
+      float denominator = std::log( w_vocabulary->idx_to_data(a).cn + 3 );
       for (size_t b = 0; b < layer1_size; ++b)
       {
         next_random = next_random * (unsigned long long)25214903917 + 11;
-        syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (float)65536) - 0.5) / denominator; // более частотные ближе к нулю
+        //syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (float)65536) - 0.5) / denominator; // более частотные ближе к нулю
+        syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (float)65536) - 0.5) / layer1_size / denominator; // более частотные ближе к нулю
       }
     }
 
@@ -201,20 +216,41 @@ public:
           {
             std::chrono::steady_clock::time_point current_learning_tp = std::chrono::steady_clock::now();
             std::chrono::duration< double, std::ratio<1> > learning_seconds = current_learning_tp - start_learning_tp;
-            printf( "\rAlpha: %f  Progress: %.2f%%  Words/sec: %.2fk   ", alpha,
+            printf( "\rAlpha: %f / %f     Progress: %.2f%%  Words/sec: %.2fk        ", alpha_d, alpha_a,
                     fraction * 100,
                     word_count_actual / (learning_seconds.count() * 1000) );
             fflush(stdout);
           }
-          alpha = starting_alpha * (1.0 - fraction);
-          if ( alpha < starting_alpha * 0.0001 )
-            alpha = starting_alpha * 0.0001;
-          if (dep_se_cnt >= 1000)
+          alpha_d = alpha_upd(starting_alpha_d);
+          alpha_a = alpha_upd(starting_alpha_a);
+          if (dep_se_cnt >= 1000000)
             do_sync_action(thread_idx, &Trainer::rescale_dep);
           if (ass_se_cnt >= 1000000)
             do_sync_action(thread_idx, &Trainer::rescale_assoc);
-          if ((upd_ss_cnt == 0 && fraction >= 0.25) || (upd_ss_cnt == 1 && fraction >= 0.5) || (upd_ss_cnt == 2 && fraction >= 0.75))
+          //if ((upd_ss_cnt == 0 && fraction >= 0.25) || (upd_ss_cnt == 1 && fraction >= 0.5) || (upd_ss_cnt == 2 && fraction >= 0.75))
+          if ((upd_ss_cnt == 0 && fraction >= 0.40) || (upd_ss_cnt == 1 && fraction >= 0.60) || (upd_ss_cnt == 2 && fraction >= 0.80))
             do_sync_action(thread_idx, &Trainer::decrease_subsampling);
+          // if ( (dbg_show_dims_cnt == 0  && fraction >= 0.05) || 
+          //      (dbg_show_dims_cnt == 1  && fraction >= 0.1)  || 
+          //      (dbg_show_dims_cnt == 2  && fraction >= 0.15) || 
+          //      (dbg_show_dims_cnt == 3  && fraction >= 0.2)  || 
+          //      (dbg_show_dims_cnt == 4  && fraction >= 0.25) ||
+          //      (dbg_show_dims_cnt == 5  && fraction >= 0.3)  ||
+          //      (dbg_show_dims_cnt == 6  && fraction >= 0.35) ||
+          //      (dbg_show_dims_cnt == 7  && fraction >= 0.4)  ||
+          //      (dbg_show_dims_cnt == 8  && fraction >= 0.45) ||
+          //      (dbg_show_dims_cnt == 9  && fraction >= 0.5)  ||
+          //      (dbg_show_dims_cnt == 10 && fraction >= 0.55) ||
+          //      (dbg_show_dims_cnt == 11 && fraction >= 0.6) ||
+          //      (dbg_show_dims_cnt == 12 && fraction >= 0.65) ||
+          //      (dbg_show_dims_cnt == 13 && fraction >= 0.7) ||
+          //      (dbg_show_dims_cnt == 14 && fraction >= 0.75) ||
+          //      (dbg_show_dims_cnt == 15 && fraction >= 0.8) ||
+          //      (dbg_show_dims_cnt == 16 && fraction >= 0.85) ||
+          //      (dbg_show_dims_cnt == 17 && fraction >= 0.9) ||
+          //      (dbg_show_dims_cnt == 18 && fraction >= 0.95)
+          //    )
+          //   do_sync_action(thread_idx, &Trainer::dbg_show_barcharts);
         } // if ('checkpoint')
         // читаем очередной обучающий пример
         auto learning_example = lep->get(thread_idx, fraction);
@@ -257,14 +293,14 @@ public:
           {
             std::chrono::steady_clock::time_point current_learning_tp = std::chrono::steady_clock::now();
             std::chrono::duration< double, std::ratio<1> > learning_seconds = current_learning_tp - start_learning_tp;
-            printf( "\rAlpha: %f  Progress: %.2f%%  Words/sec: %.2fk   ", alpha,
+            printf( "\rAlpha: %f  Progress: %.2f%%  Words/sec: %.2fk   ", alpha_g,
                     fraction * 100,
                     word_count_actual / (learning_seconds.count() * 1000) );
             fflush(stdout);
           }
-          alpha = starting_alpha * (1.0 - fraction);
-          if ( alpha < starting_alpha * 0.0001 )
-            alpha = starting_alpha * 0.0001;
+          alpha_g = starting_alpha_g * (1.0 - fraction);
+          if ( alpha_g < starting_alpha_g * 0.0001 )
+            alpha_g = starting_alpha_g * 0.0001;
         } // if ('checkpoint')
         // читаем очередной обучающий пример
         auto learning_example = lep->get(thread_idx, fraction, true);
@@ -284,7 +320,7 @@ public:
         // обратный проход
         std::fill(eh, eh+size_gramm, 0.0);
         //float tSum = std::accumulate(learning_example->assoc_context.begin(), learning_example->assoc_context.end(), 0);
-        std::transform(learning_example->assoc_context.begin(), learning_example->assoc_context.end(), y, eo, [this](float a, float b) -> float {return (a - b) * alpha;});
+        std::transform(learning_example->assoc_context.begin(), learning_example->assoc_context.end(), y, eo, [this](float a, float b) -> float {return (a - b) * alpha_g;});
         // преобразуем вторую матрицу и попутно копим дельты для скрытого слоя
         for (size_t g = 0; g < output_size; ++g)
           for (size_t i = 0; i < size_gramm; ++i)
@@ -581,9 +617,15 @@ private:
   // количество эпох обучения
   size_t epoch_count;
   // learning rate
-  float alpha;
+  float alpha_d;
+  float alpha_a;
+  float alpha_g;
   // начальный learning rate
-  float starting_alpha;
+  float starting_alpha_d;
+  float starting_alpha_a;
+  float starting_alpha_g;
+  // точка перегиба для learning rate (на fraction-шкале)
+  float inflection_point;
   // количество отрицательных примеров на каждый положительный при оптимизации методом negative sampling
   size_t negative_d;
   size_t negative_a;
@@ -601,7 +643,33 @@ private:
   size_t ass_se_total = 0;
   // количество операций изменения subsampling
   size_t upd_ss_cnt = 0;
+  // количество операций отладочного вывода гистограммы измерений (для тюнинга)
+  size_t dbg_show_dims_cnt = 0;
+  // лимит пространства
+  constexpr static float FEATURE_VALUE_THRESHOLD = 3.0;
 
+  // обновление скоростей обучения
+  inline float alpha_upd(float starting_alpha) {
+      //return starting_alpha * (1.0 - fraction);
+
+      const float min_alpha = starting_alpha * 0.001;
+      float result = std::numeric_limits<float>::quiet_NaN();
+      if (fraction < inflection_point)  // inflection_point -- значение fraction, где происходит перегиб alpha (точка максимума)
+      {
+        const float k = (starting_alpha-min_alpha) / (inflection_point - 0.0);
+        const float b = starting_alpha - k * inflection_point;
+        result = k * fraction + b;
+      } else {
+        const float k = (min_alpha-starting_alpha) / (1.0 - inflection_point);
+        const float b = min_alpha - k * 1.0;
+        result = k * fraction + b;
+      }
+
+      if ( result < min_alpha )
+        result = min_alpha;
+
+      return result;
+  }
   // вычисление очередного случайного значения (для случайного выбора векторов в рамках процедуры negative sampling)
   inline void update_random_ns(unsigned long long& next_random_ns)
   {
@@ -635,7 +703,6 @@ private:
   // функтор ограничения пространства
   static float space_threshold_functor(float value)
   {
-    const float FEATURE_VALUE_THRESHOLD = 3.0;
     return std::clamp(value, -FEATURE_VALUE_THRESHOLD, FEATURE_VALUE_THRESHOLD);
   }
   // функция, реализующая модель обучения skip-gram
@@ -680,20 +747,27 @@ private:
         if (f == 0.0 || f == 1.0)
           ++dep_se_cnt;
         // вычислим ошибку, умноженную на коэффициент скорости обучения
-        g = (label - f) * alpha;
+        g = (label - f) * alpha_d;
         if (g == 0) continue;
         // обратное распространение ошибки output -> hidden
-        if (d==0)
+        if ( d == 0 )
           std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g](float a, float b) -> float {return a + g*b;});
         else
         {
-          float g_norm = g / negative_d;
+          const float g_norm = g / negative_d;
           std::transform(neu1e, neu1e+size_dep, ctxVectorPtr, neu1e, [g_norm](float a, float b) -> float {return a + g_norm*b;});
         }
         // обучение весов hidden -> output
         if ( !toks_train )
         {
-          std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetDepPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+          if ( (d == 0) /*|| (fraction < 0.1)*/ )
+            std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetDepPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+          else {
+            float kk = 0.05 * alpha_d / negative_d;
+            //float kk = alpha_d * alpha_d / negative_d;
+            if (kk < 1e-9) kk = 1e-9;
+            std::transform(ctxVectorPtr, ctxVectorPtr+size_dep, targetDepPtr, ctxVectorPtr, [kk](float a, float b) -> float {return a - kk*b;});
+          }
           // ограничиваем значение в векторах контекста
           // это необходимо для недопущения паралича обучения; sigmoid вычисляется с ограниченной точностью, и если
           // векторное произведение станет слишком большим (маленьким), то sigmoid выдаст +1 (-1), что сделает градиент нулевым на положительном примере
@@ -733,9 +807,10 @@ private:
       return;
 
     // цикл по ассоциативным контекстам
+    const size_t operative_negative_a = (fraction < inflection_point) ? negative_a*2 : negative_a;
     for (auto&& ctx_idx : le.assoc_context)
     {
-      for (size_t d = 0; d <= negative_a; ++d)
+      for (size_t d = 0; d <= operative_negative_a; ++d)
       {
         if (d == 0) // на первой итерации рассматриваем положительный пример (контекст)
         {
@@ -755,10 +830,10 @@ private:
         float f = std::inner_product(targetAssocPtr, targetAssocEndPtr, ctxVectorPtr, 0.0);
         if ( std::isnan(f) ) continue;
         f = sigmoid(f);
-        if (f == 0.0 || f == 1.0)
-          ++ass_se_cnt;
+        // if (f == 0.0 || f == 1.0)
+        //   ++ass_se_cnt;
         // вычислим ошибку, умноженную на коэффициент скорости обучения
-        g = (label - f) * alpha;
+        g = (label - f) * alpha_a;
         if (g == 0) continue;
         // обучение весов (input only)
         if (d == 0)
@@ -766,18 +841,66 @@ private:
           // здесь g>0
           // если измерение-признак у target и ctx однознаковое, то признак у target усиливается, иначе ослабевает
           // такое условие увеличивает f и уменьшает ошибку (label - f)
-          std::transform(targetAssocPtr, targetAssocEndPtr, ctxVectorPtr, targetAssocPtr, [g](float a, float b) -> float {return a + g*b;});
-          // ограничение степени выраженности признака
-          std::transform(targetAssocPtr, targetAssocEndPtr, targetAssocPtr, Trainer::space_threshold_functor);
+
+          // если вектора и так уже очень похожи, g будет небольшой (инфляция пространства замедляется)
+
+          // std::transform(targetAssocPtr, targetAssocEndPtr, ctxVectorPtr, targetAssocPtr, [g](float a, float b) -> float {return a + g*b;});
+          // // ограничение степени выраженности признака
+          // std::transform(targetAssocPtr, targetAssocEndPtr, targetAssocPtr, Trainer::space_threshold_functor);
+
+          // std::transform( targetAssocPtr, targetAssocEndPtr, ctxVectorPtr, targetAssocPtr, 
+          //                 [kk=alpha_a*0.01](float a, float b) -> float 
+          //                 { 
+          //                   const float force = (FEATURE_VALUE_THRESHOLD - fabs(a)) / FEATURE_VALUE_THRESHOLD; // вязкость пространства: чем более выражен признак, тем сложнее его изменить
+          //                   const float f2 = sgn(force) > 0 ? force * force : 0.0; // ограничение степени выраженности признака
+          //                   return a + f2*kk*sgn(b);
+          //                 } );
+
+          std::transform( targetAssocPtr, targetAssocEndPtr, ctxVectorPtr, targetAssocPtr, 
+                          [g](float a, float b) -> float 
+                          { 
+                            const float force = (FEATURE_VALUE_THRESHOLD - fabs(a)) / FEATURE_VALUE_THRESHOLD; // вязкость пространства: чем более выражен признак, тем сложнее его изменить
+                            const float f2 = sgn(force) > 0 ? force * force : 0.0; // ограничение степени выраженности признака
+                            return a + f2*g*b;
+                          } );
         }
         else
         {
           // здесь g<0
           // если измерение-признак у ctx и target разнознаковые, то признак у ctx усиливается, иначе ослабевает
           // такое условие уменьшает f и уменьшает модуль ошибки (label - f)
-          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetAssocPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
-          // ограничение степени выраженности признака
-          std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, ctxVectorPtr, Trainer::space_threshold_functor);
+
+          // если вектора ctx и target и так уже малопохожи, то g будет небольшой по абсолютной величине, а значит разбегание векторов и инфляция пространства замедляется
+          // ведь большинство случайных контекстов должны быть малопохожи
+          // если вектора ctx и target оказались похожи -- модуль g большой (много однознаковых измерений-признаков), то в начале обучения лучше, если их сходство будет снижаться (т.к. они похожи случайно)
+          // это замедляет и инфляцию пространства (измерения-признаки, обеспечившие сходство, ослабевают)
+          // когда вектора уже нашли свое место в пространстве, то разбегание схожих векторов нежелательно (они уже неслучайно похожи, просто мы случайно выбрали схожие вектора для отталкивания)
+
+          if ( fraction > inflection_point && f < 0.01 ) continue; // слишком непохожи, чтобы расталкивать (в уже сформировавшемся пространстве)
+          if ( fraction > 0.9 && f > 0.99 ) continue; // слишком похожи и довольно длинные, чтобы расталкивать (в уже сформировавшемся пространстве)
+          //if ( fraction > inflection_point && f > 0.99 ) continue; // слишком похожи и довольно длинные, чтобы расталкивать (в уже сформировавшемся пространстве)
+
+          // std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, targetAssocPtr, ctxVectorPtr, [g](float a, float b) -> float {return a + g*b;});
+          // // ограничение степени выраженности признака
+          // std::transform(ctxVectorPtr, ctxVectorPtr+size_assoc, ctxVectorPtr, Trainer::space_threshold_functor);
+
+          // std::transform( ctxVectorPtr, ctxVectorPtr+size_assoc, targetAssocPtr, ctxVectorPtr, 
+          //                 [forcer=0.001*alpha_a, relaxer=-0.001*alpha_a](float a, float b) -> float 
+          //                 { 
+          //                   const float force = (FEATURE_VALUE_THRESHOLD - fabs(a)) / FEATURE_VALUE_THRESHOLD; // вязкость пространства: чем более выражен признак, тем сложнее его изменить
+          //                   const float f2 = sgn(force) > 0 ? force * force : 0.0; // ограничение степени выраженности признака
+          //                   const float sgna = sgn(a); 
+          //                   const float fb = (sgna != sgn(b)) ? sgna*forcer : sgna*relaxer;
+          //                   return a + f2*fb;
+          //                 } );
+
+          std::transform( ctxVectorPtr, ctxVectorPtr+size_assoc, targetAssocPtr, ctxVectorPtr, 
+                          [g](float a, float b) -> float 
+                          { 
+                            const float force = (FEATURE_VALUE_THRESHOLD - fabs(a)) / FEATURE_VALUE_THRESHOLD; // вязкость пространства: чем более выражен признак, тем сложнее его изменить
+                            const float f2 = sgn(force) > 0 ? force * force : 0.0; // ограничение степени выраженности признака
+                            return a + f2*g*b;
+                          } );
         }
       } // for all samples
     } // for all assoc contexts
@@ -790,12 +913,13 @@ private:
 
       float *vector1Ptr = syn0 + data.word1 * layer1_size + data.dims_from;
       float *vector2Ptr = syn0 + data.word2 * layer1_size + data.dims_from;
-      size_t to_end = data.dims_to - data.dims_from + 1;
+      const float alpha = (data.dims_from < size_dep) ? alpha_d : alpha_a;
+      const size_t to_end = data.dims_to - data.dims_from + 1;
       switch ( data.algo )
       {
         case evaFirstWithOther:
-        case evaPairwise:          attract_vecs_s(vector1Ptr, vector2Ptr, to_end, data); break;
-        case evaPairwiseEuclidean: attract_vecs_e(vector1Ptr, vector2Ptr, to_end, data, neu1e); break;
+        case evaPairwise:          attract_vecs_s(vector1Ptr, vector2Ptr, to_end, data, alpha); break;
+        case evaPairwiseEuclidean: attract_vecs_e(vector1Ptr, vector2Ptr, to_end, data, neu1e, alpha); break;
       }
       
 
@@ -804,7 +928,7 @@ private:
   } // method-end
 
   // стягивание векторов по "знаковой модели"
-  inline void attract_vecs_s(float* vector1Ptr, float* vector2Ptr, size_t to_end, const ExtVocabExample& data)
+  inline void attract_vecs_s(float* vector1Ptr, float* vector2Ptr, size_t to_end, const ExtVocabExample& data, float alpha)
   {
     float f = std::inner_product(vector1Ptr, vector1Ptr+to_end, vector2Ptr, 0.0);
     if ( std::isnan(f) ) return;
@@ -816,13 +940,27 @@ private:
     // если измерение-признак у word1 и word2 однознаковое, то признак у word1 и word2 усиливается, иначе ослабевает
     // такое условие увеличивает f и уменьшает ошибку (1.0 - f)
     // кроме того, усиливать будем только более слабый признак (если же признак и так сильный, незачем его усиливать)
-    std::transform(vector2Ptr, vector2Ptr+to_end, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return ((fabs(a)<fabs(b)) ? a + g*b : a);});
+ 
+    // std::transform(vector2Ptr, vector2Ptr+to_end, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return ((fabs(a)<fabs(b)) ? a + g*b : a);});
+    // if ( data.algo == evaPairwise)
+    // {
+    //   std::transform(vector1Ptr, vector1Ptr+to_end, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return ((fabs(a)<fabs(b)) ? a + g*b : a);});
+    // }
+ 
+    // if (fraction < inflection_point) // на время формирования пространства силу влияния уменьшаем
+    //   g *= alpha;
+
+    std::transform(vector2Ptr, vector2Ptr+to_end, vector1Ptr, vector2Ptr, [g](float a, float b) -> float {return ( (sgn(a) != sgn(b)) || (fabs(a)<fabs(b)) ) ? a + g*b : a;});
+    std::transform(vector2Ptr, vector2Ptr+to_end, vector2Ptr, Trainer::space_threshold_functor);
     if ( data.algo == evaPairwise)
-      std::transform(vector1Ptr, vector1Ptr+to_end, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return ((fabs(a)<fabs(b)) ? a + g*b : a);});
+    {
+      std::transform(vector1Ptr, vector1Ptr+to_end, vector2Ptr, vector1Ptr, [g](float a, float b) -> float {return ( (sgn(a) != sgn(b)) || (fabs(a)<fabs(b)) ) ? a + g*b : a;});
+      std::transform(vector1Ptr, vector1Ptr+to_end, vector1Ptr, Trainer::space_threshold_functor);
+    }
   }
 
   // стягивание векторов по "евклидовой модели"
-  inline void attract_vecs_e(float* vector1Ptr, float* vector2Ptr, size_t to_end, const ExtVocabExample& data, float* neu1e)
+  inline void attract_vecs_e(float* vector1Ptr, float* vector2Ptr, size_t to_end, const ExtVocabExample& data, float* neu1e, float alpha)
   {
     std::transform(vector1Ptr, vector1Ptr+to_end, vector2Ptr, neu1e, std::minus<float>());
     float e_dist = std::sqrt( std::inner_product(neu1e, neu1e+to_end, neu1e, 0.0) );
@@ -835,8 +973,16 @@ private:
   // вычисление значения сигмоиды
   inline float sigmoid(float f) const
   {
-    if      (f > MAX_EXP)  return 1;
-    else if (f < -MAX_EXP) return 0;
+    // вариант с барьером
+    // if      (f > MAX_EXP)  return 1;
+    // else if (f < -MAX_EXP) return 0;
+    // else                   return expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
+    // вариант без барьера
+    // при параметрах таблицы сигмоиды 1000-на-6, минимальным значением в таблице будет 0,002472623, а максимальным -- 0,997497601
+    // при параметрах таблицы сигмоиды 3000-на-18, минимальным значением в таблице будет 0,000000015, а максимальным -- 0,999999985
+    // чтобы изменение признаков происходило всегда, установим забарьерные значения
+    if      (f > MAX_EXP)  return 0.99999999;
+    else if (f < -MAX_EXP) return 0.00000001;
     else                   return expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
   } // method-end
 
@@ -891,9 +1037,9 @@ private:
   {
     std::cout << "Dep. rescale" << std::endl;
     for (size_t a = 0; a < w_vocabulary->size(); ++a)
-      std::transform(syn0+a*layer1_size, syn0+a*layer1_size+size_dep, syn0+a*layer1_size, [](float v) -> float {return v*0.95;});
+      std::transform(syn0+a*layer1_size, syn0+a*layer1_size+size_dep, syn0+a*layer1_size, [](float v) -> float {return v*0.9;});
     for (size_t a = 0; a < dep_ctx_vocabulary->size(); ++a)
-      std::transform(syn1_dep+a*size_dep, syn1_dep+a*size_dep+size_dep, syn1_dep+a*size_dep, [](float v) -> float {return v*0.99;});
+      std::transform(syn1_dep+a*size_dep, syn1_dep+a*size_dep+size_dep, syn1_dep+a*size_dep, [](float v) -> float {return v*0.8;});
     dep_se_total += dep_se_cnt;
     dep_se_cnt = 0;
   }
@@ -901,7 +1047,7 @@ private:
   {
     std::cout << "Assoc. rescale" << std::endl;
     for (size_t a = 0; a < w_vocabulary->size(); ++a)
-      std::transform(syn0+a*layer1_size+size_dep, syn0+a*layer1_size+size_dep+size_assoc, syn0+a*layer1_size+size_dep, [](float v) -> float {return v*0.95;});
+      std::transform(syn0+a*layer1_size+size_dep, syn0+a*layer1_size+size_dep+size_assoc, syn0+a*layer1_size+size_dep, [](float v) -> float {return v*0.9;});
     ass_se_total += ass_se_cnt;
     ass_se_cnt = 0;
   }
@@ -915,6 +1061,60 @@ private:
       free(table_dep);
     if ( dep_ctx_vocabulary )
       InitUnigramTable(table_dep, dep_ctx_vocabulary);
+  }
+  // вывод отладочных гистограмм о пространстве
+  void dbg_show_barcharts()
+  {
+    ++dbg_show_dims_cnt;
+    dbg_show_dims_barchart(0, size_dep);
+    dbg_show_dims_barchart(size_dep, size_dep+size_assoc);
+  }
+  // вывод гистограммы по диапазону измерений
+  void dbg_show_dims_barchart(size_t from, size_t to)
+  {
+    std::cout << "Bar chart from " << from << " to " << to << std::endl;
+    std::map<float, size_t> bar;
+    const size_t resolution = 100;
+    const float step = FEATURE_VALUE_THRESHOLD / resolution;
+    for (size_t i = 0; i < (2*resolution); ++i)
+      bar[-FEATURE_VALUE_THRESHOLD + i*step] = 0;
+    for (size_t target_dimension = from; target_dimension < to; ++target_dimension)
+    {
+      for (size_t w = 0; w < w_vocabulary->size(); ++w)
+      {
+        float val = syn0[w * layer1_size + target_dimension];
+        auto it = std::lower_bound(bar.begin(), bar.end(), val, [](const std::pair<float, size_t> item, float bound) {return item.first < bound;});
+        if (it != bar.end())
+          it->second++;
+      }
+    }
+    auto shrinkLeftFunc = [](size_t cntLim, std::map<float, size_t>& bar)
+                          {
+                            auto lIt = bar.begin();
+                            while (lIt != bar.end() && lIt->second < cntLim)
+                              ++lIt;
+                            bar.erase(bar.begin(), lIt);
+                          };
+    auto shrinkRightFunc = [](size_t cntLim, std::map<float, size_t>& bar)
+                           {
+                             size_t zCnt = 0;
+                             auto rIt = bar.rbegin();
+                             while (rIt != bar.rend() && rIt->second < cntLim)
+                             {
+                               ++zCnt;
+                               ++rIt;
+                             }
+                             auto rIt2 = bar.begin();
+                             std::advance(rIt2, bar.size()-zCnt);
+                             bar.erase(rIt2, bar.end());
+                           };
+    shrinkLeftFunc(1, bar);
+    shrinkRightFunc(1, bar);
+    std::cout << std::setprecision(3);
+    for (auto it = bar.begin(), itEnd = bar.end(); it != itEnd; ++it)
+      std::cout << "    " << std::setw(5) << it->first << "\t" << it->second << std::endl;
+    std::cout << std::setprecision(6);
+
   }
 
 private:

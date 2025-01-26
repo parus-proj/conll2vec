@@ -502,7 +502,7 @@ private:
     std::cout << std::endl;
     // выводим гистограмму худшего измерения
     const float FEATURE_VALUE_THRESHOLD = 3.0;  // как в trainer.h
-      std::map<float, size_t> bar;
+    std::map<float, size_t> bar;
     const size_t resolution = 100;
     const float step = FEATURE_VALUE_THRESHOLD / resolution;
     for (size_t i = 0; i < (2*resolution); ++i)

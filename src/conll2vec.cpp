@@ -22,6 +22,8 @@
 #include <string>
 #include <iostream>
 #include <thread>
+#include <limits>
+
 
 
 
@@ -177,7 +179,10 @@ int main(int argc, char **argv)
                      cmdLineParams.getAsInt("-size_a"),
                      0,
                      cmdLineParams.getAsInt("-iter"),
-                     cmdLineParams.getAsFloat("-alpha"),
+                     cmdLineParams.getAsFloat("-alpha_d"),
+                     cmdLineParams.getAsFloat("-alpha_a"),
+                     std::numeric_limits<float>::quiet_NaN(),
+                     cmdLineParams.getAsFloat("-inflection"),
                      cmdLineParams.getAsInt("-negative_d"),
                      cmdLineParams.getAsInt("-negative_a"),
                      cmdLineParams.getAsInt("-threads") );
@@ -326,7 +331,10 @@ int main(int argc, char **argv)
     Trainer trainer( lep, v_toks, true, v_dep_ctx, v_assoc_ctx,
                      vm.dep_size, vm.assoc_size, 0,
                      cmdLineParams.getAsInt("-iter"),
-                     cmdLineParams.getAsFloat("-alpha"),
+                     cmdLineParams.getAsFloat("-alpha_d"),
+                     cmdLineParams.getAsFloat("-alpha_a"),
+                     std::numeric_limits<float>::quiet_NaN(),
+                     cmdLineParams.getAsFloat("-inflection"),
                      cmdLineParams.getAsInt("-negative_d"),
                      cmdLineParams.getAsInt("-negative_a"),
                      cmdLineParams.getAsInt("-threads") );
@@ -381,7 +389,10 @@ int main(int argc, char **argv)
     Trainer trainer( lep, v_toks, false, nullptr, nullptr,
                      vm.dep_size, vm.assoc_size, cmdLineParams.getAsInt("-size_g"),
                      cmdLineParams.getAsInt("-iter"),
-                     cmdLineParams.getAsFloat("-alpha"),
+                     std::numeric_limits<float>::quiet_NaN(),
+                     std::numeric_limits<float>::quiet_NaN(),
+                     cmdLineParams.getAsFloat("-alpha_g"),
+                     cmdLineParams.getAsFloat("-inflection"),
                      cmdLineParams.getAsInt("-negative_d"),
                      cmdLineParams.getAsInt("-negative_a"),
                      cmdLineParams.getAsInt("-threads") );
