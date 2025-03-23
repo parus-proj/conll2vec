@@ -422,7 +422,7 @@ private:
         {
           if ( tok.length() > 0 && tok[0] == 't' )
             currNode->tok_match = tok.substr(1);
-          else if (tok == "noun" || tok == "adj")
+          else if (tok == "noun" || tok == "noun_proper" || tok == "adj")
           {
             if ( !currNode->pos_match)
               currNode->pos_match = tok;
@@ -448,6 +448,7 @@ private:
     if ( features_value.length() < 1 ) return false;
     if ( constraint == "noun" && features_value[0] == 'N') return true; // можно сравнивать литеры (гарантировано однобайтные строки)
     if ( constraint == "adj" && features_value[0] == 'A') return true;
+    if ( constraint == "noun_proper" && features_value.length() >=2  && features_value[0] == 'N' && features_value[1] == 'p') return true;
     return false;
   }
   // проверка вхождения словосочетания в заданную позицию предложения
@@ -464,7 +465,7 @@ private:
       // проверяем их в первую очередь, если они есть
       if ( t->tok_match && sentence_matrix[match_point][Conll::FORM] != t->tok_match.value() )
         continue;
-      // также проверяем ограничения не часть речи
+      // также проверяем ограничения на часть речи
       if ( t->pos_match && !pos_match_ok(t->pos_match.value(), sentence_matrix[match_point][Conll::FEATURES]) )
         continue;
       bool succ = compare_trees_helper(sentence_matrix, deps, match_point, t, match_result);
