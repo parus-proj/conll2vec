@@ -502,7 +502,8 @@ int main(int argc, char **argv)
   // если поставлена задача подготовки эмбеддингов для RUE-модели
   if (task == "rue")
   {
-    MakeRueEmbeddings::run(cmdLineParams.getAsString("-model"), cmdLineParams.getAsString("-tl_map"));
+    MakeRueEmbeddings mre;
+    mre.run(cmdLineParams.getAsString("-model"), cmdLineParams.getAsString("-tl_map"));
     return 0;
   } // if task == toks
 

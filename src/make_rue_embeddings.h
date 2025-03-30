@@ -14,7 +14,7 @@
 class MakeRueEmbeddings
 {
 public:
-  static void run( const std::string& model_fn, const std::string& tlm_fn )
+  void run( const std::string& model_fn, const std::string& tlm_fn )
   {
     std::string buf;
 
@@ -22,6 +22,7 @@ public:
     VectorsModel vm;
     if ( !vm.load(model_fn) )
       return;
+    lemmas_model_size = vm.words_count; // for dbg output
     // 1.1. Расшираем модель знаками препинания
     if ( !AddPunct::merge_punct(vm) )
       return;
@@ -34,24 +35,24 @@ public:
                                               ")", "]", "}", "⟩"
                                             };
 
-
     // 2. Загружаем информацию о токенах (их отображение в леммы)
     std::map<std::string, std::map<size_t, size_t>> t2l_map;
     std::ifstream t2l_ifs( tlm_fn.c_str() );
     while ( std::getline(t2l_ifs, buf).good() )
     {
+      ++toks_cnt; // for dbg output
       std::vector<std::string> parts;
       StrUtil::split_by_space(buf, parts);
-      if ( parts.size() < 3 || parts.size() % 2 == 0 ) continue;    // skip invalid records
+      if ( parts.size() < 3 || parts.size() % 2 == 0 ) { ++skipped_toks_cnt; continue; }    // skip invalid records
       std::string token = parts[0];
-      if ( puncts.find(token) != puncts.end() ) continue;
+      if ( puncts.find(token) != puncts.end() ) { ++skipped_toks_cnt; continue; }
       // если токен равен хоть какой-нибудь лемме (с уже построенным вектором), то пропускаем его
       //   fail: так нельзя: автотехника = (автотехника, автотехник), банка = (банка, банк)
       //   size_t dbl_idx = vm.get_word_idx(token);
       //   if ( dbl_idx != vm.vocab.size() ) continue;
       // парсим список лемм
       bool isParseOk = true;
-      std::map<size_t, size_t> lcmap;
+      std::map<size_t, size_t> lcmap; // мэппинг из индекса лемммы в частоту (в составе текущего токена)
       for ( size_t i = 0; i < ((parts.size()-1)/2); ++i )
       {
         const auto& lemma = parts[i*2+1];
@@ -67,9 +68,26 @@ public:
         if (cnt < 50) continue;
         lcmap[lemma_idx] = cnt;
       }
-      if (!isParseOk || lcmap.empty()) continue;
+      if ( !isParseOk ) { ++skipped_toks_cnt; continue; }
+      if ( lcmap.empty() )
+      { 
+        ++skipped_toks_cnt; // for-debug-output
+        ++skipped_toks_no_lemmas_cnt; // for-debug-output
+        if ( skipped_toks_no_lemmas_examples.size() < 10 ) // for-debug-output
+          skipped_toks_no_lemmas_examples.insert(token); // for-debug-output
+        continue; 
+      }
       t2l_map[token] = lcmap;
     }
+    for (const auto&[tk, lc] : t2l_map) // for-debug-output
+      for (const auto&[idx, cnt] : lc)
+        used_lemmas.insert(idx);
+    for (size_t i = 0; i < vm.words_count; ++i) // for-debug-output
+      if (used_lemmas.find(i) == used_lemmas.end())
+      {
+        unused_lemmas_examples.insert(vm.vocab[i]);
+        if (unused_lemmas_examples.size() > 9) break;
+      }
 
     // 3. Формируем векторное пространство для токенов и мэппинг (токен_строка -> индекс_эмбеддинга)
     //    (за векторное представление токена принимается взвешенное среднее векторов его лемм)
@@ -108,6 +126,7 @@ public:
           t2e_map[token.first] = embs_count;
           l2e_map[lemma_idx] = embs_count;
           ++embs_count;
+          ++clear_embs_cnt;
         }
         continue;
       }
@@ -128,6 +147,7 @@ public:
       neOffset += vm.emb_size;
       t2e_map[token.first] = embs_count;
       ++embs_count;
+      ++mixed_embs_cnt; // for-debug-output
     }
 
     // 4. Допишем знаки препинания (их нет в отображении токены->леммы)
@@ -159,10 +179,54 @@ public:
       t2e_ofs << token_str << " " << embedding_idx << std::endl;
     }
 
+    dbg_output();
+
   } // method-end
 
 private:
-  static void rebalance(std::map<size_t, size_t>& lcmap)
+  // -- статистика (для отладочного вывода)
+  // размер модели лемм
+  size_t lemmas_model_size = 0;
+  // леммы, участвующие в формировании эмбеддингов хотя бы одного токена
+  std::set<size_t> used_lemmas;
+  // примеры лемм, не участвующих в формировании эмбеддингов
+  std::set<std::string> unused_lemmas_examples;
+  // количество записей в отображении tokens2lemmas
+  size_t toks_cnt = 0;
+  // количество записей в tokens2lemmas, которые были пропущены по тем или иным причинам
+  size_t skipped_toks_cnt = 0;
+  // количество записей в tokens2lemmas, которые были пропущены из-за отсутствия опорных лемм с частотностью для данного токена выше порога представительности
+  size_t skipped_toks_no_lemmas_cnt = 0;
+  // примеры токенов, пропущенных из-за отсутствия опорных лемм
+  std::set<std::string> skipped_toks_no_lemmas_examples;
+  // количество представлений, основанных на представлении единстввенной леммы
+  size_t clear_embs_cnt = 0;
+  // количество представлений, сфорированных как смесь значений лемм ("омонимы")
+  size_t mixed_embs_cnt = 0;
+
+  void dbg_output()
+  {
+    std::cout << "Lemmas model size: " << lemmas_model_size << std::endl;
+    std::cout << "    Used lemmas: " << used_lemmas.size() << std::endl;
+    std::cout << "    Unused lemmas: " << lemmas_model_size - used_lemmas.size() << std::endl;
+    std::string unused_lemmas_str;
+    for (const auto w : unused_lemmas_examples)
+      unused_lemmas_str += std::string(" ") + w;
+    std::cout << "    Unused lemmas examples:" << unused_lemmas_str << std::endl;
+    std::cout << "Toks mapping size: " << toks_cnt << std::endl;
+    std::cout << "    Skipped toks: " << skipped_toks_cnt << std::endl;
+    std::cout << "    Skipped toks cause no lemmas support: " << skipped_toks_no_lemmas_cnt << std::endl;
+    // note: причин фильтрации по лемме может быть несколько; наиболее типичные: 1) лемма отсутствует в модели лемм (малочастотная), 2) токен слабо поддержан леммой (отсечение порогом представительности)
+    std::string stnle_str;
+    for (const auto w : skipped_toks_no_lemmas_examples)
+      stnle_str += std::string(" ") + w;
+    std::cout << "    Skipped toks cause no lemmas support examples:" << stnle_str << std::endl;
+    std::cout << "Total LEX embeddings: " << (clear_embs_cnt + mixed_embs_cnt) << std::endl;
+    std::cout << "    Clear embeddings: " << clear_embs_cnt << std::endl;
+    std::cout << "    Mixed embeddings: " << mixed_embs_cnt << std::endl;
+  }
+
+  void rebalance(std::map<size_t, size_t>& lcmap)
   {
     if ( lcmap.size() < 2 ) return;
     // перебалансировка частот лемм (ограничение сверху в 60%)
