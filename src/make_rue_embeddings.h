@@ -14,7 +14,7 @@
 class MakeRueEmbeddings
 {
 public:
-  void run( const std::string& model_fn, const std::string& tlm_fn )
+  void run( const std::string& model_fn, const std::string& tlm_fn, const std::string& vocab_l )
   {
     std::string buf;
 
@@ -34,6 +34,19 @@ public:
                                               "(", "[", "{", "⟨",
                                               ")", "]", "}", "⟩"
                                             };
+    // 1.2. Формируем "белый список" лемм, заслуживающих доверия (достаточно частотных, чтобы обучиться хорошо)
+    std::set<std::string> lemmas_white_list;
+    std::ifstream lv_ifs( vocab_l.c_str() );
+    while ( std::getline(lv_ifs, buf).good() )
+    {
+      std::vector<std::string> parts;
+      StrUtil::split_by_space(buf, parts);
+      if ( parts.size() != 2 ) { continue; }    // skip invalid records
+      size_t cnt = 0;
+      try { cnt = std::stoi(parts[1]); } catch (...) { continue; }
+      if ( cnt < 500 ) break;
+      lemmas_white_list.insert(parts[0]);
+    }
 
     // 2. Загружаем информацию о токенах (их отображение в леммы)
     std::map<std::string, std::map<size_t, size_t>> t2l_map;
@@ -57,6 +70,7 @@ public:
       {
         const auto& lemma = parts[i*2+1];
         if ( puncts.find(lemma) != puncts.end() ) continue;
+        if ( lemmas_white_list.find(lemma) == lemmas_white_list.end() ) continue;
         const auto& cnt_str = parts[i*2+2];
         size_t lemma_idx = vm.get_word_idx_fast(lemma);
         if ( lemma_idx == vm.words_count ) continue;

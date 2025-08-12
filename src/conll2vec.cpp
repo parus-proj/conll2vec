@@ -502,8 +502,18 @@ int main(int argc, char **argv)
   // если поставлена задача подготовки эмбеддингов для RUE-модели
   if (task == "rue")
   {
+    if ( !cmdLineParams.isDefined("-model") )
+    {
+      std::cerr << "-model parameter must be defined." << std::endl;
+      return -1;
+    }
+    if ( !cmdLineParams.isDefined("-vocab_l") )
+    {
+      std::cerr << "-vocab_l parameter must be defined." << std::endl;
+      return -1;
+    }
     MakeRueEmbeddings mre;
-    mre.run(cmdLineParams.getAsString("-model"), cmdLineParams.getAsString("-tl_map"));
+    mre.run(cmdLineParams.getAsString("-model"), cmdLineParams.getAsString("-tl_map"), cmdLineParams.getAsString("-vocab_l"));
     return 0;
   } // if task == toks
 
